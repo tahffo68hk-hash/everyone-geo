@@ -11,7 +11,7 @@ AIGC:
 
 # GeoLens — AI Visibility Intelligence
 
-> 开发代号 GeoLens，项目根目录 `V:\geo-platform`
+> 开发代号 GeoLens，项目根目录 `C:\dev\geo-platform`
 
 基于 Node.js / TypeScript 自研的 **GEO（Generative Engine Optimization）监测数据平台**。
 目标不是复制任何现有商业系统或开源项目，而是吸收已被验证的产品逻辑，
@@ -42,7 +42,7 @@ AIGC:
 ## Monorepo 结构
 
 ```
-V:\geo-platform
+C:\dev\geo-platform
 ├─ apps
 │  ├─ web        Next.js 前端
 │  ├─ api        NestJS API

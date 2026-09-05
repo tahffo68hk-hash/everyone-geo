@@ -30,6 +30,18 @@
   - **PostgreSQL 事务 aborted 语义**：交互式事务中触发约束错误后，事务进入 aborted 状态，后续命令全部被忽略（25P02）。因此"预期破坏约束"的用例必须独立语句执行验证，不能在同一个事务内 catch 后继续。
   - **exFAT 二次踩坑（workspace 交叉依赖）**：`node-linker=hoisted` 只解决第三方依赖；workspace 内部依赖（`apps/api → @geo/database`）仍走 symlink，V 盘(exFAT) 不支持 → `EISDIR: symlink` 导致 `pnpm install` 失败。已用 `apps/api/scripts/link-database.cjs`（postinstall 自动拷贝 `packages/database` 到 `apps/api/node_modules/@geo/database`）兜底，详见 D-010。**建议将项目迁移到 NTFS 分区以根治。**
 
+## 2026-09-05 — 工作区迁移至 NTFS（C:\dev\geo-platform）
+
+- 源 V:\geo-platform（exFAT）→ 目标 C:\dev\geo-platform（NTFS）：`git clone` 保留完整历史（HEAD 8993bd9，worktree clean），同步未跟踪必需文件（.env、空 references/scripts）。
+- 数据保留：PostgreSQL named volume `geo_postgres_data` 复用，`docker compose down` 后重建容器，8 张表 + `_prisma_migrations` 完整（无需搬运数据）。
+- 移除 exFAT workaround（D-010 废弃，见 D-012）：
+  - `.npmrc` 删除 `node-linker=hoisted`（恢复 pnpm 默认 isolated + 原生 symlink）。
+  - `apps/api/package.json` 删除 `postinstall: link-database.cjs`，恢复声明 `"@geo/database": "workspace:*"`。
+  - 删除 `apps/api/scripts/link-database.cjs`。
+- 重新安装与验证：`pnpm install`（471 resolved）→ 根 `.npmrc` `onlyBuiltDependencies` 放行 prisma/esbuild → `prisma generate`（6.19.3，生成于根 node_modules/@prisma/client）→ `@geo/database build`（tsc，dist 正常）。
+- M2 回归全部通过：`scripts/verify.ts` 13 项 PASS（关系链/唯一约束 P2002/Restrict P2003/SetNull/Cascade）；`db:seed` 幂等跳过；`@geolens/api` nest build 通过、启动后 `GET /health`=ok、`GET /health/db`=connected（organizationCount=1，与迁移前一致）；`@geolens/web` next build 通过（4 static pages）。
+- 关键验证：`apps/api/node_modules/@geo/database` 为标准 NTFS symlink → `packages/database`，exFAT workaround 依据消失。
+
 ## 下一阶段（M3）
 
 - Redis + BullMQ 队列基础设施与 Worker 骨架。

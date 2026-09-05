@@ -7,10 +7,10 @@
     "build": "nest build",
     "start": "node dist/main",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/main",
-    "postinstall": "node scripts/link-database.cjs"
+    "start:prod": "node dist/main"
   },
   "dependencies": {
+    "@geo/database": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",

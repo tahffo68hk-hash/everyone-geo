@@ -50,13 +50,19 @@ AIGC:
 - 理由：全栈 TS 下 Prisma 类型安全优先；named volume 保证 `docker compose down` 不丢数据；单例避免连接池重复。
 - 影响：api/worker 不自行 new Client、不自行维护 schema；未来新增表一律改 schema.prisma 再 migrate。
 
-## D-010 exFAT workspace 交叉依赖适配（2026-09-05）
+## D-010 exFAT workspace 交叉依赖适配（2026-09-05，已废弃）
 - 决策：V 盘为 exFAT，pnpm workspace 内部依赖（apps/api → @geo/database）默认 symlink 会抛 `EISDIR`；采用 `apps/api/scripts/link-database.cjs`（postinstall 自动拷贝）兜底，`apps/api` 不声明 `workspace:*` 依赖。
 - 理由：`node-linker=hoisted` 仅解决第三方依赖，workspace 交叉依赖仍需真实链接，exFAT 无法满足。
-- 影响：新增 workspace 交叉依赖时须复制该模式（或同步脚本）；**长期建议：将项目迁移至 NTFS 分区（如 C 盘）以根治 symlink/junction 能力缺失。**
+- 影响：**已废弃**——2026-09-05 项目迁移至 NTFS 分区（C:\dev\geo-platform）后，移除 link-database.cjs 与 `node-linker=hoisted`，恢复标准 `workspace:*` + pnpm 原生 symlink。历史遗留见 D-012。
 
 ## D-011 FK 删除策略与幂等种子（2026-09-05）
 - 决策：Organization→Project 用 Restrict（有项目禁止删组织）；Project→Brand/Competitor/QuerySet 用 Cascade；QuerySet→Query 用 SetNull（保留历史 Query 证据）；约束破坏用例独立语句验证（避免 PostgreSQL 交互式事务 aborted 陷阱）。
 - 理由：组织是数据边界，防误删；Query Evidence 需留存；seed 幂等可重入，便于 CI/本地联调重复执行。
 - 影响：verify.ts 作为回归入口保留。
+
+## D-012 Dev 工作区迁移至 NTFS（2026-09-05）
+- 决策：将项目根目录自 V:\geo-platform（exFAT）迁移至 C:\dev\geo-platform（NTFS），保留 Git 历史与 PostgreSQL named volume（geo_postgres_data），移除 exFAT workaround（D-010 废弃）。
+- 理由：exFAT 不支持 symlink，pnpm workspace 交叉依赖只能靠 postinstall 拷贝脚本兜底；迁移至 NTFS 后恢复 pnpm 原生 `workspace:*` symlink 与取消 `node-linker=hoisted`，回归标准工具链。
+- 影响：.npmrc 移除 `node-linker=hoisted`；apps/api 恢复声明 `@geo/database: workspace:*`；删除 `apps/api/scripts/link-database.cjs`。迁移后 M2 回归（install/build/prisma migrate seed/verify/health-db）全部通过。
+- 遗留：V:\geo-platform 旧目录不再作为开发根目录。
 *（内容由AI生成，仅供参考）*

@@ -73,6 +73,5 @@ import { prisma, PrismaClient } from "@geo/database";
 // 或经 NestJS 注入：constructor(private readonly prisma: PrismaService) {}
 ```
 
-> 注意：V 盘为 exFAT，workspace 交叉依赖（apps/api → @geo/database）无法使用 symlink，
-> 已通过 `apps/api/scripts/link-database.cjs`（postinstall 自动拷贝）解决，详见 DECISIONS D-010。
-> 本适配仅影响包安装方式，不影响上述 import 用法。
+> 说明：workspace 交叉依赖（apps/api → @geo/database）在根目录（C:\dev\geo-platform，NTFS）下使用标准 symlink，
+> 由 pnpm 原生 `workspace:*` 解析，无需任何 workaround（详见 DECISIONS D-012）。
