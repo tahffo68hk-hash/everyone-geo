@@ -10,7 +10,11 @@
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "dev:web": "pnpm --filter @geolens/web dev",
-    "dev:api": "pnpm --filter @geolens/api dev"
+    "dev:api": "pnpm --filter @geolens/api dev",
+    "dev:worker": "pnpm --filter @geolens/worker dev",
+    "start:api": "pnpm --filter @geolens/api start",
+    "start:web": "pnpm --filter @geolens/web start",
+    "start:worker": "pnpm --filter @geolens/worker start"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

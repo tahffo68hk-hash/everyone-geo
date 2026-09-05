@@ -95,3 +95,18 @@
 ## 2026-09-05 — M2.5 D 盘迁移收尾
 
 正式目录 D:\dev\geo-platform，Node 24.20.0 / pnpm 11.1.0 / hoisted。标准 Nest 构建排除 test 后恢复 dist/main.js。原 geolens 数据完整复制到 geo_dev，geo_test 独立测试；原卷不变。9 条多余组织来自三轮 auth e2e 的持久注册和不完整清理，详见 DATA_HYGIENE.md。三次 seed、verify、auth 13 项、保护 15 项通过，开发基础表指纹不变。已评审既有 auth/web 实现，单独提交以避免混入基础设施修复。
+
+## 2026-09-05 — M3 Redis + BullMQ + 独立 Worker 完成
+
+M2.5 收尾后接手半成品 M3（Codex 中断）。先做只读接管审计（见 docs/WORKBUDDY_HANDOFF.md），修复后完整收尾：
+
+- **P0 blocker**：pnpm-workspace.yaml 第 23 行残留 `msgpackr-extract: set this to true or false` 造成重复 key，pnpm 完全无法运行 —— 删除残行，pnpm 11.1.0 恢复。
+- **Redis**：compose 已含 redis 服务但从未启动；6379 落在 Windows 排除端口段（6295-6394），改宿主 16379（容器内 6379）；`.env.example` 补 REDIS_* 示例；容器 healthy + PONG。
+- **geo_dev migration**：`20260905090000_monitor_pipeline`（Engine/MonitorTask/Run + PARTIAL）补跑成功；`seed-engines.ts` 写入 5 个 mock engine（alpha/beta/gamma/retry/failure，provider=mock，不伪装真实模型）。
+- **构建**：`pnpm -r build` 全绿（database/web 8 页含 /app/monitor/queue/worker/api）。
+- **测试**：packages/queue 15、worker 集成 11、API e2e 19（auth 13 + monitor-tasks 6）、database 保护 15 —— 全 PASS。新增 `apps/api/test/monitor-tasks.e2e-spec.ts`、`apps/worker/test/worker.integration.test.ts`。
+- **Worker 集成测试 SIGTERM 根因（两个）**：① after 清理顺序撞 `Run_engineId_fkey`(Restrict) 致清理链中断、$disconnect 不执行；② 多处 `createRunQueue()` 从不 close → ioredis 常驻 handle → node:test 子进程永不退出、汇总不打印、被 SIGTERM。修复：逆序清理 + finally 兜底 + 全程单 Queue 共享并在 after close。禁止 process.exit 掩盖。
+- **验收**（`apps/worker/e2e/acceptance.mts`，geo_test 真 DB + 真 Redis + 真实 Worker 子进程）：5 Query×3 Engine=15 Runs 全 SUCCEEDED；retry attempt=2；permanent failure attempt=3；PARTIAL；worker 中途 kill 后重启 reconcile 补齐；Redis 不可用时 Run 保持 PENDING、恢复后自动补投 —— 6 场景 26s 全 PASS。
+- **Health**：`/health`=`{"status":"ok"}`、`/health/db`=`{"status":"ok","database":"connected"}`；geo_dev 指纹保持 M2.5 基线（orgs 11 含历史 9 条、monitor_tasks 0、runs 0，未污染）。
+- **文档**：新增 docs/QUEUE.md（架构/状态机/重试/幂等/reconcile/Mock Engine/日志纪律/验收）。
+- **坑位记录**：① 同一消息内对同一文件的多个 Edit 会互相覆盖（必须串行/整写）；② nest build（incremental）陈旧 `tsconfig.build.tsbuildinfo` 与 deleteOutDir 组合会只发 .d.ts 不发 .js —— 删 dist+tsbuildinfo 重建即可；③ Next build 清理旧 `.next` 缓存会触发 safe-delete 批量删除保护 —— 先删 `.next` 再 build。

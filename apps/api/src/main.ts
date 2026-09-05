@@ -10,6 +10,7 @@ dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
 
   app.use(cookieParser());
 

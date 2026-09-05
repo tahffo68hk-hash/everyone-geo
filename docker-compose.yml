@@ -3,6 +3,20 @@
 # 数据存放在 Docker named volume: geo_postgres_data（避免 V: exFAT bind mount 问题）
 
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: geo-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - geo_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
   postgres:
     image: postgres:17-alpine
     container_name: geo-postgres
@@ -23,5 +37,7 @@ services:
       start_period: 5s
 
 volumes:
+  geo_redis_data:
+    name: geo_redis_data
   geo_postgres_data:
     name: geo_postgres_data

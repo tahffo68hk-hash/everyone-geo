@@ -39,6 +39,7 @@ model Organization {
 
   members  OrganizationMember[]
   projects Project[]
+  monitorTasks MonitorTask[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -94,6 +95,7 @@ model Project {
   competitors  Competitor[]
   querySets    QuerySet[]
   queries      Query[]
+  monitorTasks MonitorTask[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -160,6 +162,7 @@ model Query {
 
   project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   querySet QuerySet? @relation(fields: [querySetId], references: [id], onDelete: SetNull)
+  runs Run[]
 
   @@index([status])
   @@index([type])
@@ -193,4 +196,77 @@ enum QueryStatus {
 enum ProjectStatus {
   ACTIVE
   ARCHIVED
+}
+
+// Mock-only provider registry. Future provider implementations reuse this FK.
+model Engine {
+  id       String @id @default(uuid()) @db.Uuid
+  key      String @unique
+  name     String
+  provider String @default("mock")
+  config   Json @default("{}")
+  enabled  Boolean @default(true)
+  runs     Run[]
+}
+
+model MonitorTask {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  projectId      String @db.Uuid
+  status         TaskStatus @default(PENDING)
+  totalRuns      Int
+  completedRuns  Int @default(0)
+  failedRuns     Int @default(0)
+  createdAt      DateTime @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  metadata       Json?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  runs           Run[]
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Run {
+  id             String @id @default(uuid()) @db.Uuid
+  monitorTaskId  String @db.Uuid
+  queryId        String @db.Uuid
+  engineId       String @db.Uuid
+  status         RunStatus @default(PENDING)
+  attempt        Int @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorCode      String?
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+  executionToken String? @db.Uuid
+  // Future Response/Evidence tables will reference Run.id; no fabricated evidence now.
+  result         Json?
+  monitorTask    MonitorTask @relation(fields: [monitorTaskId], references: [id], onDelete: Cascade)
+  query          Query @relation(fields: [queryId], references: [id], onDelete: Restrict)
+  engine         Engine @relation(fields: [engineId], references: [id], onDelete: Restrict)
+  @@unique([monitorTaskId, queryId, engineId])
+  @@index([status, createdAt])
+  @@index([queryId])
+  @@index([engineId])
+}
+
+enum RunStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum TaskStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  PARTIAL
 }

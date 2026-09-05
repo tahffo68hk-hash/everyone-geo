@@ -33,3 +33,6 @@ Thumbs.db
 
 # Prisma
 packages/database/generated/
+
+# WorkBuddy session data
+.workbuddy/

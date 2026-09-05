@@ -12,6 +12,7 @@ onlyBuiltDependencies:
   - '@parcel/watcher'
   - 'unrs-resolver'
 allowBuilds:
+  'msgpackr-extract': false
   '@prisma/client': true
   '@prisma/engines': true
   'prisma': true
@@ -19,3 +20,4 @@ allowBuilds:
   'argon2': true
   '@parcel/watcher': true
   'unrs-resolver': true
+

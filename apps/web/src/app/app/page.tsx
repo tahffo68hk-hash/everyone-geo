@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
@@ -97,6 +98,10 @@ export default function AppPage() {
           退出登录
         </button>
       </header>
+
+      <Link href="/app/monitor" className="mb-6 inline-block rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800">
+        创建监测任务
+      </Link>
 
       {me && me.organizations.length === 0 ? (
         <p className="text-sm text-slate-500">你还没有加入任何组织。</p>
