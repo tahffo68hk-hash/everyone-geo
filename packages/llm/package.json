@@ -1,0 +1,18 @@
+{
+  "name": "@geo/llm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GeoLens - LLM Provider abstraction: unified interface, Mock provider and DeepSeek provider",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}
