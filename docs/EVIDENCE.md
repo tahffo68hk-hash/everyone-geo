@@ -32,12 +32,12 @@ Run (1) ──1:1── Evidence (1) ──1:N── Analysis ──1:N── Me
 | `queryText` | 原始 Query 快照（提交时文本） |
 | `rawPrompt` | 实际发送给 Provider 的 Prompt |
 | `rawResponse` | Provider 原始回答全文 |
-| `provider` | Provider 标识（Mock 阶段恒为 `mock`） |
+| `provider` | Provider 标识（mock 或 deepseek；未来 Qwen/Kimi 扩展） |
 | `engineKey` / `engineName` | Engine 注册信息快照 |
-| `model` / `modelVersion` | 模型标识（mock = `geolens-mock` / `1`） |
-| `retrievalMode` | 检索模式枚举（mock 默认 `unknown`） |
-| `sourceType` | **`mock`** —— 明确标注 Mock/Demo，绝不伪装真实模型 |
-| `metadata` | JSON：`durationMs`、`structuredCitations` 等执行元数据 |
+| `model` / `modelVersion` | 模型标识（mock = `geolens-mock` / `1`；deepseek = 请求模型 / 服务端实际模型） |
+| `retrievalMode` | 检索模式枚举（mock=`unknown`；deepseek API=`api_plain`） |
+| `sourceType` | **`mock` 或 `official_api`** —— mock 明确标注 Demo，deepseek 明确标注官方 API，绝不伪装/混淆 |
+| `metadata` | JSON：`durationMs`、`usage`（真实 token）、`requestId`、`finishReason`、`structuredCitations`、`rawProviderPayload`（脱敏，无 secret） |
 | `entitySnapshot` | JSON：分析所用的品牌/竞品配置快照（分析可复现） |
 | `createdAt` | 写入时间 |
 
@@ -84,8 +84,14 @@ Run (1) ──1:1── Evidence (1) ──1:N── Analysis ──1:N── Me
 - Analysis：`@@unique([evidenceId, analysisVersion])` + 事务内 `SELECT ... FOR UPDATE`（MonitorTask 行锁）双保险；重复投递/jobId 幂等不会双写。
 - 版本重放：同一 Evidence 追加 `analysisVersion` 需分析器声明一致版本，否则返回失败（`ANALYSIS_VERSION_MISMATCH`），防止「改版本号但跑旧规则」的静默污染。
 
-## 8. Mock 纪律
+## 8. 数据可信纪律（Mock 与真实 Provider）
 
-- Provider 恒为 `mock`，`sourceType=mock`；Engine key 命名 `mock-*` / `demo-*`。
-- UI 对 `sourceType=mock` 展示「Mock / Demo · 模拟数据」徽标。
-- 任何 Evidence 都不得伪装成 DeepSeek / Kimi / Qwen 等真实模型输出。
+- Mock：Provider=`mock`、`sourceType=mock`、Engine key 命名 `mock-*`/`demo-*`；UI 展示
+  「Mock / Demo · 模拟数据」徽标，任何 mock Evidence 都不得伪装成真实模型输出。
+- DeepSeek 官方 API（M5）：Provider=`deepseek`、`sourceType=official_api`、
+  `retrievalMode=api_plain`；UI 展示「DeepSeek API Response · Official API 真实调用」。
+  该来源是 DeepSeek API 而非 DeepSeek 搜索产品，UI/文档不使用「搜索收录/联网引用」措辞。
+- 真实与 Demo 的混合任务：GEO Metrics 只基于真实子集计算，并以 `metricSource` 标注
+  （demo / real / mixed），Demo 数据永不污染真实指标。
+- 更新约束：真实 Evidence 与 mock 完全一致 —— `runId` unique + trigger 拒 UPDATE；
+  分析失败不删 Evidence；模型重试不覆盖前一次成功 Evidence。

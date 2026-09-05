@@ -48,6 +48,8 @@ Task 聚合（`refreshTask`，基于 Run 数据，不信 Redis）：全成 → `
 - 错误分类：
   - 可重试（MOCK_FAILURE 且 attempt < MAX）→ settle `QUEUED` + `throw Error` → BullMQ 重投，下次 `claimRun` attempt+1。
   - 永久（attempt ≥ MAX / UnrecoverableError / INVALID_JOB_PAYLOAD）→ settle `FAILED` + `throw UnrecoverableError`，不再重试。
+- 真实 Provider（M5）：`packages/llm` 负责错误分类，Worker 映射——
+  可重试（429/5xx/timeout/network）→ `QUEUED`；永久（401/403/未配置/未启用/空响应/坏响应）→ 单次 attempt 即 `FAILED`（`PROVIDER_AUTH/PROVIDER_NOT_CONFIGURED/PROVIDER_DISABLED/...`）。详见 docs/LLM_PROVIDERS.md。
 - Worker 超时保护：`WORKER_TIMEOUT_MS`（默认 3000，executeMock 可中断）、`WORKER_LOCK_DURATION_MS`(10000)、`WORKER_STALLED_INTERVAL_MS`(5000)、`maxStalledCount=1`。
 
 ## 6. 幂等（数据库是唯一事实）

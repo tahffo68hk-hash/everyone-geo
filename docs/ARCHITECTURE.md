@@ -113,4 +113,13 @@ User ─ Organization ─ Project ─ Brand / Competitor
 - Experiment → ContentAsset(A/B) → Run → Response → PreferencePair(A>B)。
 - 目标：构建 GEO Preference Dataset 与 GEO Preference Model。
 - 当前只需保证数据模型与 Evidence 结构能承载该演进。
+## 9. M5 更新（Real LLM Provider Integration，2026-09-05）
+
+- `packages/llm`（@geo/llm）正式落地：`LLMProvider` 统一接口 + `LLMProviderRegistry`
+  + `MockProvider`（本地仿真，自 worker 迁移）+ `DeepSeekProvider`（官方 API，V1）。
+- Worker 只 `resolve → execute → persist Evidence`；Provider 具体 HTTP 协议不再外泄。
+- DeepSeek V1：`sourceType=official_api`、`retrievalMode=api_plain`（DeepSeek API ≠ 搜索产品）；
+  真实调用默认关闭（`ENABLE_REAL_PROVIDERS=false`）+ 单任务真实 Run 上限。
+- Metrics 数据完整性：`metricSource=demo|real|mixed`，Demo 数据不污染真实 GEO 指标。
+- 详见 `docs/LLM_PROVIDERS.md`、`docs/WORKBUDDY_M5_HANDOFF.md`。
 *（内容由AI生成，仅供参考）*

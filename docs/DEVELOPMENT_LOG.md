@@ -124,3 +124,41 @@ M2.5 收尾后接手半成品 M3（Codex 中断）。先做只读接管审计（
 - **geo_dev 端到端演示**：seed 幂等重跑补 alice 密码；`seed-demo-m4.ts` 增加 demo-first/second/citation 3 个 scenario mock 引擎（provider=mock，不伪装）；API+Worker（geo_dev）真实链路：alice 登录→POST /monitor-tasks（5 Query × 3 Engine=15 Runs）→ 15/15 SUCCEEDED → `/monitor-tasks/:id/metrics`（visibility 1 / reco 1 / avgPos 1.333 / SoV 0.5 / citation 10/2 / sentiment 全 positive）→ `GET /runs/:id`（Evidence 完整：rawResponse 中文、sourceType=mock、Analysis mentions=[CompA(1),ProjectMentor(2),CompB(3)] 位置序正确）。/health + /health/db PASS。
 - **文档**：新增 docs/GEO_METRICS.md（V0.1 公式、分母语义、position 定义、GeoLens 内部指标声明）、docs/EVIDENCE.md（数据模型/不可变/版本化/状态分离/mock 纪律）、docs/WORKBUDDY_M4_HANDOFF.md；DATABASE.md 追加 M4 章节；M4_PLAN.md 保留为设计档案。
 - **坑位**：① 追加非默认 Analysis 版本必须传声明同版本的 analyzer（否则 ANALYSIS_VERSION_MISMATCH）；② geo_dev 历史 alice 用户 passwordHash 为 NULL，重跑幂等 seed 修复；③ git-bash 后台 `&` 进程随会话回收，常驻服务需 run_in_background。
+
+## 2026-09-05 — M5 DeepSeek Real Provider（Real LLM Provider Integration）
+
+基于 M4（fc1e909）。接管审计见 docs/WORKBUDDY_M5_HANDOFF.md；目标：把已验证的 Mock Pipeline 接入第一个真实 LLM Provider —— DeepSeek 官方 API（**不是 DeepSeek 搜索**），并在 UI/Metrics 明确区分 Mock 与真实数据。零 migration。
+
+- **packages/llm（@geo/llm）**：统一 `LLMProvider` 接口 + `ProviderRequest/ProviderResponse` +
+  `LLMProviderError`（kind 分类：auth/rate_limit/server/network/timeout/bad_request/disabled/
+  not_configured/empty/invalid/invalid_config/mock_failure）+ `LLMProviderRegistry` +
+  `MockProvider`（自 worker 迁移 scenario/delay/failure 语义）+ `DeepSeekProvider`
+  （fetch + AbortController 60s + 响应结构校验 + usage/model 解析 + secret 不入任何返回物）。
+  单测 21 全 PASS（含 request/response mapping、401/429/5xx/timeout/malformed/empty、
+  脱敏断言：ProviderResponse 与错误消息均不含 Key/Authorization）。
+- **queue 契约放宽**：`runResultSchema.provider` 由 `z.literal('mock')` → `z.enum(['mock','deepseek'])`。
+- **Worker 执行链**：processor 经 registry.resolve(engine.provider) 替换 `provider!=='mock'` 硬分支；
+  错误映射：可重试(429/5xx/timeout/network/mock_failure)→ QUEUED 交 BullMQ，永久(401/403/
+  disabled/not_configured/empty/invalid)→ 单 attempt FAILED + UnrecoverableError；
+  `evidenceData` 改收 ProviderResponse（sourceType/retrievalMode/model/modelVersion/usage/
+  metadata/rawPrompt/脱敏 rawProviderPayload）；runtime 增 `REAL_PROVIDER_TIMEOUT_MS`(60s)。
+- **集成测试**（Fake DeepSeek HTTP server，真 DB geo_test + 真 Redis + 真 processor）5/5 PASS：
+  成功链 Evidence(official_api/api_plain/model/usage/requestId)+Analysis（无 provider 特判）；
+  401→PROVIDER_AUTH attempt=1 FAILED 无 Evidence；500 重试耗尽 FAILED；disabled/not_configured。
+- **API**：`GET /monitor-tasks/options` 返回全部启用 Engine + provider/configured/sourceType/model
+  （无 secret）；create 对真实 Provider 校验：未配置/未启用明确 400，real-runs 超
+  `REAL_PROVIDER_MAX_RUNS_PER_TASK`(3) 明确拒绝（不 silent truncate）；metrics 增加
+  `metricSource=demo|real|mixed`（mixed 只基于真实子集，Demo 不污染真实指标）。API e2e 6 新增。
+- **UI**：Engine 徽标 Mock/Demo vs「REAL · Official API/未配置」；Evidence Drawer Official API 徽标 +
+  Retrieval Mode 文案 + Token 用量 + Citation 来源区分（结构化 vs 正文 URL 提取，不伪造）；
+  TaskMetrics 数据源标签。文案不使用「搜索收录/联网引用」。
+- **seed**：`seed-engine-deepseek.ts`（geo_dev 幂等注册 `deepseek-api` Engine，config 无 Key）。
+- **回归全绿**：geo-core 49 / llm 21 / queue 15 / worker 22（M3 11 + M4 6 + M5 5）/ API e2e 32 /
+  database guard 15；M3 acceptance 6 场景、M4 acceptance 5 场景全 PASS；`pnpm -r build` Done；
+  /health + /health/db PASS（org 11 不变）；geo_dev 指纹保持（demo 任务验证后清理）。
+- **文档**：新增 docs/LLM_PROVIDERS.md、docs/WORKBUDDY_M5_HANDOFF.md；更新 ARCHITECTURE /
+  EVIDENCE / QUEUE / DECISIONS(D-015/016/017 含 Engine org 技术债)。
+- **暂停点**：真实 DeepSeek 调用未经用户批准不执行 —— 代码/测试/构建全绿后停在
+  【DeepSeek Real API Smoke Test Ready】，等待「允许真实测试」。
+- **坑位**：3001 被上轮会话遗留 API 进程占用致 EADDRINUSE —— netstat 定位 PID 后 taskkill 再起；
+  queue 旧测试断言 deepseek 被 runResultSchema 拒绝，需随契约放宽同步更新。

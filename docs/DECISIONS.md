@@ -76,6 +76,28 @@ AIGC:
 - 防回归：后续升级 Node / pnpm / Next.js / React / React DOM 任一版本前，必须重新执行 isolated/hoisted compatibility check（详见 DEVELOPMENT_LOG）。
 *（内容由AI生成，仅供参考）*
 
+## D-015 packages/llm 统一 Provider 抽象与 DeepSeek V1（2026-09-05）
+- 决策：新建 `packages/llm`（@geo/llm）承载 `LLMProvider` 接口 / `ProviderRequest·Response` /
+  错误模型 / `LLMProviderRegistry` / `MockProvider` / `DeepSeekProvider`；Worker 不再直接 fetch 模型 API，
+  只 resolve→execute→persist Evidence。首个真实 Provider = DeepSeek 官方 Chat Completions API。
+- 理由：M3/M4 Mock Pipeline 已验证；真实接入必须走统一接口，M6 加 Qwen/Kimi 不需重写 Worker。
+- 约束：DeepSeek API ≠ DeepSeek 搜索（`sourceType=official_api`、`retrievalMode=api_plain`）；
+  Evidence/Analysis/Metrics 契约与不可变 trigger 对真实 Provider 同等生效；
+  真实调用默认关闭（`ENABLE_REAL_PROVIDERS=false`），单任务真实 Run 上限默认 3，超限 API 明确拒绝。
+- API Key 只存在 server-side env，不落 DB/Evidence/UI/日志/Git；Engine 列表只回 configured 布尔。
+
+## D-016 Real/Mock 数据不可混淆（Metrics 数据完整性，2026-09-05）
+- 决策：`/monitor-tasks/:id/metrics` 增加 `metricSource`（demo/real/mixed）；任务含真实 Run 时，
+  指标池只取真实子集（engine.provider≠mock），Demo 数据永不污染真实 GEO 指标。
+- UI：Engine 徽标 REAL/Official API vs Mock/Demo；Evidence Drawer 蓝/琥珀徽标 + Token 用量；
+  Citation 用 metadata.structuredCitations 区分「Provider 结构化引用」与「正文 URL 提取」（不伪造）。
+- 影响：纯 mock 任务的指标响应新增 `metricSource:'demo'`（evidence e2e 已同步）。
+
+## D-017 Engine Organization ownership 技术债（M5 不解决，2026-09-05）
+- 记录：Engine.key 全局唯一、无 Organization ownership 为 M4 遗留；当前 API Key 为全局开发环境配置，
+  不影响单用户 Prototype，故 M5 只记录不扩范围。未来多租户 BYOK 再引入
+  ProviderCredential / OrganizationEngine（届时再评估 Engine 归属 migration）。
+
 ## D-014 Development workspace moved from C: to D:（2026-09-05）
 - 原因：C 盘空间压力。正式目录 D:\dev\geo-platform；C:\dev\geo-platform 仅保留为旧备份，不再修改。
 - Runtime：项目专用 D:\tools\node24\node.exe（24.20.0），pnpm 11.1.0；仅会话 PATH 前置，不修改系统 PATH。
