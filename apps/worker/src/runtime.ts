@@ -7,11 +7,13 @@ import { recoverAnalyses } from './evidence';
 export async function startWorker() {
   const concurrency = boundedInteger(process.env.WORKER_CONCURRENCY, 3, 1, 16);
   const timeoutMs = boundedInteger(process.env.WORKER_TIMEOUT_MS, 3000, 50, 60000);
+  // Real providers (DeepSeek) need a longer request budget than mock delays.
+  const realTimeoutMs = boundedInteger(process.env.REAL_PROVIDER_TIMEOUT_MS, 60000, 5000, 120000);
   const lockDuration = boundedInteger(process.env.WORKER_LOCK_DURATION_MS, 10000, 2000, 120000);
   const stalledInterval = boundedInteger(process.env.WORKER_STALLED_INTERVAL_MS, 5000, 1000, 60000);
   const queue = createRunQueue();
   queue.on('error', () => jsonLogger({ component: 'worker', status: 'ERROR', error: 'QUEUE_UNAVAILABLE' }));
-  const worker = new Worker<RunJob, RunResult | undefined>(QUEUE_NAME, createRunProcessor(prisma, { timeoutMs }), {
+  const worker = new Worker<RunJob, RunResult | undefined>(QUEUE_NAME, createRunProcessor(prisma, { timeoutMs, realTimeoutMs }), {
     ...queueOptions('worker'), concurrency, lockDuration, stalledInterval, maxStalledCount: 1,
   });
   worker.on('error', () => jsonLogger({ component: 'worker', status: 'ERROR', error: 'QUEUE_UNAVAILABLE' }));

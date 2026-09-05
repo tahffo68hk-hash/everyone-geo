@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from '@geo/database';
 import { analyzeResponse, ANALYSIS_VERSION, type Entity } from '@geo/core';
 import type { ClaimedRun } from '@geo/queue';
+import type { ProviderResponse } from '@geo/llm';
 
 export async function snapshotEntities(db: PrismaClient, projectId: string): Promise<Entity[]> {
   const [brands, competitors] = await Promise.all([
@@ -13,14 +14,28 @@ export async function snapshotEntities(db: PrismaClient, projectId: string): Pro
   ];
 }
 
-export function evidenceData(run: ClaimedRun, rawResponse: string, entities: Entity[], durationMs: number) {
-  const config = run.engine.config as Record<string, unknown>;
-  const structuredCitations = Array.isArray(config.citations) ? config.citations : [];
+/**
+ * Raw Evidence snapshot built from a normalized ProviderResponse.
+ * The same immutable Evidence contract applies to every provider: a Run writes
+ * exactly one Evidence row and the DB trigger rejects later UPDATEs.
+ *
+ * sourceType / retrievalMode are capabilities of the provider (mock => mock,
+ * deepseek => official_api / api_plain). Secrets never reach this object.
+ */
+export function evidenceData(run: ClaimedRun, response: ProviderResponse, entities: Entity[]) {
+  const metadata: Record<string, unknown> = { durationMs: response.durationMs };
+  // Always present so UI can distinguish "structured citation" vs text-extracted URLs.
+  metadata.structuredCitations = response.structuredCitations ?? [];
+  if (response.usage) metadata.usage = response.usage;
+  if (response.requestId) metadata.requestId = response.requestId;
+  if (response.finishReason) metadata.finishReason = response.finishReason;
+  if (response.rawProviderPayload !== undefined) metadata.rawProviderPayload = response.rawProviderPayload;
   return {
-    runId: run.id, queryText: run.query.text, rawPrompt: run.query.text, rawResponse,
-    provider: 'mock', engineKey: run.engine.key, engineName: run.engine.name,
-    model: 'geolens-mock', modelVersion: '1', sourceType: 'mock' as const, retrievalMode: 'unknown' as const,
-    metadata: JSON.parse(JSON.stringify({ durationMs, structuredCitations })) as Prisma.InputJsonValue,
+    runId: run.id, queryText: run.query.text, rawPrompt: response.rawPrompt, rawResponse: response.content,
+    provider: response.provider, engineKey: run.engine.key, engineName: run.engine.name,
+    model: response.model, modelVersion: response.modelVersion,
+    sourceType: response.sourceType, retrievalMode: response.retrievalMode,
+    metadata: JSON.parse(JSON.stringify(metadata)) as Prisma.InputJsonValue,
     entitySnapshot: JSON.parse(JSON.stringify(entities)) as Prisma.InputJsonValue,
   };
 }

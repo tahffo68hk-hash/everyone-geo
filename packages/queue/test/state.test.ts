@@ -32,10 +32,12 @@ test('runJobSchema 校验：仅接受单字段 uuid runId（严格对象）', ()
   assert.throws(() => runJobSchema.parse(null));
 });
 
-test('runResultSchema 校验：mock provider + text + durationMs', () => {
+test('runResultSchema 校验：mock/deepseek provider + text + durationMs', () => {
   const ok = { provider: 'mock', text: 'hello', durationMs: 123 };
   assert.deepEqual(runResultSchema.parse(ok), ok);
-  assert.throws(() => runResultSchema.parse({ provider: 'deepseek', text: 'x', durationMs: 1 }));
+  // M5: deepseek is a supported provider contract; unknown providers stay rejected.
+  assert.deepEqual(runResultSchema.parse({ provider: 'deepseek', text: 'x', durationMs: 1 }), { provider: 'deepseek', text: 'x', durationMs: 1 });
+  assert.throws(() => runResultSchema.parse({ provider: 'qwen', text: 'x', durationMs: 1 }));
   assert.throws(() => runResultSchema.parse({ provider: 'mock', durationMs: 1 }));
   assert.throws(() => runResultSchema.parse({ provider: 'mock', text: 'x', durationMs: -1 }));
 });
