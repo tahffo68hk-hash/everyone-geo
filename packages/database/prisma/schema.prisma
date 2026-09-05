@@ -243,6 +243,10 @@ model Run {
   executionToken String? @db.Uuid
   // Future Response/Evidence tables will reference Run.id; no fabricated evidence now.
   result         Json?
+  analysisStatus AnalysisStatus @default(PENDING)
+  analysisAttempts Int @default(0)
+  analysisErrorCode String?
+  evidence       Evidence?
   monitorTask    MonitorTask @relation(fields: [monitorTaskId], references: [id], onDelete: Cascade)
   query          Query @relation(fields: [queryId], references: [id], onDelete: Restrict)
   engine         Engine @relation(fields: [engineId], references: [id], onDelete: Restrict)
@@ -269,4 +273,97 @@ enum TaskStatus {
   FAILED
   CANCELLED
   PARTIAL
+}
+
+enum AnalysisStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum SourceType {
+  official_api
+  browser
+  third_party_api
+  manual
+  estimated
+  mock
+}
+
+enum RetrievalMode {
+  api_plain
+  api_web_search
+  official_web_ui
+  browser_agent
+  manual_verified
+  unknown
+}
+
+enum Sentiment {
+  positive
+  neutral
+  negative
+  unknown
+}
+
+model Evidence {
+  id             String @id @default(uuid()) @db.Uuid
+  runId          String @unique @db.Uuid
+  queryText      String
+  rawPrompt      String
+  rawResponse    String
+  provider       String
+  engineKey      String
+  engineName     String
+  model          String
+  modelVersion   String?
+  retrievalMode  RetrievalMode
+  sourceType     SourceType
+  metadata       Json
+  entitySnapshot Json
+  createdAt      DateTime @default(now())
+  run            Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+  analyses       Analysis[]
+}
+
+model Analysis {
+  id              String @id @default(uuid()) @db.Uuid
+  evidenceId      String @db.Uuid
+  analysisVersion String
+  brandMentioned  Boolean
+  mentionPosition Int?
+  recommended     Boolean
+  sentiment       Sentiment
+  createdAt       DateTime @default(now())
+  evidence        Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  mentions        Mention[]
+  citations       Citation[]
+  @@unique([evidenceId, analysisVersion])
+}
+
+model Mention {
+  id            String @id @default(uuid()) @db.Uuid
+  analysisId    String @db.Uuid
+  entityType    String
+  entityId      String
+  canonicalName String
+  displayName   String
+  position      Int
+  context       String
+  sentiment     Sentiment
+  startOffset   Int
+  endOffset     Int
+  analysis      Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  @@unique([analysisId, entityType, entityId])
+}
+
+model Citation {
+  id         String @id @default(uuid()) @db.Uuid
+  analysisId String @db.Uuid
+  url        String
+  domain     String
+  title      String?
+  position   Int
+  analysis   Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  @@unique([analysisId, url])
 }

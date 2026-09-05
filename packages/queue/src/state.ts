@@ -82,6 +82,7 @@ export function canSettleRun(run: { status: string; executionToken: string | nul
 
 export async function settleRun(db: PrismaClient, run: Pick<ClaimedRun, 'id' | 'monitorTaskId' | 'executionToken'>, outcome: {
   status: 'SUCCEEDED' | 'FAILED' | 'QUEUED'; result?: Prisma.InputJsonValue; errorCode?: string; errorMessage?: string;
+  persist?: (tx: Prisma.TransactionClient) => Promise<void>;
 }): Promise<boolean> {
   if (!run.executionToken) return false;
   return db.$transaction(async tx => {
@@ -94,7 +95,10 @@ export async function settleRun(db: PrismaClient, run: Pick<ClaimedRun, 'id' | '
       ...(outcome.result === undefined ? {} : { result: outcome.result }),
       errorCode: outcome.errorCode ?? null, errorMessage: outcome.errorMessage ?? null,
     } });
-    if (changed.count) await refreshTask(tx, run.monitorTaskId);
+    if (changed.count) {
+      if (outcome.persist) await outcome.persist(tx);
+      await refreshTask(tx, run.monitorTaskId);
+    }
     return changed.count === 1;
   });
 }
