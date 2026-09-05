@@ -8,7 +8,10 @@ import { TaskMetrics } from "./task-metrics";
 
 type Options = {
   projects: Array<{ id: string; name: string; queries: Array<{ id: string; text: string }> }>;
-  engines: Array<{ id: string; key: string; name: string }>;
+  engines: Array<{
+    id: string; key: string; name: string;
+    provider: string; sourceType: string | null; model: string | null; configured: boolean;
+  }>;
 };
 
 type MonitorTask = {
@@ -153,7 +156,8 @@ export default function MonitorPage() {
   }
 
   const queries = new Map(options?.projects.flatMap((item) => item.queries.map((query) => [query.id, query.text] as const)));
-  const engines = new Map(options?.engines.map((engine) => [engine.id, engine.name] as const));
+  const engines = new Map(options?.engines.map((engine) => [engine.id, engine] as const));
+  const engineLabel = (engine: { name: string; provider: string }) => engine.provider === "mock" ? engine.name : `${engine.name} · REAL`;
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-8">
@@ -161,7 +165,7 @@ export default function MonitorPage() {
         <header>
           <Link href="/app" className="text-sm text-blue-700 hover:underline">← 返回工作台</Link>
           <h1 className="mt-3 text-2xl font-semibold">监测任务</h1>
-          <p className="mt-2 text-sm text-slate-500">选择项目、查询和模拟引擎，创建任务并查看执行进度。</p>
+          <p className="mt-2 text-sm text-slate-500">选择项目、查询和引擎（Mock/Demo 为模拟数据，DeepSeek API 为真实 Provider）创建任务并查看执行进度。</p>
         </header>
 
         <section aria-labelledby="create-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
@@ -197,15 +201,26 @@ export default function MonitorPage() {
                 )}
               </fieldset>
               <fieldset disabled={creating}>
-                <legend className="mb-2 text-sm font-medium">模拟引擎（已选 {engineIds.length} 项）</legend>
-                {!options.engines.length ? <p className="text-sm text-slate-500">暂无启用的模拟引擎。</p> : (
+                <legend className="mb-2 text-sm font-medium">引擎（已选 {engineIds.length} 项）</legend>
+                {options.engines.some((engine) => engine.provider !== "mock" && !engine.configured) && (
+                  <p role="status" className="mb-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-900">DeepSeek Provider 未配置或未启用（需 ENABLE_REAL_PROVIDERS=true 且配置 DEEPSEEK_API_KEY）。真实引擎暂不可选，模拟引擎不受影响。</p>
+                )}
+                {!options.engines.length ? <p className="text-sm text-slate-500">暂无启用的引擎。</p> : (
                   <div className="flex flex-wrap gap-4">
-                    {options.engines.map((engine) => (
-                      <label key={engine.id} className="flex items-center gap-2 text-sm">
-                        <input type="checkbox" checked={engineIds.includes(engine.id)} onChange={() => toggle(engine.id, engineIds, setEngineIds)} />
-                        {engine.name}
-                      </label>
-                    ))}
+                    {options.engines.map((engine) => {
+                      const real = engine.provider !== "mock";
+                      const unavailable = real && !engine.configured;
+                      return (
+                        <label key={engine.id} className={`flex items-center gap-2 text-sm ${unavailable ? "opacity-60" : ""}`}>
+                          <input type="checkbox" disabled={unavailable} checked={engineIds.includes(engine.id)} onChange={() => toggle(engine.id, engineIds, setEngineIds)} />
+                          {engine.name}
+                          {real
+                            ? <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-800">{unavailable ? "REAL · 未配置" : `REAL · ${engine.sourceType === "official_api" ? "Official API" : engine.provider}`}</span>
+                            : <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">Mock / Demo</span>}
+                          {real && engine.model ? <span className="text-xs text-slate-400">{engine.model}</span> : null}
+                        </label>
+                      );
+                    })}
                   </div>
                 )}
               </fieldset>
@@ -232,7 +247,7 @@ export default function MonitorPage() {
                   <table className="w-full text-left text-sm">
                     <caption className="sr-only">各查询与引擎的运行状态</caption>
                     <thead className="border-b border-slate-200 text-slate-500"><tr><th scope="col" className="p-2">查询</th><th scope="col" className="p-2">引擎</th><th scope="col" className="p-2">状态</th><th scope="col" className="p-2">尝试次数</th><th scope="col" className="p-2">错误</th><th scope="col" className="p-2">证据</th></tr></thead>
-                    <tbody>{task.runs.map((run) => <tr key={run.id} className="border-b border-slate-100 align-top"><td className="min-w-48 break-words p-2">{queries.get(run.queryId) ?? run.queryId}</td><td className="p-2">{engines.get(run.engineId) ?? run.engineId}</td><td className="whitespace-nowrap p-2">{statusLabels[run.status] ?? run.status}</td><td className="p-2">{run.attempt}</td><td className="max-w-80 break-words p-2 text-red-700">{[run.errorCode, run.errorMessage].filter(Boolean).join("：") || "—"}</td><td className="p-2"><button type="button" className="whitespace-nowrap text-blue-700 underline" onClick={() => setSelectedRunId(run.id)} aria-label={`查看运行证据：${queries.get(run.queryId) ?? run.queryId} · ${engines.get(run.engineId) ?? run.engineId}`}>查看证据</button></td></tr>)}</tbody>
+                    <tbody>{task.runs.map((run) => { const runEngine = engines.get(run.engineId); return <tr key={run.id} className="border-b border-slate-100 align-top"><td className="min-w-48 break-words p-2">{queries.get(run.queryId) ?? run.queryId}</td><td className="p-2">{runEngine ? engineLabel(runEngine) : run.engineId}</td><td className="whitespace-nowrap p-2">{statusLabels[run.status] ?? run.status}</td><td className="p-2">{run.attempt}</td><td className="max-w-80 break-words p-2 text-red-700">{[run.errorCode, run.errorMessage].filter(Boolean).join("：") || "—"}</td><td className="p-2"><button type="button" className="whitespace-nowrap text-blue-700 underline" onClick={() => setSelectedRunId(run.id)} aria-label={`查看运行证据：${queries.get(run.queryId) ?? run.queryId} · ${runEngine ? engineLabel(runEngine) : run.engineId}`}>查看证据</button></td></tr>; })}</tbody>
                   </table>
                   {!task.runs.length && <p className="py-4 text-sm text-slate-500">暂无运行记录。</p>}
                 </div>

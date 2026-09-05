@@ -9,8 +9,14 @@ type Metrics = {
   visibilityRate: number | null; recommendationRate: number | null; averageMentionPosition: number | null;
   shareOfVoice: number | null; citationCount: number; citationDomainCount: number;
   sentimentDistribution: { positive: number; neutral: number; negative: number; unknown: number };
+  metricSource?: "demo" | "real" | "mixed";
 };
 const percentage = (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+const sourceLabels: Record<string, string> = {
+  demo: "Demo 数据（模拟引擎）",
+  real: "Real Provider 数据（DeepSeek API · Official API）",
+  mixed: "混合任务：指标仅基于真实 Provider，已排除 Demo 数据",
+};
 export function TaskMetrics({ taskId, taskStatus }: { taskId: string; taskStatus?: string }) {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [error, setError] = useState("");
@@ -47,6 +53,7 @@ export function TaskMetrics({ taskId, taskStatus }: { taskId: string; taskStatus
     {!metrics && !error && <p role="status" className="mt-3 text-sm">正在加载指标…</p>}
     {paused && <p className="mt-3 text-sm text-amber-800">自动刷新已暂停，可手动刷新获取最新分析结果。</p>}
     {metrics && <>
+      {metrics.metricSource && <p className={`mt-3 inline-block rounded px-2 py-0.5 text-xs font-semibold ${metrics.metricSource === "demo" ? "bg-amber-100 text-amber-900" : "bg-blue-100 text-blue-900"}`}>{sourceLabels[metrics.metricSource] ?? metrics.metricSource}</p>}
       <p className="mt-3 text-sm text-slate-600">总运行 {metrics.totalRuns} · 成功 {metrics.successfulRuns} · 失败 {metrics.failedRuns} · 取消 {metrics.cancelledRuns} · 已分析 {metrics.analyzedRuns} · 分析缺失 {metrics.analysisMissingRuns}</p>
       <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">{[["可见率", percentage(metrics.visibilityRate)], ["推荐率", percentage(metrics.recommendationRate)], ["平均提及排名", metrics.averageMentionPosition == null ? "—" : metrics.averageMentionPosition.toFixed(2)], ["SoV（GeoLens 内部指标）", percentage(metrics.shareOfVoice)], ["引用数", metrics.citationCount], ["引用域名数", metrics.citationDomainCount]].map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 text-xl font-semibold">{value}</dd></div>)}</dl>
       <p className="mt-4 text-sm text-slate-600">情感分布：正面 {metrics.sentimentDistribution.positive} · 中性 {metrics.sentimentDistribution.neutral} · 负面 {metrics.sentimentDistribution.negative} · 未知 {metrics.sentimentDistribution.unknown}</p>

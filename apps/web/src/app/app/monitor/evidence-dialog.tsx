@@ -22,6 +22,17 @@ const buttonClass = "rounded-lg border border-slate-300 px-3 py-2 text-sm hover:
 function safeHref(value: string) {
   try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) ? url.href : undefined; } catch { return undefined; }
 }
+function usageTokens(metadata: unknown): string | null {
+  const usage = (metadata as { usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } } | null)?.usage;
+  if (!usage || typeof usage !== "object") return null;
+  const { promptTokens, completionTokens, totalTokens } = usage;
+  if (typeof totalTokens !== "number") return null;
+  return `输入 ${promptTokens ?? "—"} · 输出 ${completionTokens ?? "—"} · 合计 ${totalTokens}`;
+}
+function structuredCitationCount(metadata: unknown): number {
+  const value = (metadata as { structuredCitations?: unknown[] } | null)?.structuredCitations;
+  return Array.isArray(value) ? value.length : 0;
+}
 
 export function EvidenceDialog({ runId, onClose }: { runId: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -69,8 +80,9 @@ export function EvidenceDialog({ runId, onClose }: { runId: string; onClose: () 
       {run && !evidence && <p className="mt-4 text-sm text-slate-600">暂无证据。运行完成后可刷新查看；失败或取消的运行可能没有证据。</p>}
       {evidence && <div className="mt-5 space-y-6">
         {evidence.sourceType.toLowerCase() === "mock" && <p className="inline-block rounded bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">Mock / Demo · 模拟数据</p>}
+        {evidence.sourceType.toLowerCase() === "official_api" && <p className="inline-block rounded bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-900">DeepSeek API Response · Official API 真实调用</p>}
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
-          {[["查询", evidence.queryText], ["Provider", evidence.provider], ["引擎", `${evidence.engineName} (${evidence.engineKey})`], ["模型", evidence.model], ["模型版本", evidence.modelVersion ?? "—"], ["时间", evidence.createdAt], ["来源", evidence.sourceType], ["检索模式", evidence.retrievalMode]].map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words">{value}</dd></div>)}
+          {[["查询", evidence.queryText], ["Provider", evidence.provider], ["引擎", `${evidence.engineName} (${evidence.engineKey})`], ["模型", evidence.model], ["模型版本", evidence.modelVersion ?? "—"], ["时间", evidence.createdAt], ["来源", evidence.sourceType === "official_api" ? "Official API" : evidence.sourceType], ["检索模式", evidence.retrievalMode === "api_plain" ? "API 普通对话（非联网搜索）" : evidence.retrievalMode], ["Token 用量", usageTokens(evidence.metadata) ?? "—"]].map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words">{value}</dd></div>)}
         </dl>
         <section><h3 className="mb-2 font-semibold">完整 Prompt</h3><pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-sm">{evidence.rawPrompt}</pre></section>
         <section><h3 className="mb-2 font-semibold">原始响应</h3><pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-sm">{evidence.rawResponse}</pre></section>
@@ -83,7 +95,12 @@ export function EvidenceDialog({ runId, onClose }: { runId: string; onClose: () 
             <h4 className="mt-4 font-medium">品牌与竞品提及</h4>
             {!analysis.mentions.length ? <p className="mt-2 text-sm text-slate-500">无提及记录。</p> : <ul className="mt-2 space-y-3 text-sm">{analysis.mentions.map((mention) => <li key={mention.id} className="rounded border border-slate-200 p-3"><p>{mention.displayName}（{mention.canonicalName}） · {mention.entityType} · 排名 {mention.position} · {mention.sentiment}</p><p className="mt-1 whitespace-pre-wrap break-words text-slate-600">{mention.context}</p></li>)}</ul>}
             <h4 className="mt-4 font-medium">引用来源</h4>
-            {!analysis.citations.length ? <p className="mt-2 text-sm text-slate-500">无引用记录。</p> : <ul className="mt-2 space-y-2 text-sm">{analysis.citations.map((citation) => { const href = safeHref(citation.url); return <li key={citation.id} className="break-words">{citation.position}. {href ? <a className="text-blue-700 underline" href={href} target="_blank" rel="noopener noreferrer">{citation.title ?? citation.url}</a> : <span>{citation.title ?? citation.url}（无效或非 HTTP 链接）</span>} <span className="text-slate-500">· {citation.domain}</span></li>; })}</ul>}
+            {!analysis.citations.length ? <p className="mt-2 text-sm text-slate-500">无引用记录。</p> : <>
+              {structuredCitationCount(evidence.metadata) > 0
+                ? <p className="mt-2 text-xs text-slate-500">引用来源类型：Provider 结构化引用。</p>
+                : <p className="mt-2 text-xs text-slate-500">引用来源类型：回答正文 URL 提取（该 Provider 未返回结构化引用，非伪造）。</p>}
+              <ul className="mt-2 space-y-2 text-sm">{analysis.citations.map((citation) => { const href = safeHref(citation.url); return <li key={citation.id} className="break-words">{citation.position}. {href ? <a className="text-blue-700 underline" href={href} target="_blank" rel="noopener noreferrer">{citation.title ?? citation.url}</a> : <span>{citation.title ?? citation.url}（无效或非 HTTP 链接）</span>} <span className="text-slate-500">· {citation.domain}</span></li>; })}</ul>
+            </>}
           </>}
         </section>
       </div>}
