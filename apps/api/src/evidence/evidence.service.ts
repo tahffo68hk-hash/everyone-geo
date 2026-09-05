@@ -36,6 +36,7 @@ export class EvidenceService {
       where: { id, organization: { members: { some: { userId } } } },
       select: { runs: { select: {
         status: true,
+        engine: { select: { provider: true } },
         evidence: { select: { analyses: {
           where: { analysisVersion },
           include: { mentions: true, citations: true },
@@ -43,9 +44,16 @@ export class EvidenceService {
       } } },
     });
     if (!task) throw new NotFoundException('任务不存在或无权访问');
-    return aggregateMetrics({
+    // Metrics data integrity (M5): demo (mock) data never pollutes real GEO
+    // metrics. When a task contains any real run, the metric pool is the real
+    // subset only and metricSource says so ('real' or 'mixed').
+    const realRuns = task.runs.filter(run => run.engine.provider !== 'mock');
+    const metricSource = realRuns.length === 0 ? 'demo'
+      : realRuns.length === task.runs.length ? 'real' : 'mixed';
+    const pool = realRuns.length > 0 ? realRuns : task.runs;
+    const metrics = aggregateMetrics({
       analysisVersion,
-      runs: task.runs.map(run => {
+      runs: pool.map(run => {
         const analysis = run.evidence?.analyses[0];
         return {
           status: run.status,
@@ -58,5 +66,6 @@ export class EvidenceService {
         };
       }),
     });
+    return { ...metrics, metricSource };
   }
 }

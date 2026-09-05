@@ -107,7 +107,7 @@ describe('Evidence and metrics (M4 e2e)', () => {
 
   it('uses analyzed successful runs as denominator, excluding failed providers and missing analyses', async () => {
     const { body } = await owner.get(`/monitor-tasks/${ids.tasks[0]}/metrics`).expect(200);
-    expect(body).toEqual({ metricVersion: 'geolens-v1', analysisVersion: 'm4-rule-v1', totalRuns: 5, successfulRuns: 3, failedRuns: 1, cancelledRuns: 0, analyzedRuns: 2, analysisMissingRuns: 1, visibilityRate: 0.5, recommendationRate: 0.5, averageMentionPosition: 1, shareOfVoice: 0.5, citationCount: 2, citationDomainCount: 1, sentimentDistribution: { positive: 1, neutral: 0, negative: 0, unknown: 1 } });
+    expect(body).toEqual({ metricVersion: 'geolens-v1', analysisVersion: 'm4-rule-v1', totalRuns: 5, successfulRuns: 3, failedRuns: 1, cancelledRuns: 0, analyzedRuns: 2, analysisMissingRuns: 1, visibilityRate: 0.5, recommendationRate: 0.5, averageMentionPosition: 1, shareOfVoice: 0.5, citationCount: 2, citationDomainCount: 1, sentimentDistribution: { positive: 1, neutral: 0, negative: 0, unknown: 1 }, metricSource: 'demo' });
   });
 
   it('isolates saved analysis versions and preserves null rates without eligible analyses', async () => {
