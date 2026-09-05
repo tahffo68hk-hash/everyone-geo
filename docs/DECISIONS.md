@@ -65,4 +65,13 @@ AIGC:
 - 理由：exFAT 不支持 symlink，pnpm workspace 交叉依赖只能靠 postinstall 拷贝脚本兜底；迁移至 NTFS 后恢复 pnpm 原生 `workspace:*` symlink 与取消 `node-linker=hoisted`，回归标准工具链。
 - 影响：.npmrc 移除 `node-linker=hoisted`；apps/api 恢复声明 `@geo/database: workspace:*`；删除 `apps/api/scripts/link-database.cjs`。迁移后 M2 回归（install/build/prisma migrate seed/verify/health-db）全部通过。
 - 遗留：V:\geo-platform 旧目录不再作为开发根目录。
+
+## D-013 采用 pnpm hoisted node linker（2026-09-05）
+- 决策：当前锁定工具链（Windows NTFS、Node 25.8.2、pnpm 11.1.0、Next.js 15.5.25、pnpm workspace）下，正式采用 `nodeLinker: hoisted` 作为 node_modules 物理布局。
+- 背景：对该锁定的工具链组合执行了 isolated / hoisted A/B 对照实验（实验结果保存于 DEVELOPMENT_LOG）。
+  - `isolated`：`next build` 在 prerender 内置错误页（_error.js）时出现 React runtime / `useContext` null 问题，构建失败。
+  - `hoisted`：`next build` 完整成功，7/7 静态页面正常生成，进程正常退出。
+- 理由：**可重复构建优先于 node_modules 布局偏好**；该问题定位为 current toolchain compatibility issue（当前工具链组合兼容性问题），未定位到 Next/pnpm 源码的最小复现前，不写入"官方 Bug"或"pnpm isolated 必然导致双 React"等绝对结论。
+- 影响/表述澄清：**不放弃 `workspace:*` 原生语义** — workspace:* protocol 继续保留，Monorepo 结构、workspace dependency declaration 不变。变化的仅是 node_modules 物理布局：从 pnpm isolated / symlinked virtual store layout 改为 flat / hoisted layout。
+- 防回归：后续升级 Node / pnpm / Next.js / React / React DOM 任一版本前，必须重新执行 isolated/hoisted compatibility check（详见 DEVELOPMENT_LOG）。
 *（内容由AI生成，仅供参考）*

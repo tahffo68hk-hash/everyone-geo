@@ -42,6 +42,51 @@
 - M2 回归全部通过：`scripts/verify.ts` 13 项 PASS（关系链/唯一约束 P2002/Restrict P2003/SetNull/Cascade）；`db:seed` 幂等跳过；`@geolens/api` nest build 通过、启动后 `GET /health`=ok、`GET /health/db`=connected（organizationCount=1，与迁移前一致）；`@geolens/web` next build 通过（4 static pages）。
 - 关键验证：`apps/api/node_modules/@geo/database` 为标准 NTFS symlink → `packages/database`，exFAT workaround 依据消失。
 
+## 2026-09-05 — isolated/hoisted A/B 实验与工具链固定（D-013 前置）
+
+锁定工具链组合：Windows NTFS / Node 25.8.2 / pnpm 11.1.0 / Next.js 15.5.25 / pnpm workspace。
+
+### A/B 对照实验（隔离复现）
+- `isolated`（pnpm 默认 symlink virtual store）：`next build` 在 prerender 内置错误页（_error.js，内联双 React）时崩溃，报 `Cannot read properties of null (reading 'useContext')`。
+- `hoisted`（`nodeLinker: hoisted` + 清 `.next`）：`next build` 完整成功，7/7 静态页面正常生成，进程正常退出。
+- 结论：可重复构建优先于 node_modules 布局偏好；判定为 **current toolchain compatibility issue**（当前工具链组合兼容性问题），未定位 Next/pnpm 源码前不作"官方 Bug"或"pnpm isolated 必然双 React"的绝对定性。实验可重复：hoisted 恒成功、isolated 恒失败。
+
+### 工具链版本固定（防漂移）
+- 根 `package.json`：`engines.node` 固定为 `25.8.2`；`packageManager: pnpm@11.1.0`（精确）。
+- `apps/web/package.json`：`next: 15.5.25`、`react: 19.2.8`、`react-dom: 19.2.8`（全部精确版本，去除无上限范围）。
+- pnpm 配置入口统一：`pnpm-workspace.yaml`（`nodeLinker: hoisted` + `onlyBuiltDependencies`），移除根 `package.json` 的冗余 `pnpm` 块与废弃的 `allowBuilds` 字段。
+- `pnpm why react`：仅 `react@19.2.8` 1 个版本（@geolens/web 依赖；next@15.5.25 引用同一版本）。Found 1 version of react。
+- `pnpm why react-dom`：仅 `react-dom@19.2.8` 1 个版本（@geolens/web 依赖；next@15.5.25 引用同一版本）。Found 1 version of react-dom。
+- 结论：react / react-dom 无多版本共存，不存在多副本不兼容问题。
+
+### 防回归检查（防漂移）
+- 后续升级 Node / pnpm / Next.js / React / React DOM **任一**版本前，必须重新执行 isolated/hoisted compatibility check（临时切 `nodeLinker: hoisted` 验证）。
+- 当前原则：先稳定开发，**不主动升级**上述任一版本。
+
+## 2026-09-05 — D-013 正式落地：hoisted layout + clean test 回归
+
+### 正式配置落地
+- `pnpm-workspace.yaml`：`nodeLinker: hoisted`（正式）+ `verifyDepsBeforeRun: false` + `onlyBuiltDependencies`（7 项）+ `allowBuilds`（对应 7 包显式 true，供 pnpm 11 放行构建脚本）。
+- pnpm 配置入口统一至 `pnpm-workspace.yaml`：根 `package.json` 移除冗余 `pnpm.onlyBuiltDependencies` 块；`.npmrc` 恢复原样（无冗余 configure）。
+- 版本固定：根 `engines.node: 25.8.2`；`apps/web`: `next 15.5.25`、`react 19.2.8`、`react-dom 19.2.8`。
+- workspace:* 继续保留：`apps/api → @geo/database: workspace:*` 不变，仅物理布局为 flat/hoisted。
+
+### Clean test（删除可再生成产物后全新安装）
+- 删除：根及各包 `node_modules`、`apps/web/.next`、`apps/api/dist`、`packages/database/dist`（未动 `.env`、Docker named volume `geo_postgres_data`、业务数据）。
+- `pnpm install`：779 resolved / 675 added，`@prisma/client`/`@prisma/engines`/`prisma`/`esbuild`/`argon2`/`@parcel/watcher`/`unrs-resolver` 构建脚本全部执行（首轮因 allowBuilds 占位符被忽略，显式置 true 后重装放行）。
+- `prisma generate`：client 生成至根 `node_modules/.prisma/client`，`User`/`OrgRole` 等模型类型齐全。
+
+### `pnpm -r build` 回归（全新依赖，非旧缓存）
+- `apps/web`（next build）：7/7 静态页生成，进程正常退出。
+- `packages/database`（tsc）：Done。
+- `apps/api`（nest build）：Done（首次编译报 `@prisma/client` 缺 `OrgRole/User`，为 generate 未针对 schema 生成的空模板，重跑 `prisma generate` 后通过）。
+- 关键验证：`apps/api/node_modules/@geo/database` 为标准 SymbolicLink → `packages/database`，从 workspace 正确解析，未误装 registry 同名包。
+
+### 数据与存活回归
+- `packages/database/scripts/verify.ts`：13 项全部 PASS（关系链/唯一约束 P2002/Restrict P2003/SetNull/Cascade）。
+- api 起服：`GET /health` = `{"status":"ok"}`；`GET /health/db` = `{"status":"ok","database":"connected","organizationCount":11}`。
+- PostgreSQL 容器（geo-postgres / named volume）全程 healthy，数据未受影响。
+
 ## 下一阶段（M3）
 
 - Redis + BullMQ 队列基础设施与 Worker 骨架。
