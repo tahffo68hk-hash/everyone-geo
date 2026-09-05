@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { EvidenceDialog } from "./evidence-dialog";
+import { TaskMetrics } from "./task-metrics";
 
 type Options = {
   projects: Array<{ id: string; name: string; queries: Array<{ id: string; text: string }> }>;
@@ -48,6 +50,7 @@ export default function MonitorPage() {
   const [engineIds, setEngineIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [task, setTask] = useState<MonitorTask | null>(null);
   const [pollError, setPollError] = useState("");
@@ -134,6 +137,7 @@ export default function MonitorPage() {
         body: JSON.stringify({ projectId, queryIds, engineIds }),
       });
       if (controller.signal.aborted) return;
+      setSelectedRunId(null);
       activeTask.current = data.id;
       setTask(data);
       setTaskId(data.id);
@@ -227,8 +231,8 @@ export default function MonitorPage() {
                 <div className="mt-5 overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <caption className="sr-only">各查询与引擎的运行状态</caption>
-                    <thead className="border-b border-slate-200 text-slate-500"><tr><th scope="col" className="p-2">查询</th><th scope="col" className="p-2">引擎</th><th scope="col" className="p-2">状态</th><th scope="col" className="p-2">尝试次数</th><th scope="col" className="p-2">错误</th></tr></thead>
-                    <tbody>{task.runs.map((run) => <tr key={run.id} className="border-b border-slate-100 align-top"><td className="min-w-48 break-words p-2">{queries.get(run.queryId) ?? run.queryId}</td><td className="p-2">{engines.get(run.engineId) ?? run.engineId}</td><td className="whitespace-nowrap p-2">{statusLabels[run.status] ?? run.status}</td><td className="p-2">{run.attempt}</td><td className="max-w-80 break-words p-2 text-red-700">{[run.errorCode, run.errorMessage].filter(Boolean).join("：") || "—"}</td></tr>)}</tbody>
+                    <thead className="border-b border-slate-200 text-slate-500"><tr><th scope="col" className="p-2">查询</th><th scope="col" className="p-2">引擎</th><th scope="col" className="p-2">状态</th><th scope="col" className="p-2">尝试次数</th><th scope="col" className="p-2">错误</th><th scope="col" className="p-2">证据</th></tr></thead>
+                    <tbody>{task.runs.map((run) => <tr key={run.id} className="border-b border-slate-100 align-top"><td className="min-w-48 break-words p-2">{queries.get(run.queryId) ?? run.queryId}</td><td className="p-2">{engines.get(run.engineId) ?? run.engineId}</td><td className="whitespace-nowrap p-2">{statusLabels[run.status] ?? run.status}</td><td className="p-2">{run.attempt}</td><td className="max-w-80 break-words p-2 text-red-700">{[run.errorCode, run.errorMessage].filter(Boolean).join("：") || "—"}</td><td className="p-2"><button type="button" className="whitespace-nowrap text-blue-700 underline" onClick={() => setSelectedRunId(run.id)} aria-label={`查看运行证据：${queries.get(run.queryId) ?? run.queryId} · ${engines.get(run.engineId) ?? run.engineId}`}>查看证据</button></td></tr>)}</tbody>
                   </table>
                   {!task.runs.length && <p className="py-4 text-sm text-slate-500">暂无运行记录。</p>}
                 </div>
@@ -236,6 +240,8 @@ export default function MonitorPage() {
             )}
           </section>
         )}
+        {taskId && <TaskMetrics key={taskId} taskId={taskId} taskStatus={task?.status} />}
+        {selectedRunId && <EvidenceDialog key={selectedRunId} runId={selectedRunId} onClose={() => setSelectedRunId(null)} />}
       </div>
     </main>
   );
