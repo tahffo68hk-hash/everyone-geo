@@ -11,7 +11,7 @@ AIGC:
 
 # GeoLens 架构设计（第一版）
 
-> 项目：C:\dev\geo-platform ｜ 代号：GeoLens: AI Visibility Intelligence
+> 项目：D:\dev\geo-platform ｜ 代号：GeoLens: AI Visibility Intelligence
 > 技术决策以 docs/DECISIONS.md 为准，本文件为总体架构视图。
 
 ## 1. 设计目标

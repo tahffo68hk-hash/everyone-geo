@@ -73,5 +73,5 @@ import { prisma, PrismaClient } from "@geo/database";
 // 或经 NestJS 注入：constructor(private readonly prisma: PrismaService) {}
 ```
 
-> 说明：workspace 交叉依赖（apps/api → @geo/database）在根目录（C:\dev\geo-platform，NTFS）下使用标准 symlink，
+> 说明：workspace 交叉依赖（apps/api → @geo/database）在根目录（D:\dev\geo-platform，NTFS）下使用标准 symlink，
 > 由 pnpm 原生 `workspace:*` 解析，无需任何 workaround（详见 DECISIONS D-012）。

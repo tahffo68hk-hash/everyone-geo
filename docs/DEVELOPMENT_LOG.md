@@ -91,3 +91,7 @@
 
 - Redis + BullMQ 队列基础设施与 Worker 骨架。
 - Config 包环境校验与 LLM Provider Adapter 骨架。
+
+## 2026-09-05 — M2.5 D 盘迁移收尾
+
+正式目录 D:\dev\geo-platform，Node 24.20.0 / pnpm 11.1.0 / hoisted。标准 Nest 构建排除 test 后恢复 dist/main.js。原 geolens 数据完整复制到 geo_dev，geo_test 独立测试；原卷不变。9 条多余组织来自三轮 auth e2e 的持久注册和不完整清理，详见 DATA_HYGIENE.md。三次 seed、verify、auth 13 项、保护 15 项通过，开发基础表指纹不变。已评审既有 auth/web 实现，单独提交以避免混入基础设施修复。

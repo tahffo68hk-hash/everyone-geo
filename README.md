@@ -11,7 +11,7 @@ AIGC:
 
 # GeoLens — AI Visibility Intelligence
 
-> 开发代号 GeoLens，项目根目录 `C:\dev\geo-platform`
+> 开发代号 GeoLens，项目根目录 `D:\dev\geo-platform`
 
 基于 Node.js / TypeScript 自研的 **GEO（Generative Engine Optimization）监测数据平台**。
 目标不是复制任何现有商业系统或开源项目，而是吸收已被验证的产品逻辑，
@@ -42,7 +42,7 @@ AIGC:
 ## Monorepo 结构
 
 ```
-C:\dev\geo-platform
+D:\dev\geo-platform
 ├─ apps
 │  ├─ web        Next.js 前端
 │  ├─ api        NestJS API
@@ -95,3 +95,20 @@ pnpm dev:web        # 仅前端
 pnpm dev:api        # 仅后端
 ```
 *（内容由AI生成，仅供参考）*
+
+## 当前开发环境（M2.5）
+
+正式路径 D:\dev\geo-platform。每次 PowerShell 会话先执行：
+
+```powershell
+. .\scripts\use-node24.ps1
+node -v # v24.20.0
+pnpm.cmd -v # 11.1.0
+pnpm.cmd install --frozen-lockfile
+pnpm.cmd -r build
+pnpm.cmd --filter @geolens/api start
+# 另一个终端
+pnpm.cmd --filter @geolens/web start
+```
+
+DATABASE_URL 指向 geo_dev；TEST_DATABASE_URL 指向 geo_test。历史数据库 geolens 保留，迁移不是重新 seed。详见 docs/DATA_HYGIENE.md。

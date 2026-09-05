@@ -12,6 +12,7 @@
  *       故「预期破坏约束」的用例必须独立语句执行（单条失败自动回滚），
  *       不能在同一个交互式事务内 catch 后继续。
  */
+import "./test-env.cjs";
 import { prisma } from "../src";
 
 let allPass = true;

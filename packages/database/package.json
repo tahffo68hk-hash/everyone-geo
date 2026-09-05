@@ -19,14 +19,17 @@
     "migrate": "prisma migrate dev",
     "deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "build": "tsc -p tsconfig.json",
-    "verify": "tsx scripts/verify.ts"
+    "db:seed:test": "node --require ./scripts/test-env.cjs --import tsx prisma/seed.ts",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "verify": "node --require ./scripts/test-env.cjs --import tsx scripts/verify.ts",
+    "test:guard": "node --test scripts/test-env.test.cjs"
   },
   "dependencies": {
     "@prisma/client": "^6.11.0",
     "argon2": "^0.45.1"
   },
   "devDependencies": {
+    "dotenv": "^17.4.2",
     "prisma": "^6.11.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"

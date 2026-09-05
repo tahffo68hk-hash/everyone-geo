@@ -75,3 +75,9 @@ AIGC:
 - 影响/表述澄清：**不放弃 `workspace:*` 原生语义** — workspace:* protocol 继续保留，Monorepo 结构、workspace dependency declaration 不变。变化的仅是 node_modules 物理布局：从 pnpm isolated / symlinked virtual store layout 改为 flat / hoisted layout。
 - 防回归：后续升级 Node / pnpm / Next.js / React / React DOM 任一版本前，必须重新执行 isolated/hoisted compatibility check（详见 DEVELOPMENT_LOG）。
 *（内容由AI生成，仅供参考）*
+
+## D-014 Development workspace moved from C: to D:（2026-09-05）
+- 原因：C 盘空间压力。正式目录 D:\dev\geo-platform；C:\dev\geo-platform 仅保留为旧备份，不再修改。
+- Runtime：项目专用 D:\tools\node24\node.exe（24.20.0），pnpm 11.1.0；仅会话 PATH 前置，不修改系统 PATH。
+- 延续 D-013 的 nodeLinker: hoisted，后续验证当前配置，不再要求 isolated 对照实验。
+- 数据：保留原 geolens 和 named volume，复制原数据到 geo_dev，geo_test 专用于测试。见 DATA_HYGIENE.md。
