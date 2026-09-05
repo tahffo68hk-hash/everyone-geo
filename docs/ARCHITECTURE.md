@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 15ce975b5f313de8edfa891b974a2219_e76797d8a8c311f1be88525400aeaaa3
+    ReservedCode1: SPWN5FQ1ee5ENaq027fFz23fXnsFn107llVzj2MpO5USzmAtirQRA9eeVOwKHX3Zp/b6Jtz7plyA+WoYLPXmdyP7FAwtIVGBlfALxe+lb2MTcsB0WAa0EBwiDeBxY6D31ISRn9bROdBujwoHcMMpDj/BhRIaOCnrxmePZX3yn2TYsYY2hGCI6dAGlgE=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 15ce975b5f313de8edfa891b974a2219_e76797d8a8c311f1be88525400aeaaa3
+    ReservedCode2: SPWN5FQ1ee5ENaq027fFz23fXnsFn107llVzj2MpO5USzmAtirQRA9eeVOwKHX3Zp/b6Jtz7plyA+WoYLPXmdyP7FAwtIVGBlfALxe+lb2MTcsB0WAa0EBwiDeBxY6D31ISRn9bROdBujwoHcMMpDj/BhRIaOCnrxmePZX3yn2TYsYY2hGCI6dAGlgE=
+---
+
 # GeoLens 架构设计（第一版）
 
 > 项目：V:\geo-platform ｜ 代号：GeoLens: AI Visibility Intelligence
@@ -46,7 +57,7 @@
 | packages/config | TS | 环境配置装载、校验 |
 | packages/llm | TS | LLMProvider 统一接口 + 各 Provider 实现 |
 | packages/geo-core | TS | GEO 指标计算、分析规则、Query 生成逻辑 |
-| packages/database | TS/Prisma | Schema、Prisma Client、migration、seed |
+| packages/database | TS/Prisma | Schema、Prisma Client、migration、seed（M2 已落地）；api/worker 统一经 `@geo/database` 全局单例访问 |
 | packages/ui | React | shadcn/ui 基础组件（供 web 复用） |
 
 ## 4. 核心架构决策摘要
@@ -61,9 +72,12 @@
 
 ## 5. 数据模型总览（详见 packages/database/schema.prisma）
 
-`User, Organization, Project, Brand, Competitor, Query, QuerySet, Engine, Model,
+`User, Organization, OrganizationMember, Project, Brand, Competitor, Query, QuerySet, Engine, Model,
 MonitorTask, Run, Response, Mention, Citation, ContentAsset, Experiment, PreferencePair,
 Report, PromptTemplate, CreditLedger`
+
+> **M2 已落地（迁移 `init`）**：`User / Organization / OrganizationMember / Project / Brand / Competitor / QuerySet / Query` 共 8 张表；
+> 其余为后续里程碑规划，统一按 D-009 补充 schema 后迁移。
 
 核心链路：
 
@@ -99,3 +113,4 @@ User ─ Organization ─ Project ─ Brand / Competitor
 - Experiment → ContentAsset(A/B) → Run → Response → PreferencePair(A>B)。
 - 目标：构建 GEO Preference Dataset 与 GEO Preference Model。
 - 当前只需保证数据模型与 Evidence 结构能承载该演进。
+*（内容由AI生成，仅供参考）*

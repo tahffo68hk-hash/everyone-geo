@@ -16,7 +16,21 @@
 - 联调验证通过后按流程停止服务。
 - 踩坑：V 盘为 exFAT 文件系统，pnpm 默认 symlink 布局安装失败（ERR_PNPM_EISDIR）；已通过 `.npmrc` 设置 `node-linker=hoisted` 解决；且 hoisted 模式下依赖提升至根 `node_modules`，启动 next bin 需使用根路径。
 
-## 下一阶段（M2）
+## 2026-09-05 — M2 PostgreSQL/Prisma 数据库层
 
-- 数据库 schema 与迁移：User / Organization / Project / Brand / Competitor / Query / QuerySet。
-- 设置 PostgreSQL 与 Prisma。
+- 新增 `packages/database`：Prisma 单一事实来源（schema/prisma/schema.prisma），导出全局 PrismaClient 单例。
+- 数据模型（8 张表）：User / Organization / OrganizationMember / Project / Brand / Competitor / QuerySet / Query，UUID 主键 + 多租户（Organization 维度）+ 复合唯一约束（slug、OrgMember(userId+organizationId)、Project(organizationId+name)）。
+- FK 删除策略：Organization→Project 为 Restrict；Project→Brand/Competitor/QuerySet 为 Cascade；QuerySet→Query 为 SetNull。
+- Docker Compose（`docker-compose.yml`）：postgres:17-alpine + named volume `geo_postgres_data` + healthcheck，绑定 127.0.0.1:5432。
+- 完成 `prisma migrate dev --name init`→8 张表落库；`prisma db seed` 写入最小种子数据（1 User / 1 Org / 1 Project / 1 Brand / 3 Competitors / 2 QuerySets / 10 Queries），幂等可重入。
+- `scripts/verify.ts` 验收全部通过：关系链、唯一约束(P2002)、Restrict(P2003)、SetNull/Cascade 均符合预期。
+- `apps/api` 接入数据库：新增 PrismaModule / PrismaService（包装 @geo/database 单例），`GET /health/db` 只读连通检查通过（organizationCount=1）。
+- named volume 持久化验证：`docker compose down` 后 `up -d` 数据完整保留。
+- 踩坑：
+  - **PostgreSQL 事务 aborted 语义**：交互式事务中触发约束错误后，事务进入 aborted 状态，后续命令全部被忽略（25P02）。因此"预期破坏约束"的用例必须独立语句执行验证，不能在同一个事务内 catch 后继续。
+  - **exFAT 二次踩坑（workspace 交叉依赖）**：`node-linker=hoisted` 只解决第三方依赖；workspace 内部依赖（`apps/api → @geo/database`）仍走 symlink，V 盘(exFAT) 不支持 → `EISDIR: symlink` 导致 `pnpm install` 失败。已用 `apps/api/scripts/link-database.cjs`（postinstall 自动拷贝 `packages/database` 到 `apps/api/node_modules/@geo/database`）兜底，详见 D-010。**建议将项目迁移到 NTFS 分区以根治。**
+
+## 下一阶段（M3）
+
+- Redis + BullMQ 队列基础设施与 Worker 骨架。
+- Config 包环境校验与 LLM Provider Adapter 骨架。

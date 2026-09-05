@@ -1,0 +1,27 @@
+# GeoLens 本地开发环境（M2）
+# PostgreSQL 仅绑定本机回环地址，不开放公网。
+# 数据存放在 Docker named volume: geo_postgres_data（避免 V: exFAT bind mount 问题）
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: geo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-geolens}
+      POSTGRES_USER: ${POSTGRES_USER:-geolens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD（见 .env.example）}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - geo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-geolens} -d ${POSTGRES_DB:-geolens}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  geo_postgres_data:
+    name: geo_postgres_data

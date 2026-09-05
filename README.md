@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 15ce975b5f313de8edfa891b974a2219_eb375323a8c311f188bd525400287e28
+    ReservedCode1: EvSBdfhDTP9L1m+EJt/VJ5jT9G5ZNdzugqzsXeHptE7vzFTrS81Sf6lIFRrLaNhhAfWB6XWAOXWN92R2MfAOGnN3KCnO8YN15cvD81OnBnKMtQDDg/+deULH8lDOI5BYNLj6WY5FJ6arpDnG62/w3mopN/+aoE8Rj8UhUv6Wr+A+bhxCv9t0TEWGZv8=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 15ce975b5f313de8edfa891b974a2219_eb375323a8c311f188bd525400287e28
+    ReservedCode2: EvSBdfhDTP9L1m+EJt/VJ5jT9G5ZNdzugqzsXeHptE7vzFTrS81Sf6lIFRrLaNhhAfWB6XWAOXWN92R2MfAOGnN3KCnO8YN15cvD81OnBnKMtQDDg/+deULH8lDOI5BYNLj6WY5FJ6arpDnG62/w3mopN/+aoE8Rj8UhUv6Wr+A+bhxCv9t0TEWGZv8=
+---
+
 # GeoLens — AI Visibility Intelligence
 
 > 开发代号 GeoLens，项目根目录 `V:\geo-platform`
@@ -66,12 +77,21 @@ V:\geo-platform
 - [产品地图](docs/PRODUCT_MAP.md)
 - [开发日志](docs/DEVELOPMENT_LOG.md)
 - [决策记录](docs/DECISIONS.md)
+- [数据库说明](docs/DATABASE.md)
 
 ## 运行
 
 ```bash
 pnpm install
+
+# 启动数据库（PostgreSQL，需先安装 Docker Desktop）
+docker compose up -d
+# 首次：迁移 + 种子（在 packages/database 下执行）
+pnpm --filter @geo/database migrate
+pnpm --filter @geo/database db:seed
+
 pnpm dev            # 同时启动 web + api
 pnpm dev:web        # 仅前端
 pnpm dev:api        # 仅后端
 ```
+*（内容由AI生成，仅供参考）*

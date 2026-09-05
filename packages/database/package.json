@@ -1,0 +1,33 @@
+{
+  "name": "@geo/database",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GeoLens - PostgreSQL + Prisma schema, client & seed (single source of truth)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "build": "tsc -p tsconfig.json",
+    "verify": "tsx scripts/verify.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.11.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

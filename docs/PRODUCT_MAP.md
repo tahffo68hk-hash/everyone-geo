@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 15ce975b5f313de8edfa891b974a2219_e923ef7aa8c311f1be88525400aeaaa3
+    ReservedCode1: ONO9cH+W6eon8Ia/RUKZ2JptYfySW5N7WbQt8JmvzLqePEnOqehvCPc4a9vggNp4vqzJv1CK+KLG+p6dgukbwhumhii/YiHdFb87hmLgyXf4HxPNLEhCoUb8FcCn5JeUuEB03Vh1zfoMBW70K6U2R06isi+oZ47n74cmbFaOt/i7gHYu3fXJyGHrwKU=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 15ce975b5f313de8edfa891b974a2219_e923ef7aa8c311f1be88525400aeaaa3
+    ReservedCode2: ONO9cH+W6eon8Ia/RUKZ2JptYfySW5N7WbQt8JmvzLqePEnOqehvCPc4a9vggNp4vqzJv1CK+KLG+p6dgukbwhumhii/YiHdFb87hmLgyXf4HxPNLEhCoUb8FcCn5JeUuEB03Vh1zfoMBW70K6U2R06isi+oZ47n74cmbFaOt/i7gHYu3fXJyGHrwKU=
+---
+
 # GeoLens 产品地图（第一版）
 
 > 依据对 GEO 商业系统（中网智达、geo.b7u.cn 等在线 SaaS）与开源项目（Gego、GEORank、OneGlanse、E-GEO、geolook 等）的功能调研整理。
@@ -79,3 +90,4 @@
 - 运行监测，数据库产出 30 条独立 Run/Response。
 - 分析 Mention/Rank/Recommendation/Citation。
 - Dashboard 展示 Share of Voice，点任意数据可看到完整 Raw Response Evidence。
+*（内容由AI生成，仅供参考）*

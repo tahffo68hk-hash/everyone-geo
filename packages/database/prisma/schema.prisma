@@ -1,0 +1,196 @@
+// GeoLens - 数据库 Schema（唯一事实来源 Single Source of Truth）
+// 所有业务实体统一：id (UUID v4) + createdAt + updatedAt
+// ID 决策见 docs/DECISIONS.md D-009；ER 关系/索引/删除策略见 docs/DATABASE.md
+// 本 schema 只允许被 packages/database 维护，apps/api 与 apps/worker 通过 @geo/database 访问。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 账号与组织（多租户底座）
+// ============================================================
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  name         String?
+  passwordHash String?
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  memberships OrganizationMember[]
+
+  @@index([status])
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique // 租户唯一标识，未来所有业务数据可追溯至此
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members  OrganizationMember[]
+  projects Project[]
+
+  // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
+  // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
+}
+
+model OrganizationMember {
+  id             String  @id @default(uuid()) @db.Uuid
+  userId         String  @db.Uuid
+  organizationId String  @db.Uuid
+  role           OrgRole @default(MEMBER)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 同一用户不得重复加入同一组织
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([role])
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// ============================================================
+// 项目与 GEB 相关实体
+// ============================================================
+
+model Project {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  name           String
+  description    String?
+  industry       String?
+  region         String?
+  targetAudience String?
+  status         ProjectStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  brands       Brand[]
+  competitors  Competitor[]
+  querySets    QuerySet[]
+  queries      Query[]
+
+  // 同一组织内项目名唯一，避免命名冲突
+  @@unique([organizationId, name])
+  @@index([status])
+  // 策略：organizationId FK 由 Prisma 自动建立索引（下同）
+}
+
+model Brand {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  name        String
+  website     String?
+  description String?
+  products    String[] // 品牌产品列表，PostgreSQL text[]；决策见 D-010
+  aliases     String[] // 用于未来 Mention Detection 的低配品牌别名，如 ["Project Mentor","项目导师","PMentor"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // 策略：Brand 从属于 Project，项目删除即删除品牌（级联，理由充分：品牌数据不脱离项目独立存在）
+}
+
+model Competitor {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  name        String
+  website     String?
+  description String?
+  aliases     String[] // 竞对别名，用于 Mention Detection
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // 决策：不与 Brand 共用表（业务语义清晰优先），见 D-011
+}
+
+model QuerySet {
+  id          String  @id @default(uuid()) @db.Uuid
+  projectId   String  @db.Uuid
+  name        String  // 如：核心推荐词 / 行业问题 / 购买意图 / 品牌比较 / 地域问题
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  queries Query[]
+
+  // 同一 Project 内 QuerySet 名称唯一（作为用户可理解的分组标识）
+  @@unique([projectId, name])
+}
+
+model Query {
+  id         String      @id @default(uuid()) @db.Uuid
+  projectId  String      @db.Uuid
+  querySetId String?     @db.Uuid
+  text       String
+  type       QueryType   @default(CUSTOM)
+  source     QuerySource @default(MANUAL)
+  status     QueryStatus @default(ACTIVE)
+  language   String?
+  region     String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  querySet QuerySet? @relation(fields: [querySetId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([type])
+  // 策略：querySetId 删除时 SetNull —— Query 保留但脱离分组，避免删除 QuerySet 连带清空监测数据源；
+  // 监测结果绝不直接写入 Query 表（未来 Query → MonitorTask → Run → Response 链路）。
+}
+
+enum QueryType {
+  BRAND
+  INDUSTRY
+  RECOMMENDATION
+  COMPARISON
+  PURCHASE_INTENT
+  PROBLEM_SOLVING
+  LOCAL
+  CUSTOM
+}
+
+enum QuerySource {
+  AI_GENERATED
+  MANUAL
+  IMPORTED
+}
+
+enum QueryStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}

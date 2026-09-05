@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 15ce975b5f313de8edfa891b974a2219_ea3160b6a8c311f1be88525400aeaaa3
+    ReservedCode1: lj5F2C3S/pxYlPhZVSGIcrZma50s1xlzsIvRdd6GpfW1p8mkGVny72j+spWqlvUA5vlbpNvY6MJI6akcfS20hxGs35P6UYCDnkVLpPA10SXMP2kEdhDCCd8V+bL8HXDkQEtpEi2hgxl/HMKlJitPko4eX0X6RS7YuJMstgiuIlnsuYcGnKVZNWCd+5A=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 15ce975b5f313de8edfa891b974a2219_ea3160b6a8c311f1be88525400aeaaa3
+    ReservedCode2: lj5F2C3S/pxYlPhZVSGIcrZma50s1xlzsIvRdd6GpfW1p8mkGVny72j+spWqlvUA5vlbpNvY6MJI6akcfS20hxGs35P6UYCDnkVLpPA10SXMP2kEdhDCCd8V+bL8HXDkQEtpEi2hgxl/HMKlJitPko4eX0X6RS7YuJMstgiuIlnsuYcGnKVZNWCd+5A=
+---
+
 # GeoLens 关键架构决策记录（DECISIONS）
 
 > 每做关键架构/产品决策即追加一行，做反向决策时标注"已废弃"。
@@ -34,3 +45,18 @@
 ## D-008 任务异步化（2026-09-05）
 - 决策：批量监测走 Redis+BullMQ，Worker 消费，支持 Retry/Rate Limit/Timeout/Concurrency。
 - 理由：批量 AI 查询不能同步阻塞 API。
+## D-009 数据库：PostgreSQL + Prisma 为单一事实来源（2026-09-05）
+- 决策：schema 唯一保存在 `packages/database`，经 `prisma migrate` 落 PostgreSQL(Docker, named volume)；app/worker 统一经 `@geo/database` 全局 Client 单例访问，Multi-tenancy 以 Organization 为维度实现。
+- 理由：全栈 TS 下 Prisma 类型安全优先；named volume 保证 `docker compose down` 不丢数据；单例避免连接池重复。
+- 影响：api/worker 不自行 new Client、不自行维护 schema；未来新增表一律改 schema.prisma 再 migrate。
+
+## D-010 exFAT workspace 交叉依赖适配（2026-09-05）
+- 决策：V 盘为 exFAT，pnpm workspace 内部依赖（apps/api → @geo/database）默认 symlink 会抛 `EISDIR`；采用 `apps/api/scripts/link-database.cjs`（postinstall 自动拷贝）兜底，`apps/api` 不声明 `workspace:*` 依赖。
+- 理由：`node-linker=hoisted` 仅解决第三方依赖，workspace 交叉依赖仍需真实链接，exFAT 无法满足。
+- 影响：新增 workspace 交叉依赖时须复制该模式（或同步脚本）；**长期建议：将项目迁移至 NTFS 分区（如 C 盘）以根治 symlink/junction 能力缺失。**
+
+## D-011 FK 删除策略与幂等种子（2026-09-05）
+- 决策：Organization→Project 用 Restrict（有项目禁止删组织）；Project→Brand/Competitor/QuerySet 用 Cascade；QuerySet→Query 用 SetNull（保留历史 Query 证据）；约束破坏用例独立语句验证（避免 PostgreSQL 交互式事务 aborted 陷阱）。
+- 理由：组织是数据边界，防误删；Query Evidence 需留存；seed 幂等可重入，便于 CI/本地联调重复执行。
+- 影响：verify.ts 作为回归入口保留。
+*（内容由AI生成，仅供参考）*
