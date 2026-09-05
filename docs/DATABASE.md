@@ -75,3 +75,33 @@ import { prisma, PrismaClient } from "@geo/database";
 
 > 说明：workspace 交叉依赖（apps/api → @geo/database）在根目录（D:\dev\geo-platform，NTFS）下使用标准 symlink，
 > 由 pnpm 原生 `workspace:*` 解析，无需任何 workaround（详见 DECISIONS D-012）。
+
+## M4：Evidence / Analysis / Mention / Citation（2026-09-05）
+
+Migration：`20260905130000_evidence_analysis`（geo_test 先行验证，后应用 geo_dev）。
+
+### 新增枚举
+
+| 枚举 | 值 |
+|---|---|
+| `AnalysisStatus` | PENDING / SUCCEEDED / FAILED（Run 独立于执行状态） |
+| `SourceType` | official_api / browser / third_party_api / manual / estimated / **mock** |
+| `RetrievalMode` | api_plain / api_web_search / official_web_ui / browser_agent / manual_verified / unknown |
+| `Sentiment` | positive / neutral / negative / unknown |
+
+### 新增模型
+
+| 模型 | 关键字段 / 约束 |
+|---|---|
+| `Evidence` | runId **unique**（1:1 Run）；queryText/rawPrompt/rawResponse/provider/engineKey/engineName/model/modelVersion/retrievalMode/sourceType/metadata(entitySnapshot JSON)；**DB trigger 禁止 UPDATE（不可变）** |
+| `Analysis` | evidenceId FK；analysisVersion；brandMentioned/mentionPosition/recommended/sentiment；`@@unique([evidenceId, analysisVersion])`（版本化） |
+| `Mention` | entityType/entityId/canonicalName/displayName/position/context/sentiment/startOffset/endOffset；`@@unique([analysisId, entityType, entityId])` |
+| `Citation` | url/domain/title/position；`@@unique([analysisId, url])` |
+
+### Run 变更
+
+新增 `analysisStatus`（默认 PENDING）、`analysisAttempts`（默认 0，<3 有界重试）、`analysisErrorCode`、`evidence` 反向关系。均为 additive，无破坏。
+
+### FK 删除
+
+MonitorTask → Run → Evidence → Analysis → Mention/Citation 全部 Cascade；Evidence.engineKey/Name 为快照，不设 Engine FK（Engine 删除不影响历史 Evidence）。

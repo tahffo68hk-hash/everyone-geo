@@ -110,3 +110,17 @@ M2.5 收尾后接手半成品 M3（Codex 中断）。先做只读接管审计（
 - **Health**：`/health`=`{"status":"ok"}`、`/health/db`=`{"status":"ok","database":"connected"}`；geo_dev 指纹保持 M2.5 基线（orgs 11 含历史 9 条、monitor_tasks 0、runs 0，未污染）。
 - **文档**：新增 docs/QUEUE.md（架构/状态机/重试/幂等/reconcile/Mock Engine/日志纪律/验收）。
 - **坑位记录**：① 同一消息内对同一文件的多个 Edit 会互相覆盖（必须串行/整写）；② nest build（incremental）陈旧 `tsconfig.build.tsbuildinfo` 与 deleteOutDir 组合会只发 .d.ts 不发 .js —— 删 dist+tsbuildinfo 重建即可；③ Next build 清理旧 `.next` 缓存会触发 safe-delete 批量删除保护 —— 先删 `.next` 再 build。
+
+## 2026-09-05 — M4 GEO Analysis & Evidence Engine 完成
+
+基于 M3（e227dc7），接管 Codex 中断的 M4 半成品（主体代码已写、零测试/零迁移/零验收）。
+
+- **接管审计**：docs/WORKBUDDY_M4_HANDOFF.md。判定无 P0 blocker：schema+migration 一致、geo-core Analyzer/Metrics/45 单测已写、worker evidence 接入、Evidence/Metrics API、UI 组件均存在；worker/queue dist 陈旧需重建；两个库都未跑 evidence_analysis migration。
+- **migration**：`20260905130000_evidence_analysis` geo_test 先行应用（Evidence/Analysis/Mention/Citation + 4 枚举 + Run 3 列 + **Evidence 不可变 DB trigger**），验证 UPDATE 被 23514 拒绝；再应用 geo_dev。
+- **build 稳定性（§十七 永久修复）**：Codex 已落盘 `apps/api/tsconfig.build.json incremental:false`；实测 **clean→normal→normal 三连 build 均产出 dist/main.js**，不再依赖人工删 tsbuildinfo。
+- **测试矩阵（全绿）**：geo-core 49（Codex 已写，首次运行即过）；queue 15；worker 集成 **17**（M3 11 + 新增 evidence.integration.test.ts 6：snapshotEntities/成功写 Evidence+Analysis/DB trigger 拒 UPDATE/负面场景/recoverAnalyses/分析失败不丢 Evidence）；API e2e 26（auth 13 + monitor 7 + evidence 6，首次运行即过）；database guard 15。
+- **M3 回归**：M3 acceptance（6 场景真实 worker：15-runs/retry/perm-fail/PARTIAL/restart/Redis-outage recovery）全 PASS —— Evidence 写入未破坏任何 M3 语义。
+- **M4 acceptance**（新增 `apps/worker/e2e/acceptance-m4.mts` + `pnpm acceptance:m4`）：[A1] 15 Runs→15 Evidence→15 Analysis（真实 worker，scenario 引擎）；[A2] Evidence UPDATE 被 trigger 拒绝；[A3] 版本化（追加 v2 需 analyzer 声明一致版本，重放 v1 幂等）；[A4] metrics 对账精确（visibility=1, avgPos=20/15≈1.333, reco=1, SoV=0.5, citations=10/2）；[A5] worker restart 后 recoverAnalyses 补齐缺失分析且 Evidence 不被重写。5 场景全 PASS。
+- **geo_dev 端到端演示**：seed 幂等重跑补 alice 密码；`seed-demo-m4.ts` 增加 demo-first/second/citation 3 个 scenario mock 引擎（provider=mock，不伪装）；API+Worker（geo_dev）真实链路：alice 登录→POST /monitor-tasks（5 Query × 3 Engine=15 Runs）→ 15/15 SUCCEEDED → `/monitor-tasks/:id/metrics`（visibility 1 / reco 1 / avgPos 1.333 / SoV 0.5 / citation 10/2 / sentiment 全 positive）→ `GET /runs/:id`（Evidence 完整：rawResponse 中文、sourceType=mock、Analysis mentions=[CompA(1),ProjectMentor(2),CompB(3)] 位置序正确）。/health + /health/db PASS。
+- **文档**：新增 docs/GEO_METRICS.md（V0.1 公式、分母语义、position 定义、GeoLens 内部指标声明）、docs/EVIDENCE.md（数据模型/不可变/版本化/状态分离/mock 纪律）、docs/WORKBUDDY_M4_HANDOFF.md；DATABASE.md 追加 M4 章节；M4_PLAN.md 保留为设计档案。
+- **坑位**：① 追加非默认 Analysis 版本必须传声明同版本的 analyzer（否则 ANALYSIS_VERSION_MISMATCH）；② geo_dev 历史 alice 用户 passwordHash 为 NULL，重跑幂等 seed 修复；③ git-bash 后台 `&` 进程随会话回收，常驻服务需 run_in_background。
