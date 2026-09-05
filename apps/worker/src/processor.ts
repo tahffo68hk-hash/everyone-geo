@@ -1,5 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
+import type { Entity } from '@geo/core';
+import { analyzeEvidence, evidenceData, snapshotEntities } from './evidence';
+import { mockResponse } from './mock-response';
 import { UnrecoverableError, type Job } from 'bullmq';
 import type { PrismaClient } from '@geo/database';
 import {
@@ -29,7 +32,7 @@ export function boundedInteger(value: string | undefined, fallback: number, min:
 
 /** An abortable local simulator; no provider credentials or network requests are used. */
 export async function executeMock(input: {
-  queryText: string; engineKey: string; config: unknown; attempt: number; timeoutMs: number;
+  queryText: string; engineKey: string; config: unknown; attempt: number; timeoutMs: number; entities?: Entity[];
 }): Promise<RunResult> {
   const started = performance.now();
   const config = input.config;
@@ -52,8 +55,14 @@ export async function executeMock(input: {
   if (permanentFailure === true || input.attempt <= ((failuresBeforeSuccess as number | undefined) ?? 0)) {
     throw new ExecutionError('MOCK_FAILURE');
   }
+  const scenario = (config as Record<string, unknown>).scenario;
+  let text = `[mock:${input.engineKey}] ${input.queryText}`;
+  if (scenario !== undefined) {
+    try { text = mockResponse(String(scenario), input.entities ?? []); }
+    catch { throw new ExecutionError('INVALID_ENGINE_CONFIG'); }
+  }
   return runResultSchema.parse({
-    provider: 'mock', text: `[mock:${input.engineKey}] ${input.queryText}`,
+    provider: 'mock', text,
     durationMs: Math.round(performance.now() - started),
   });
 }
@@ -82,11 +91,13 @@ export function createRunProcessor(db: PrismaClient, options: { timeoutMs?: numb
     };
     logger({ ...context, duration: 0, status: 'RUNNING' });
     let result: RunResult;
+    let entities: Entity[] = [];
     try {
       if (run.engine.provider !== 'mock') throw new ExecutionError('UNSUPPORTED_PROVIDER');
+      entities = await snapshotEntities(db, run.query.projectId);
       result = await executeMock({
         queryText: run.query.text, engineKey: run.engine.key, config: run.engine.config,
-        attempt: run.attempt, timeoutMs,
+        attempt: run.attempt, timeoutMs, entities,
       });
     } catch (error) {
       const code = error instanceof ExecutionError ? error.code : 'WORKER_ERROR';
@@ -103,12 +114,22 @@ export function createRunProcessor(db: PrismaClient, options: { timeoutMs?: numb
       throw new Error(code);
     }
     let saved: boolean;
-    try { saved = await settleRun(db, run, { status: 'SUCCEEDED', result }); }
+    try { saved = await settleRun(db, run, { status: 'SUCCEEDED', result, persist: async tx => {
+      await tx.evidence.create({ data: evidenceData(run, result.text, entities, result.durationMs) });
+    } }); }
     catch {
       logger({ ...context, duration: Math.round(performance.now() - started), status: 'ERROR', error: 'PERSISTENCE_FAILED' });
       throw new Error('PERSISTENCE_FAILED');
     }
     logger({ ...context, duration: Math.round(performance.now() - started), status: saved ? 'SUCCEEDED' : 'STALE' });
+    if (saved) {
+      // Analysis errors never roll back provider success or raw evidence.
+      try {
+        const evidence = await db.evidence.findUniqueOrThrow({ where: { runId: run.id } });
+        const analyzed = await analyzeEvidence(db, evidence.id);
+        logger({ ...context, duration: Math.round(performance.now() - started), status: analyzed ? 'ANALYZED' : 'ANALYSIS_FAILED' });
+      } catch { logger({ ...context, status: 'ANALYSIS_PENDING', error: 'ANALYSIS_PERSISTENCE_FAILED' }); }
+    }
     return saved ? result : undefined;
   };
 }

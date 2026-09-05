@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import { prisma } from '@geo/database';
 import { createRunQueue, dispatchPendingRuns, reconcileRuns, queueOptions, QUEUE_NAME, type RunJob, type RunResult } from '@geo/queue';
 import { boundedInteger, createRunProcessor, jsonLogger } from './processor';
+import { recoverAnalyses } from './evidence';
 
 export async function startWorker() {
   const concurrency = boundedInteger(process.env.WORKER_CONCURRENCY, 3, 1, 16);
@@ -25,6 +26,7 @@ export async function startWorker() {
       try {
         await reconcileRuns(prisma, queue);
         if (!stopping) await dispatchPendingRuns(prisma, queue);
+        if (!stopping) await recoverAnalyses(prisma);
       } catch { jsonLogger({ component: 'worker', status: 'ERROR', error: 'DISPATCH_UNAVAILABLE' }); }
       finally { if (!stopping) timer = setTimeout(poll, 2000); }
     })();

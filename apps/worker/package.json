@@ -7,8 +7,19 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "test": "node --require ../../packages/database/scripts/test-env.cjs --import tsx --test test/*.test.ts",
-    "acceptance": "node --require ../../packages/database/scripts/test-env.cjs --import tsx e2e/acceptance.mts"
+    "acceptance": "node --require ../../packages/database/scripts/test-env.cjs --import tsx e2e/acceptance.mts",
+    "acceptance:m4": "node --require ../../packages/database/scripts/test-env.cjs --import tsx e2e/acceptance-m4.mts"
   },
-  "dependencies": { "@geo/database": "workspace:*", "@geo/queue": "workspace:*", "bullmq": "^5.58.0", "dotenv": "^17.4.2" },
-  "devDependencies": { "@types/node": "^24.0.0", "tsx": "^4.19.0", "typescript": "^5.5.0" }
+  "dependencies": {
+    "@geo/database": "workspace:*",
+    "@geo/queue": "workspace:*",
+    "bullmq": "^5.58.0",
+    "dotenv": "^17.4.2",
+    "@geo/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
 }
