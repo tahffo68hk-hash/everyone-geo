@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
   DIAGNOSIS_NAV, formatFindingType, formatMetricName, formatMetricSource,
-  formatSeverity, friendlyError, SEVERITY_BADGE, withRaw,
+  formatSeverity, friendlyError, RECOMMENDATION_NAV, SEVERITY_BADGE, withRaw,
 } from "@/lib/labels";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
 
@@ -35,12 +35,16 @@ const num = (v: number | null, isRate: boolean) => v == null ? "—" : isRate ? 
 
 export default function DiagnosisDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [run, setRun] = useState<DiagnosisRun | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [report, setReport] = useState<ReportIdentity | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [evidenceRunId, setEvidenceRunId] = useState<string | null>(null);
+  const [recBusy, setRecBusy] = useState(false);
+  const [hasRecs, setHasRecs] = useState(false);
+  const [existingRecRunId, setExistingRecRunId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError("");
@@ -58,9 +62,25 @@ export default function DiagnosisDetailPage() {
     } finally {
       setLoading(false);
     }
+    // 检查是否已有优化建议
+    try {
+      const recRuns = await api<Array<{ id: string }>>(`/diagnoses/${id}/recommendations`);
+      if (recRuns.length > 0) { setHasRecs(true); setExistingRecRunId(recRuns[0].id); }
+    } catch { /* 无建议 run 属正常 */ }
   }, [id]);
 
   useEffect(() => { void load(); }, [load]);
+
+
+  async function generateRecommendations() {
+    if (recBusy) return;
+    setRecBusy(true); setError("");
+    try {
+      const run = await api<{ id: string }>(`/diagnoses/${id}/recommendations`, { method: "POST", body: JSON.stringify({}) });
+      setHasRecs(true); setExistingRecRunId(run.id);
+      router.push(`/app/recommendations/${run.id}`);
+    } catch (err) { setError(friendlyError(err)); } finally { setRecBusy(false); }
+  }
 
   const counts = run?.summary?.severityCounts ?? null;
   const metricIsRate = (name: string | null) => name === "visibilityRate" || name === "recommendationRate";
@@ -76,6 +96,19 @@ export default function DiagnosisDetailPage() {
               诊断版本：{run.diagnosisVersion} · 状态：{run.status === "READY" ? "已生成" : run.status}
               {run.secondaryReportId ? " · 含跨模型对比" : ""}
             </p>
+          )}
+          {run && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" disabled={recBusy} onClick={() => void generateRecommendations()}
+                className="rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-medium text-white hover:bg-fuchsia-800 disabled:opacity-50">
+                {recBusy ? "生成中…" : `生成${RECOMMENDATION_NAV.generate}`}
+              </button>
+              {hasRecs && existingRecRunId && (
+                <Link href={`/app/recommendations/${existingRecRunId}`} className="rounded-lg border border-fuchsia-700 px-4 py-2 text-sm font-medium text-fuchsia-700 hover:bg-fuchsia-50">
+                  {RECOMMENDATION_NAV.view}
+                </Link>
+              )}
+            </div>
           )}
         </header>
 

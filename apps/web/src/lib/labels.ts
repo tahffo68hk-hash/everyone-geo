@@ -378,3 +378,135 @@ export const DIAGNOSIS_NAV = {
   viewEvidence: "查看证据",
   internalHeuristic: "阈值属 GeoLens internal heuristic，非行业标准、非 LLM 因果推断。",
 } as const;
+
+/* ---------------------------------------------------------------
+ * M7B — GEO 优化建议（Optimization Recommendations / Action Items）
+ * ---------------------------------------------------------------- */
+export const RECOMMENDATION_VERSION_LABEL = "geolens-recommendation-v1";
+
+export const RECOMMENDATION_TYPE: Dict = {
+  ENTITY_CLARITY: "品牌实体清晰度",
+  POSITIONING_CLARITY: "产品定位清晰度",
+  CATEGORY_COVERAGE: "场景覆盖",
+  QUERY_COVERAGE: "用户问题覆盖",
+  RECOMMENDATION_READINESS: "可推荐性准备",
+  COMPETITOR_DIFFERENTIATION: "竞品差异化",
+  CITATION_READINESS: "可引用信息准备",
+  STRUCTURED_INFORMATION: "信息结构优化",
+  PROVIDER_COVERAGE: "模型覆盖优化",
+  SENTIMENT_RESPONSE: "情感风险处理",
+  DATA_COLLECTION: "数据补充",
+};
+export const formatRecommendationType = (value: string | null | undefined): string =>
+  fallback(lookup(RECOMMENDATION_TYPE, value), value);
+
+export const RECOMMENDATION_PRIORITY: Dict = { HIGH: "高", MEDIUM: "中", LOW: "低" };
+export const formatRecommendationPriority = (value: string | null | undefined): string =>
+  fallback(lookup(RECOMMENDATION_PRIORITY, value), value);
+
+export const RECOMMENDATION_STATUS: Dict = {
+  PROPOSED: "待处理", ACCEPTED: "已采纳", DISMISSED: "已忽略",
+};
+export const formatRecommendationStatus = (value: string | null | undefined): string =>
+  fallback(lookup(RECOMMENDATION_STATUS, value), value);
+
+export const ACTION_STATUS: Dict = {
+  TODO: "待办", IN_PROGRESS: "进行中", DONE: "已完成", SKIPPED: "已跳过",
+};
+export const formatActionStatus = (value: string | null | undefined): string =>
+  fallback(lookup(ACTION_STATUS, value), value);
+
+export const ACTION_TYPE: Dict = {
+  UPDATE_PRODUCT_DEFINITION: "更新产品定义",
+  CLARIFY_TARGET_AUDIENCE: "明确目标用户",
+  CLARIFY_CORE_USE_CASES: "明确核心使用场景",
+  ADD_SCENARIO_COVERAGE: "补充场景覆盖",
+  ADD_COMPARISON_INFORMATION: "补充比较信息",
+  ADD_FAQ_STRUCTURE: "补充 FAQ 结构",
+  ADD_EVIDENCE_AND_PROOF: "补充证据与案例",
+  ADD_SOURCE_ATTRIBUTION: "补充来源归属",
+  ADD_ENTITY_CONSISTENCY: "补充实体一致性",
+  ADD_COMPETITOR_DIFFERENTIATION: "补充竞品差异化",
+  ADD_PROVIDER_RELEVANT_CONTENT: "补充模型相关场景内容",
+  REVIEW_NEGATIVE_SIGNAL: "复核负面信号",
+  COLLECT_MORE_DATA: "补充更多数据",
+};
+export const formatActionType = (value: string | null | undefined): string =>
+  fallback(lookup(ACTION_TYPE, value), value);
+
+export const EXPECTED_SIGNAL: Dict = {
+  VISIBILITY: "品牌可见率",
+  RECOMMENDATION: "推荐率",
+  MENTION_POSITION: "平均提及位置",
+  CITATION: "引用信号",
+  COMPETITOR_SOV: "竞品 AI 声量份额",
+  ENTITY_UNDERSTANDING: "实体理解",
+  CATEGORY_COVERAGE: "场景覆盖",
+};
+export const formatExpectedSignal = (value: string | null | undefined): string =>
+  fallback(lookup(EXPECTED_SIGNAL, value), value);
+
+export const TARGET_ASSET: Dict = {
+  HOMEPAGE: "首页",
+  PRODUCT_PAGE: "产品页",
+  FEATURE_PAGE: "功能页",
+  USE_CASE_PAGE: "用例页",
+  FAQ: "FAQ",
+  CASE_STUDY: "案例页",
+  COMPARISON_PAGE: "对比页",
+  ABOUT_PAGE: "关于页",
+  DOCUMENTATION: "文档",
+  STRUCTURED_DATA: "结构化信息",
+  OTHER: "其他",
+};
+export const formatTargetAsset = (value: string | null | undefined): string =>
+  fallback(lookup(TARGET_ASSET, value), value);
+
+export const IMPACT_AREA: Dict = {
+  ENTITY: "实体理解",
+  POSITIONING: "产品定位",
+  CONTENT_COVERAGE: "场景覆盖",
+  RECOMMENDATION: "推荐能力",
+  COMPETITIVE: "竞品差异化",
+  CITATION: "引用准备",
+  STRUCTURE: "信息结构",
+  PROVIDER: "模型覆盖",
+  SENTIMENT: "情感风险",
+  DATA_QUALITY: "数据质量",
+};
+export const formatImpactArea = (value: string | null | undefined): string =>
+  fallback(lookup(IMPACT_AREA, value), value);
+
+export const EFFORT_LEVEL: Dict = { LOW: "低", MEDIUM: "中", HIGH: "高" };
+export const formatEffortLevel = (value: string | null | undefined): string =>
+  fallback(lookup(EFFORT_LEVEL, value), value);
+
+export const RECOMMENDATION_NAV = {
+  list: "GEO 优化建议",
+  detail: "优化建议详情",
+  generate: "生成优化建议",
+  view: "查看优化建议",
+  noRun: "暂无优化建议",
+  emptyHint: "先在 GEO 问题诊断中为报告生成诊断，再基于诊断生成优化建议。",
+  summary: "建议优先级分布",
+  directions: "主要优化方向",
+  rationale: "为什么",
+  findingCount: "来源诊断数",
+  evidenceCount: "证据数",
+  impactArea: "影响方向",
+  targetAsset: "优化对象",
+  expectedSignal: "预期影响指标",
+  effort: "工作量",
+  status: "状态",
+  actionItems: "行动项",
+  actionCount: "行动项数",
+  viewBasis: "查看依据",
+  viewActions: "查看行动项",
+  accept: "采纳",
+  dismiss: "忽略",
+  factLabel: "事实诊断",
+  recLabel: "优化建议",
+  disclaimer: "以下建议基于 GeoLens 确定性规则与当前诊断结果生成，属于优化假设（非因果证明、非效果承诺），需要后续通过复测验证效果。",
+  internalScore: "GeoLens 内部优先级评分（0–100，确定性规则）",
+  verification: "验证方式",
+} as const;
