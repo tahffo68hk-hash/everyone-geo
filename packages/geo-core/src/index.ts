@@ -106,7 +106,12 @@ const positiveCue = /\b(?:good|great|excellent|reliable|helpful|best)\b|优秀|�
 
 /** Conservative lexical v1: cues belong only to the nearest entity occurrence within a clause. */
 export class RuleJudge implements ResponseJudge {
-  readonly analysisVersion = ANALYSIS_VERSION;
+  readonly analysisVersion: string;
+  /** 版本可参数化：m4 默认 ANALYSIS_VERSION；M6B re-analysis 使用独立版本标签
+   *  （如 m6b-competitors-v1）复用同一套确定性词法规则，但不污染 m4 指标。 */
+  constructor(analysisVersion: string = ANALYSIS_VERSION) {
+    this.analysisVersion = analysisVersion;
+  }
   judge({ rawResponse, entityId, occurrences }: JudgeInput): JudgeResult {
     if (!occurrences.some(m => m.entityId === entityId)) return { recommended: false, sentiment: 'unknown' };
     // Mask URLs with spaces, keeping raw offsets and preventing URL tokens from becoming lexical evidence.
@@ -197,4 +202,289 @@ export function aggregateMetrics({ runs, analysisVersion = ANALYSIS_VERSION }: M
     recommendationRate: eligible.length ? eligible.filter(analysis => analysis.recommended).length / eligible.length : null,
     averageMentionPosition: positions.length ? positions.reduce((sum, position) => sum + position, 0) / positions.length : null,
     shareOfVoice: entityCount ? brandCount / entityCount : null, citationCount, citationDomainCount: domains.size, sentimentDistribution };
+}
+
+// ============================================================
+// M6B Competitor Discovery —— deterministic extraction (pure)
+// ============================================================
+// Mentioned Brand ≠ Competitor：这里只产出“候选品牌信号”（候选 ≠ 竞对）。
+// 规则均为确定性词法信号：大小写/别名归并、URL 排除、自身品牌排除、普通词排除；
+// 不输出任何未经训练支持的概率。竞争关系（DIRECT/ADJACENT/SUBSTITUTE）只允许
+// 人工在评审（Approve）时选择，本模块永不推断 DIRECT。
+
+export interface BrandOccurrence { text: string; start: number; end: number }
+
+export interface DiscoveredCandidate {
+  /** 展示名：频次最高的原始变体（lexicon 内全局累计） */
+  canonicalName: string;
+  /** 归并键 token 序列（小写）；跨 Evidence 用其身份做 suffix 归并 */
+  keyTokens: string[];
+  /** 观测到的原始变体（大写变体/拼写变体），供 UI 别名展示 */
+  aliases: string[];
+  /** 本次（单条 Evidence）文本内的命中 */
+  occurrences: BrandOccurrence[];
+}
+
+export interface DiscoveryOptions {
+  /** 自身品牌（name + aliases）：命中既不产候选，也不计为竞对 */
+  ownBrandAliases?: string[];
+  /** 附加排除名（如 legacy 占位 Competitor A/B/C 等开发占位） */
+  excludeNames?: string[];
+  /** 覆盖默认 stop words */
+  stopWords?: ReadonlySet<string>;
+  /** 单候选最大 token 数（防整句被抓成候选），默认 6 */
+  maxTokens?: number;
+}
+
+/** 常见大写句首/功能词与泛化产品词（generic，非针对特定品牌）。 */
+export const DEFAULT_CANDIDATE_STOP_WORDS: ReadonlySet<string> = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'not', 'no', 'yes', 'of', 'for', 'in', 'on', 'at', 'by', 'with',
+  'to', 'from', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'it', 'its', 'this', 'that',
+  'these', 'those', 'there', 'here', 'they', 'their', 'them', 'we', 'our', 'you', 'your', 'he', 'she',
+  'his', 'her', 'i', 'me', 'my', 'all', 'any', 'both', 'each', 'every', 'other', 'others', 'some',
+  'many', 'most', 'more', 'less', 'such', 'like', 'can', 'could', 'would', 'should', 'may', 'might',
+  'must', 'will', 'shall', 'do', 'does', 'did', 'have', 'has', 'had', 'what', 'why', 'when', 'where',
+  'which', 'who', 'whom', 'how', 'if', 'then', 'than', 'also', 'however', 'additionally', 'first',
+  'second', 'third', 'next', 'last', 'one', 'two', 'new', 'top', 'best', 'key', 'popular', 'leading',
+  'great', 'good', 'free', 'paid', 'pro', 'vs', 'versus', 'ai', 'api', 'ui', 'saas', 'app', 'apps',
+  'tool', 'tools', 'software', 'platform', 'platforms', 'feature', 'features', 'pricing', 'review',
+  'reviews', 'compare', 'comparison', 'alternatives', 'alternative', 'use', 'using', 'used', 'need',
+  'needs', 'note', 'notes', 'learn', 'list', 'guide', 'check', 'consider', 'recommended',
+  'recommend', 'recommendation', 'recommendations', 'available', 'latest', 'yourself', 'include',
+  'includes', 'including', 'requires', 'explore', 'ready', 'go', 'chatbot', 'chatbots',
+]);
+
+/** 允许作为候选内部连接词的（小写）功能词：如 "OpenAI and ChatGPT" 中 and。 */
+const CANDIDATE_CONNECTORS = new Set(['a', 'an', 'the', 'of', 'and', 'or', 'for', 'in', 'on', 'at', 'by', 'with', 'to', 'from', 'vs', 'v']);
+/** 允许出现在候选 token 之间的纯标点空隙。 */
+const CANDIDATE_GAP_PUNCT = /^[\s\-–—/·&+]+$/u;
+const UPPER_TOKEN = /[\p{Lu}][\p{L}\p{N}'’&]*/gu;
+
+/** NFKC 折叠 → 小写 → 按非字母数字切分为 token 数组（中文整词为一个 token）。 */
+export function candidateTokens(name: string): string[] {
+  const folded = name.normalize('NFKC').toLowerCase().replace(/[’']/g, '');
+  return folded.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/** token 数组 → 存储/匹配键（空格连接，保留 token 边界供 suffix 归并）。 */
+export function tokensKey(tokens: string[]): string {
+  return tokens.join(' ');
+}
+
+/** a 是否为 b 的 token 级后缀（或相等）；用于大小写/别名/长短写法归并。 */
+export function tokensAreSuffix(shorter: string[], longer: string[]): boolean {
+  if (shorter.length > longer.length) return false;
+  for (let i = 0; i < shorter.length; i++) {
+    if (shorter[i] !== longer[longer.length - shorter.length + i]) return false;
+  }
+  return true;
+}
+
+/** 大小写不敏感的全别名匹配（复用 m4 的归一化 + 偏移映射；URL 内不匹配）。 */
+export function findAliasOccurrences(rawResponse: string, aliases: string[]): BrandOccurrence[] {
+  if (!rawResponse || aliases.length === 0) return [];
+  const normalized = normalizedWithOffsets(rawResponse);
+  const excluded = urlSpans(rawResponse);
+  const found: BrandOccurrence[] = [];
+  const unique = new Set<string>();
+  for (const alias of aliases) {
+    const regex = aliasRegex(alias);
+    if (!regex) continue;
+    for (const match of normalized.text.matchAll(regex)) {
+      const start = match.index!; const end = start + match[0].length;
+      const previous = [...normalized.text.slice(0, start)].at(-1) ?? '';
+      const next = [...normalized.text.slice(end)][0] ?? '';
+      if ((latinWord.test(match[0][0]) && latinWord.test(previous)) ||
+          (latinWord.test(match[0].at(-1)!) && latinWord.test(next))) continue;
+      const startOffset = normalized.starts[start]; const endOffset = normalized.ends[end - 1];
+      if (excluded.some(span => startOffset < span.end && endOffset > span.start)) continue;
+      const key = `${startOffset}:${endOffset}`;
+      if (unique.has(key)) continue;
+      unique.add(key);
+      found.push({ text: rawResponse.slice(startOffset, endOffset), start: startOffset, end: endOffset });
+    }
+  }
+  return found;
+}
+
+/** 给定文本中的全部命名实体命中（供推荐归属判定时传入其他候选/品牌 offset）。 */
+export interface EntityHit extends EntityOccurrence { text: string }
+
+export interface DiscoveryLexiconGroup {
+  keyTokens: string[];
+  canonicalName: string;
+  aliases: string[];
+  variantCounts: Map<string, number>;
+  firstOffset: number;
+}
+
+export interface DiscoveryLexicon {
+  byKey: Map<string, DiscoveryLexiconGroup>;
+}
+
+export function createDiscoveryLexicon(): DiscoveryLexicon {
+  return { byKey: new Map() };
+}
+
+function groupKey(group: DiscoveryLexiconGroup): string {
+  return tokensKey(group.keyTokens);
+}
+
+function mergeGroups(target: DiscoveryLexiconGroup, incoming: DiscoveryLexiconGroup) {
+  for (const [variant, count] of incoming.variantCounts) {
+    target.variantCounts.set(variant, (target.variantCounts.get(variant) ?? 0) + count);
+  }
+  target.firstOffset = Math.min(target.firstOffset, incoming.firstOffset);
+  target.aliases = [...new Set([...target.aliases, ...incoming.aliases])].sort((a, b) =>
+    (target.variantCounts.get(b) ?? 0) - (target.variantCounts.get(a) ?? 0) ||
+    a.length - b.length || a.localeCompare(b));
+  target.canonicalName = target.aliases[0];
+}
+
+/**
+ * 从一条 rawResponse 提取候选品牌信号（确定性）。
+ * 通过 lexicon 跨 Evidence 累计身份：重复/大小写/别名变体（含 "chatgpt" vs
+ * "OpenAI ChatGPT" 的 suffix 归并）只产生同一个候选。
+ */
+export function discoverCandidates(rawResponse: string, options: DiscoveryOptions = {}, lexicon = createDiscoveryLexicon()): DiscoveredCandidate[] {
+  if (!rawResponse) return [];
+  const stopWords = options.stopWords ?? DEFAULT_CANDIDATE_STOP_WORDS;
+  const maxTokens = options.maxTokens ?? 6;
+
+  const urlSpanList = urlSpans(rawResponse);
+  const insideUrl = (offset: number) => urlSpanList.some(span => offset >= span.start && offset < span.end);
+
+  // ---- 第 1 步：uppercase 起始 token 的原始命中 ----
+  const rawTokens: Array<{ text: string; start: number; end: number; tokens: string[] }> = [];
+  for (const match of rawResponse.matchAll(UPPER_TOKEN)) {
+    const start = match.index!; const end = start + match[0].length;
+    if (insideUrl(start)) continue;
+    const text = rawResponse.slice(start, end);
+    const letters = text.replace(/[^\p{L}]/gu, '');
+    if (letters.length < 2) continue;
+    const tokens = candidateTokens(text);
+    const word = tokens.join(''); // 'Ai' 之类整词大写判断
+    if (tokens.length === 1 && stopWords.has(word)) continue;
+    if (tokens.some(t => stopWords.has(t) && t !== word)) continue; // 非全 stop 但含 stop → 拆词处理在 run 分组
+    rawTokens.push({ text, start, end, tokens });
+  }
+
+  // ---- 第 2 步：lexicon 已知候选 + 排除名（自身品牌/占位）的大小写不敏感命中 ----
+  const lexiconAliases: string[] = [];
+  for (const group of lexicon.byKey.values()) lexiconAliases.push(...group.aliases);
+  const hintHits: Array<{ text: string; start: number; end: number; tokens: string[] }> = [];
+  const aliasPool = [...new Set([...lexiconAliases, ...(options.excludeNames ?? [])])];
+  for (const hit of findAliasOccurrences(rawResponse, aliasPool)) {
+    const tokens = candidateTokens(hit.text);
+    if (tokens.length === 0) continue;
+    hintHits.push({ text: hit.text, start: hit.start, end: hit.end, tokens });
+  }
+  // 排除名整体（含大小写/别名拼写）命中 → 重叠 run 整段丢弃：自身品牌/占位 ≠ 竞对
+  const exclusionTexts = [...new Set([...(options.ownBrandAliases ?? []), ...(options.excludeNames ?? [])])];
+  const exclusionHits = findAliasOccurrences(rawResponse, exclusionTexts);
+
+  // ---- 第 3 步：把相邻 token 组装为候选 run ----
+  const detections = [...rawTokens, ...hintHits].sort((a, b) => a.start - b.start || a.end - b.end);
+  const runs: Array<{ tokens: string[]; occurrences: BrandOccurrence[] }> = [];
+  let cursor = 0;
+  while (cursor < detections.length) {
+    const first = detections[cursor];
+    let runTokens = [...first.tokens];
+    let end = first.end;
+    const occurrences = [{ text: first.text, start: first.start, end: first.end }];
+    let next = cursor + 1;
+    while (next < detections.length) {
+      const candidate = detections[next];
+      // 跳过与已并入 run 重叠的 hint（如 lexicon alias 与 raw token 同段重复）
+      if (candidate.start < end) { next += 1; continue; }
+      const gap = rawResponse.slice(end, candidate.start).trim();
+      const gapOk = gap.length === 0 || CANDIDATE_GAP_PUNCT.test(gap) ||
+        (candidateTokens(gap).length === 1 && CANDIDATE_CONNECTORS.has(candidateTokens(gap)[0]));
+      if (!gapOk) break;
+      const mergedTokens = [...runTokens, ...candidate.tokens];
+      if (mergedTokens.length > maxTokens) break;
+      runTokens = mergedTokens;
+      end = candidate.end;
+      occurrences.push({ text: candidate.text, start: candidate.start, end: candidate.end });
+      next += 1;
+    }
+    if (runTokens.length > 0) {
+      // 与排除名整体命中重叠的 run 丢弃（品牌 ≠ 竞对）
+      const overlapsExclusion = occurrences.some(occ => {
+        for (const key of exclusionHits) {
+          if (occ.start < key.end && occ.end > key.start) return true;
+        }
+        return false;
+      });
+      if (!overlapsExclusion) runs.push({ tokens: runTokens, occurrences });
+    }
+    cursor = next;
+  }
+
+  // ---- 第 4 步：suffix 归并（含 lexicon 已有组）→ 返回本次命中 ----
+  const byKeyTokens = new Map<string, { group: DiscoveryLexiconGroup; occurrences: BrandOccurrence[] }>();
+  const attach = (group: DiscoveryLexiconGroup, occurrences: BrandOccurrence[]) => {
+    const key = groupKey(group);
+    const existing = byKeyTokens.get(key);
+    if (existing) {
+      existing.occurrences.push(...occurrences);
+      existing.occurrences.sort((a, b) => a.start - b.start);
+    } else {
+      byKeyTokens.set(key, { group, occurrences });
+    }
+  };
+
+  for (const run of runs) {
+    const candidateGroup: DiscoveryLexiconGroup = {
+      keyTokens: run.tokens, canonicalName: run.occurrences[0].text, aliases: [],
+      variantCounts: new Map(), firstOffset: run.occurrences[0].start,
+    };
+    for (const occ of run.occurrences) {
+      candidateGroup.variantCounts.set(occ.text, (candidateGroup.variantCounts.get(occ.text) ?? 0) + 1);
+    }
+    candidateGroup.aliases = [...candidateGroup.variantCounts.keys()];
+    candidateGroup.canonicalName = candidateGroup.aliases[0];
+
+    // 与 lexicon 已有组做 suffix 归并：长 key 为基，短 key 并入
+    let target: DiscoveryLexiconGroup | undefined;
+    for (const group of lexicon.byKey.values()) {
+      const a = group.keyTokens; const b = candidateGroup.keyTokens;
+      if (tokensAreSuffix(a, b) || tokensAreSuffix(b, a) || tokensKey(a) === tokensKey(b)) {
+        target = group; break;
+      }
+    }
+    if (!target) {
+      lexicon.byKey.set(groupKey(candidateGroup), candidateGroup);
+      target = candidateGroup;
+    } else {
+      const longerKey = target.keyTokens.length >= candidateGroup.keyTokens.length ? target.keyTokens : candidateGroup.keyTokens;
+      mergeGroups(target, candidateGroup);
+      if (longerKey !== target.keyTokens) {
+        lexicon.byKey.delete(tokensKey(target.keyTokens));
+        target.keyTokens = longerKey;
+        lexicon.byKey.set(groupKey(target), target);
+      }
+      // canonical 可能因计数变化而改变
+      target.canonicalName = target.aliases[0];
+    }
+    attach(target, run.occurrences);
+  }
+
+  const results: DiscoveredCandidate[] = [];
+  for (const { group, occurrences } of byKeyTokens.values()) {
+    results.push({
+      canonicalName: group.canonicalName,
+      keyTokens: group.keyTokens,
+      aliases: [...group.aliases],
+      occurrences: [...occurrences],
+    });
+  }
+  results.sort((a, b) => (a.occurrences[0]?.start ?? 0) - (b.occurrences[0]?.start ?? 0));
+  return results;
+}
+
+/** 候选级“推荐”词法信号（确定性，非概率）：同一段内目标候选命中附近的
+ *  推荐/负面 cue 归属给最近实体。 */
+export function judgeRecommendationSignal(rawResponse: string, entityId: string, occurrences: EntityOccurrence[]): boolean {
+  return new RuleJudge().judge({ rawResponse, entityId, occurrences }).recommended;
 }

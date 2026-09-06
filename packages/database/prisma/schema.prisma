@@ -99,6 +99,8 @@ model Project {
   monitorTasks   MonitorTask[]
   benchmarkSuites BenchmarkSuite[]
   benchmarkRuns  BenchmarkRun[]
+  competitorCandidates CompetitorCandidate[]
+  competitorSets CompetitorSet[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -253,6 +255,7 @@ model Run {
   analysisAttempts Int @default(0)
   analysisErrorCode String?
   evidence       Evidence?
+  candidateLinks CompetitorCandidateEvidence[]
   monitorTask    MonitorTask @relation(fields: [monitorTaskId], references: [id], onDelete: Cascade)
   query          Query @relation(fields: [queryId], references: [id], onDelete: Restrict)
   engine         Engine @relation(fields: [engineId], references: [id], onDelete: Restrict)
@@ -330,6 +333,7 @@ model Evidence {
   createdAt      DateTime @default(now())
   run            Run @relation(fields: [runId], references: [id], onDelete: Cascade)
   analyses       Analysis[]
+  candidateLinks CompetitorCandidateEvidence[]
 }
 
 model Analysis {
@@ -340,11 +344,17 @@ model Analysis {
   mentionPosition Int?
   recommended     Boolean
   sentiment       Sentiment
+  // M6B：m6b-competitors-v1 分析记录使用的 Competitor Set（快照语义，非 FK ——
+  // 与 BenchmarkRunQuery.benchmarkQueryId 同理：即使未来 Set/Candidate 行被编辑或
+  // 删除，历史 Analysis 的解释仍完整自包含；读取路径只信本快照）。
+  competitorSetId      String? @db.Uuid
+  competitorSetVersion String?
   createdAt       DateTime @default(now())
   evidence        Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
   mentions        Mention[]
   citations       Citation[]
   @@unique([evidenceId, analysisVersion])
+  @@index([competitorSetId, analysisVersion])
 }
 
 model Mention {
@@ -499,4 +509,129 @@ model BenchmarkRunQuery {
   @@unique([benchmarkRunId, sortOrder])
   @@unique([benchmarkRunId, projectQueryId])
   @@index([benchmarkRunId])
+}
+
+// ============================================================
+// M6B - Competitor Discovery（真实竞对发现 / 人工审核 / 版本化竞对集）
+// ============================================================
+// 设计原则（M6B）：
+//   1) 只有 REAL Evidence（sourceType ∈ official_api/browser/third_party_api/manual
+//      且 provider ≠ mock）才能进入 Discovery；mock/demo/estimated 一律排除 ——
+//      M6A Demo Benchmark Evidence（mock）绝不产生真实竞对输入。
+//   2) Mentioned Brand ≠ Competitor：Discovery 只产生 Candidate（DISCOVERED /
+//      competitorType=UNKNOWN）；DIRECT/ADJACENT/SUBSTITUTE 只能由人工 Approve 时
+//      显式选择，任何代码路径都不得把 UNKNOWN 自动改成 DIRECT。
+//   3) CompetitorCandidateEvidence 只存指向性快照（evidenceId/runId/queryText/
+//      mentionText/…），不复制整份 Evidence —— Evidence 仍是唯一事实源且不可变。
+//   4) CompetitorSet 一旦 ACTIVE 即冻结：Entry 行存 canonicalName/aliases/
+//      competitorType/sortOrder 快照（candidateId 为普通 UUID 记录而非 FK），没有
+//      任何修改 ACTIVE 集合的端点；要换配置必须新建 name+version 的 DRAFT（v2）。
+//   5) A/B/C 为 legacy placeholder：历史 Evidence/Analysis 保持不动；新分析
+//      （m6b-competitors-v1）只消费真实候选 + 已激活 Competitor Set。
+
+enum CandidateStatus {
+  DISCOVERED
+  APPROVED
+  REJECTED
+}
+
+enum CompetitorType {
+  UNKNOWN
+  DIRECT
+  ADJACENT
+  SUBSTITUTE
+  NON_COMPETITOR
+}
+
+enum CompetitorSetStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model CompetitorCandidate {
+  id            String @id @default(uuid()) @db.Uuid
+  projectId     String @db.Uuid
+  canonicalName String
+  normalizedName String // 归并键（NFKC 小写去分隔），discovery/refresh 时按 (projectId, normalizedName) 合并
+  aliases       String[] // 观测到的原始变体（大写变体/中英文拼写），供人工编辑
+  status        CandidateStatus @default(DISCOVERED)
+  competitorType CompetitorType @default(UNKNOWN)
+  firstSeenAt   DateTime
+  lastSeenAt    DateTime
+  // 事实信号计数（仅 Discovery 覆盖的 REAL Evidence；随 refresh 重算，非概率）
+  evidenceCount Int @default(0)
+  queryCount    Int @default(0)
+  mentionCount  Int @default(0)
+  recommendationCount Int @default(0)
+  metadata      Json @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  evidenceLinks CompetitorCandidateEvidence[]
+
+  @@index([projectId, status])
+  @@index([projectId, normalizedName])
+  @@index([projectId, updatedAt])
+}
+
+// Candidate → Evidence 指向性链接：证据溯源（Candidate → Evidence → Run → rawResponse）。
+// 一个 (candidate, evidence) 一条链接；mentionText/position/occurrenceCount 为发现时快照。
+model CompetitorCandidateEvidence {
+  id            String @id @default(uuid()) @db.Uuid
+  candidateId   String @db.Uuid
+  evidenceId    String @db.Uuid
+  runId         String @db.Uuid
+  queryText     String // Evidence.queryText 快照（溯源展示用）
+  mentionText   String // 该 Evidence 中首次命中的候选变体文本
+  mentionPosition Int // 该候选在该 Evidence 提及中的序号（1-based，与 m4 mention rank 同语义）
+  occurrenceCount Int @default(1)
+  recommended   Boolean @default(false) // discovery 词法信号（确定性，非概率）
+  createdAt     DateTime @default(now())
+
+  candidate CompetitorCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  evidence  Evidence            @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  run       Run                 @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, evidenceId])
+  @@index([evidenceId])
+  @@index([runId])
+}
+
+model CompetitorSet {
+  id          String @id @default(uuid()) @db.Uuid
+  projectId   String @db.Uuid
+  name        String
+  version     String
+  status      CompetitorSetStatus @default(DRAFT)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  activatedAt DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  entries CompetitorSetEntry[]
+
+  // 同一项目内 name+version 唯一（版本化标识；激活后不可变，改名/改配置只能建 v2）
+  @@unique([projectId, name, version])
+  @@index([projectId, status])
+}
+
+// Competitor Set 条目快照：激活瞬间冻结 canonicalName/aliases/competitorType/sortOrder。
+// candidateId 为普通 UUID 记录（非 FK，归档语义）—— 后续候选被编辑/拒绝不影响
+// 已冻结集合；历史集合语义永不漂移。
+model CompetitorSetEntry {
+  id            String @id @default(uuid()) @db.Uuid
+  competitorSetId String @db.Uuid
+  candidateId    String @db.Uuid // 溯源：对应 CompetitorCandidate.id（非 FK）
+  canonicalName  String
+  aliases        String[]
+  competitorType CompetitorType
+  sortOrder      Int
+
+  competitorSet CompetitorSet @relation(fields: [competitorSetId], references: [id], onDelete: Cascade)
+
+  @@unique([competitorSetId, sortOrder])
+  @@unique([competitorSetId, candidateId])
+  @@index([competitorSetId])
 }
