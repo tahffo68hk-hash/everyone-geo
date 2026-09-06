@@ -489,3 +489,5 @@ export function discoverCandidates(rawResponse: string, options: DiscoveryOption
 export function judgeRecommendationSignal(rawResponse: string, entityId: string, occurrences: EntityOccurrence[]): boolean {
   return new RuleJudge().judge({ rawResponse, entityId, occurrences }).recommended;
 }
+
+export * from './diagnosis';
