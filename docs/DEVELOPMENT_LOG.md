@@ -449,3 +449,46 @@ M6C、不引入第二 Provider。
   新增 scripts/check-ui-zh.mjs（纯英文 UI 节点回归守卫）与 scripts/smoke-pages.mjs（核心 6 页
   200/307 冒烟），web package.json 增 check:zh / smoke:pages；真机抽查 /dev/status、/login 中文
   渲染确认，无 System Status/Quick Actions 等残留。
+
+## 2026-09-06 — M6C Benchmark Reporting + Model Identity（feat(m6)/docs(m6)，未 push）
+
+M6C 只做三件事：Model Identity（requestedModel/responseModel 分离）、不可变
+Benchmark Report 快照、Historical Comparison Foundation。0 次真实 DeepSeek、未接第二
+Provider、未进入 M6D。M6A/M6B/UX-CN 全部回归通过。
+
+- Model identity：审计确认旧链路把 Provider 响应 model（如 deepseek-v4-flash）直接写入
+  Evidence.model/modelVersion（缺省回退请求模型），需拆分。ProviderRequest 增
+  requestedModel（Worker 以 enginePresentation 单一解析注入）；ProviderResponse 增
+  requestedModel/responseModel；mock 恒 geolens-mock；deepseek fake 支持 requested≠response
+  （请求 deepseek-chat / 响应 deepseek-v4-flash）。Evidence 增 requestedModel/responseModel
+  （nullable，immutable trigger 未破坏）。旧 model/modelVersion 保留 legacy 注释。
+- 迁移 20260906105856_m6c_reporting（geo_dev+geo_test）：新增列 + BenchmarkReport 表；
+  受控历史回填（临时 DISABLE TRIGGER evidence_immutable）：deepseek 行 requestedModel 只从
+  不可变 rawPrompt JSON 证明时回填、responseModel 仅 rawProviderPayload 回显证明时回填；
+  mock 常量回填。实测 geo_dev：deepseek 4 行 requested=deepseek-chat/response=deepseek-v4-flash，
+  mock 78 行常量身份。严禁用当前 Engine 配置猜历史 —— 不可证明保持 NULL（UI：历史记录未保存）。
+- BenchmarkReport（快照）：suiteName/Version、engine、requestedModel/responseModel、
+  metricSource、analysisVersion、Competitor Set(id/name/version 非FK归档)、完成度计数、
+  partial、metricsSnapshot(overall/byCategory/byQuery + M6B 竞对明细) 全部生成时冻结；
+  同 run 允许多份（m4/m6b），绝不覆盖；Set v2 激活/新分析出现不改变旧报告。
+- 生成资格：须终态；PARTIAL→partial=true + 保留成功/失败分母；analysisVersion 显式选择
+  （默认规则：有 m6b 分析则优先 m6b-competitors-v1，否则 m4-rule-v1）；Demo/Real 隔离。
+- API（apps/api/src/reports，auth+tenant+swagger 链路同既有）：POST
+  /benchmark-runs/:id/reports、GET /projects/:projectId/reports、GET /reports/:id、
+  GET /reports/:id/evidence（回链行）、POST /reports/compare。
+- Compare：先判维度（suiteVersion/metricSource/provider/analysisVersion/competitorSetVersion
+  =hard；requested/responseModel=soft 未知降级）→ COMPARABLE/PARTIALLY/NOT_COMPARABLE +
+  口径警告；Δ 与 null 安全。为 M6D 跨 Provider 对比预留。
+- UI（中文优先）：/app/reports 列表、/app/reports/:id 详情（报告头/核心指标/场景/竞品/
+  问题级+Evidence 下钻）、/app/reports/compare；/app/benchmark 完成 Run 下新增「生成 GEO
+  基准测试报告」（analysisVersion 显式）；Evidence 弹窗展示 请求/响应模型 + legacy 提示；
+  工作台加「GEO 基准测试报告」入口。
+- 测试：llm 22（含 requested≠response、mock identity、responseModel null 回退）；API e2e
+  82（7 suites，新增 reports 17：guard/PARTIAL/快照/多版本不覆盖/v1 冻结/回链/Demo-Real/
+  legacy 不伪造/immutable/compare 各维度/隔离/401）；worker 24 / queue 15 / core 64；
+  web tsc + next build（隔离 dist）+ check-ui-zh PASS。真机 Demo（geo_dev + 临时 Worker）：
+  现场 Demo Run 24/24 → 报告 ×2 → 详情（可见率 1/byCategory 6/byQuery 24/引用 48）→
+  Evidence 回链 24 行 → Compare COMPARABLE；0 次真实 DeepSeek。
+- project-status.json：M6C DONE、M6D=NEXT、Overall 仍 7/8 DONE · 88%（M6 未 DONE）。
+- TODO（后续 migration/refactor）：Evidence.model/modelVersion legacy 字段清理
+  （Phase 1 保留兼容，新代码已优先读 requestedModel/responseModel）。

@@ -5,13 +5,13 @@
   "currentMilestone": "M6",
   "overallStatus": "IN_PROGRESS",
   "nextUp": {
-    "id": "M6C",
-    "name": "Benchmark Reporting + Model Identity",
+    "id": "M6D",
+    "name": "Second Provider",
     "status": "NOT_STARTED"
   },
-  "updatedAt": "2026-09-06T15:00:00.000Z",
+  "updatedAt": "2026-09-06T17:30:00.000Z",
   "updatedBy": "agent",
-  "updatedNote": "M6B Competitor Discovery 完成（M6A + M6B DONE，M6 仍 IN_PROGRESS）；M6C（Benchmark Reporting + Model Identity）= NEXT；M6D 未开始。M6 子项：M6A DONE · M6B DONE · M6C NOT_STARTED · M6D NOT_STARTED —— Overall 7/8 DONE · 88%",
+  "updatedNote": "M6C Benchmark Reporting + Model Identity 完成（M6 仍 IN_PROGRESS）；M6D= NEXT。M6 子项：M6A DONE · M6B DONE · M6C DONE · M6D NOT_STARTED —— Overall 7/8 DONE · 88%（整个 M6 未 DONE）",
   "git": {
     "branch": "master",
     "head": "1ef30db",
@@ -508,8 +508,8 @@
       "summary": [
         "M6A Real GEO Benchmark Foundation —— 完成：版本化 BenchmarkSuite/Query/Run 数据模型、ProjectMentor GEO Benchmark v1（24 主 query + 2 branded sanity）、复用 Monitor pipeline 的 Benchmark Run（Evidence 唯一事实源）、overall/category/query 三级 geolens-v1 指标、/app/benchmark UI、demo/real 隔离 + real-run 上限保护、Swagger /docs",
         "M6B Competitor Discovery —— 完成：REAL-only 确定性竞对发现（lexicon 跨 Evidence 归并、无概率、不硬编码品牌）、Candidate/CandidateEvidence/Set/Entry 版本化模型、人工 Approve(DIRECT/ADJACENT/SUBSTITUTE)/Reject/改名、Set v1 激活冻结 + v2 归档、m6b-competitors-v1 本地重分析（0 次 DeepSeek、Evidence 不可变、m4 保留）、SoV 显式绑定 Competitor Set 版本、/app/competitors 评审 UI、demo/mock/estimated 全排除（24 Demo Evidence = 0 输入）",
-        "M6C Benchmark Reporting + Model Identity —— NEXT：requestedModel/responseModel 拆分、周期报告",
-        "M6D Second Provider —— 第二个 Provider 接入与横向对比"
+        "M6C Benchmark Reporting + Model Identity —— 完成：requestedModel/responseModel 正式分离（Provider 接口 + Evidence 新列 + legacy 兼容 + 可证明回填）、不可变 GEO 报告快照 BenchmarkReport（analysisVersion/Competitor Set/metricsSnapshot 全部冻结、同 run 多版本不覆盖）、报告对比（可比性 COMPARABLE/PARTIAL/NOT + Δ + 口径警告）、中文报告/对比/回链 UI、/app/benchmark 报告生成入口",
+        "M6D Second Provider —— NEXT：第二个 Provider 接入与横向对比（对比 API 已预留）"
       ],
       "gates": {
         "implementation": {
@@ -536,7 +536,7 @@
         },
         {
           "name": "M6C Benchmark Reporting + Model Identity",
-          "status": "NOT_STARTED"
+          "status": "DONE"
         },
         {
           "name": "M6D Second Provider",
@@ -544,35 +544,47 @@
         }
       ],
       "verification": {
-        "method": "migrate deploy + api e2e + worker integration + tsc",
-        "command": "pnpm --filter @geo/core test && pnpm --filter @geolens/api test:e2e && pnpm --filter @geolens/worker test && pnpm --filter @geo/queue test && tsc -p geo-core/database/llm/web",
-        "lastRunAt": "2026-09-06T15:00:00.000Z",
+        "method": "migrate deploy + api e2e + worker integration + tsc + next build",
+        "command": "pnpm --filter @geo/core test && pnpm --filter @geo/llm test && pnpm --filter @geo/queue test && pnpm --filter @geolens/api test:e2e && pnpm --filter @geolens/worker test && tsc -p geo-core/database/llm/web && NEXT_DIST_DIR=.next-m6c next build apps/web && node scripts/check-ui-zh.mjs",
+        "lastRunAt": "2026-09-06T17:30:00.000Z",
         "result": "PASS"
       },
       "tests": [
         {
-          "name": "geo-core unit（含 competitors 15）",
+          "name": "geo-core unit",
           "command": "pnpm --filter @geo/core test",
           "result": "64 PASS",
-          "lastRunAt": "2026-09-06T15:00:00.000Z"
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
         },
         {
-          "name": "API e2e（含 competitor 16）",
+          "name": "llm unit（含 model identity）",
+          "command": "pnpm --filter @geo/llm test",
+          "result": "22 PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
+        },
+        {
+          "name": "API e2e（含 reports 17）",
           "command": "pnpm --filter @geolens/api test:e2e",
-          "result": "65 PASS",
-          "lastRunAt": "2026-09-06T15:00:00.000Z"
+          "result": "82 PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
         },
         {
           "name": "worker integration",
           "command": "pnpm --filter @geolens/worker test",
           "result": "24 PASS",
-          "lastRunAt": "2026-09-06T15:00:00.000Z"
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
         },
         {
           "name": "queue unit",
           "command": "pnpm --filter @geo/queue test",
           "result": "15 PASS",
-          "lastRunAt": "2026-09-06T15:00:00.000Z"
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
+        },
+        {
+          "name": "web tsc / build / check-ui-zh",
+          "command": "tsc -p apps/web && NEXT_DIST_DIR=.next-m6c next build apps/web && node scripts/check-ui-zh.mjs",
+          "result": "PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
         }
       ]
     }
