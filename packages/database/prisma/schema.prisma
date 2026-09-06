@@ -103,6 +103,7 @@ model Project {
   competitorSets CompetitorSet[]
   reports        BenchmarkReport[]
   diagnosisRuns  DiagnosisRun[]
+  recommendationRuns RecommendationRun[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -739,6 +740,7 @@ model DiagnosisRun {
 
   project  Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   findings DiagnosisFinding[]
+  recommendationRuns RecommendationRun[]
 
   @@index([projectId, generatedAt])
   @@index([reportId, generatedAt])
@@ -790,4 +792,103 @@ model DiagnosisFindingEvidence {
 
   @@index([findingId])
   @@index([evidenceId])
+}
+
+// ============================================================
+// M7B - Optimization Recommendations（Diagnosis-backed 优化建议）
+// ============================================================
+// 设计原则（M7B）：
+//   1) Recommendation 是「优化假设 / 行动建议」（hypothesis-backed action），
+//      不是事实、不是因果证明、不是效果承诺 —— UI 恒带免责声明。
+//   2) 必须 Diagnosis-backed：每个 RecommendationRun 绑定一个 DiagnosisRun；
+//      Recommendation→RecommendationFinding→DiagnosisFinding→FindingEvidence
+//      →Evidence 全链可回查。无对应 Finding 绝不凭空生成。
+//   3) 确定性引擎（geo-core recommendations.ts）：Finding→Strategy 映射 +
+//      clustering/dedup + priority + effort/expectedSignal/action 均由规则产生；
+//      不引入 LLM。recommendationType/actionType/targetAssetType/status 用
+//      String（与 findingType 同风格，便于版本演进），集中常量 + UI 中文映射。
+//   4) Snapshot：生成即冻结；同 (diagnosisRunId, recommendationVersion)
+//      幂等返回既有 RecommendationRun；后续规则/诊断变化不改变历史。
+//   5) 人工 review 状态（PROPOSED/ACCEPTED/DISMISSED）与 ActionItem
+//      （TODO/IN_PROGRESS/DONE/SKIPPED）只做轻量记录，M7D 再升级实验生命周期。
+//   6) 绝不复制 Evidence.rawResponse / 完整 Finding —— 只通过关联回链。
+
+model RecommendationRun {
+  id                    String   @id @default(uuid()) @db.Uuid
+  projectId             String   @db.Uuid
+  diagnosisRunId        String   @db.Uuid
+  recommendationVersion String   // geolens-recommendation-v1
+  status                String   @default("READY")
+  summarySnapshot       Json?    // 优先级计数 + 主要优化方向等（随 Run 冻结）
+  metadata              Json     @default("{}")
+  generatedAt           DateTime @default(now())
+  createdAt             DateTime @default(now())
+
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  diagnosisRun   DiagnosisRun       @relation(fields: [diagnosisRunId], references: [id], onDelete: Cascade)
+  recommendations Recommendation[]
+
+  @@index([projectId, generatedAt])
+  @@index([diagnosisRunId, generatedAt])
+  @@index([diagnosisRunId, recommendationVersion])
+}
+
+model Recommendation {
+  id                   String   @id @default(uuid()) @db.Uuid
+  recommendationRunId  String   @db.Uuid
+  recommendationType   String   // ENTITY_CLARITY / CATEGORY_COVERAGE / …
+  title                String
+  summary              String
+  rationale            String   // 为什么出现这条建议（含来源诊断事实，非「AI 建议」）
+  priority             String   // HIGH / MEDIUM / LOW（人工 review 用；与 diagnosis severity 语义不同）
+  priorityScore        Int      // 0–100 确定性内部评分
+  impactArea           String   // ENTITY / POSITIONING / CONTENT_COVERAGE / …（策略分类）
+  targetAssetType      String?  // 建议可能涉及的资产类型（HOMEPAGE / USE_CASE_PAGE / …）
+  expectedSignal       String?  // 希望改善的 GEO signal（不是 expectedDelta / 不承诺提升）
+  effortLevel          String?  // LOW / MEDIUM / HIGH（粗粒度估计，不假装精确工时）
+  status               String   @default("PROPOSED") // PROPOSED / ACCEPTED / DISMISSED
+  findingCount         Int      @default(0)
+  evidenceCount        Int      @default(0)
+  category             String?  // 关联场景 canonical（clustering key 之一）
+  competitorName       String?  // 关联竞品（competitor differentiation 分离用）
+  metadata             Json     @default("{}")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  recommendationRun RecommendationRun   @relation(fields: [recommendationRunId], references: [id], onDelete: Cascade)
+  findings           RecommendationFinding[]
+  actionItems        ActionItem[]
+
+  @@index([recommendationRunId, priorityScore])
+  @@index([recommendationRunId, status])
+}
+
+model RecommendationFinding {
+  id               String @id @default(uuid()) @db.Uuid
+  recommendationId String @db.Uuid
+  findingId        String @db.Uuid // 归档引用：DiagnosisFinding.id（不复制 Finding 内容）
+  createdAt        DateTime @default(now())
+
+  recommendation Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@unique([recommendationId, findingId])
+  @@index([findingId])
+}
+
+model ActionItem {
+  id                 String   @id @default(uuid()) @db.Uuid
+  recommendationId   String   @db.Uuid
+  actionType         String   // UPDATE_PRODUCT_DEFINITION / CLARIFY_CORE_USE_CASES / …
+  title              String
+  description        String
+  sortOrder          Int
+  effortLevel        String   @default("LOW") // LOW / MEDIUM / HIGH（粗粒度）
+  verificationMethod String?  // 完成后如何验证（M7D 复测基础；本轮不执行复测）
+  status             String   @default("TODO") // TODO / IN_PROGRESS / DONE / SKIPPED
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  recommendation Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@index([recommendationId, sortOrder])
 }
