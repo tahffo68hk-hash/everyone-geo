@@ -162,3 +162,35 @@ M2.5 收尾后接手半成品 M3（Codex 中断）。先做只读接管审计（
   【DeepSeek Real API Smoke Test Ready】，等待「允许真实测试」。
 - **坑位**：3001 被上轮会话遗留 API 进程占用致 EADDRINUSE —— netstat 定位 PID 后 taskkill 再起；
   queue 旧测试断言 deepseek 被 runResultSchema 拒绝，需随契约放宽同步更新。
+
+## 2026-09-06 — DX1 One-Click Dev Control Center（Developer Experience）
+
+基于 M5（1137d23）。不改 GEO 产品核心、不接新 Provider、不进入 M6。
+
+- **启动器**：根目录 `START_GEOLENS.cmd` / `STOP_GEOLENS.cmd` / `STATUS_GEOLENS.cmd` →
+  `scripts/dev-control.ps1`（start/stop/stop-all/status/restart/help）。
+- **启动流程**：Node 24（固定 D:\tools\node24\node.exe，临时前置 PATH，不改系统 PATH）→ Docker
+  Engine 探测（Desktop 未启动则中文提示等任意键重试，不 taskkill/不删数据）→ docker compose up -d
+  → 等 geo-postgres/geo-redis healthy + redis PONG → 冷启动前先清 dist 再 build API/Worker
+  （杜绝 stale build）→ next dev → /health、/health/db、Web 200 全等 → 自动打开 /dev/status。
+- **幂等与进程安全**：只管理 `.runtime/{api,worker,web}.pid` 且命令行带启动标记
+  （API/Worker 追加 `dx-geolens-api/-worker` argv；Web 认 `next\dist\bin\next`）的 node 进程；
+  停止前 Get-CimInstance 核对进程名+命令行，不匹配安全忽略；重复 START 不建第二套；
+  Worker 另做 foreign-instance 检测（同队列 dist/main.js 非本工具实例 → 拒绝启动防双消费）。
+  吸取事故教训：绝不扫描 Redis/PG TCP PID 乱杀、绝不 taskkill 全 node、绝不杀 Docker。
+- **Control Center 页面** `/dev/status`：SYSTEM STATUS（Web/API/Worker/PG/Redis/DB Health 实时
+  探活；Worker=实时 PID+日志 READY；DeepSeek/Real Providers 只读布尔）、PROJECT PROGRESS
+  （M0~M6 可展开 timeline + gates 三检查 + checkpoints + verification 证据 + tests）、
+  Quick Actions（仅观察入口，无危险按钮）、M5 Real verified 横幅、进度条按 status 计算不硬编码。
+  production（NODE_ENV=production）→ notFound()。
+- **project-status.json**（根目录，机器可读）：M0~M6 全量含 commit/completedAt/summary/
+  dataType/demoRoute/gates/checkpoints/verification/tests + realRunEvidence
+  （4 Real Runs、ProjectMentor 3-Query visibility 0%、标注 Small sample / baseline only）。
+- **规则落地**：docs/DEVELOPMENT_WORKFLOW.md ——【Milestone 未更新 project-status.json 不得宣布 DONE】。
+- **坑位（重要）**：
+  - Next dev RSC 内 readFile('.env') 会把整份 .env 当文本注入页面响应（实测泄漏 API Key）。
+    修复：Web 永不读 .env，DeepSeek/Real Providers 布尔改由 ps1 服务端脱敏后写
+    .runtime/status.json 快照，页面只消费快照。
+  - Start-Process 文件重定向（非 .NET Process 异步管道）：父进程退出后子进程日志不 EPIPE。
+  - .cmd 首行不得有 BOM（否则首条命令报错）；PowerShell 脚本须 UTF-8 with BOM 中文才不乱码。
+  - JS 对象字面量 `N/A:` 非法标识符，需写成 `"N/A":`。

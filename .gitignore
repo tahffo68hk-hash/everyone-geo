@@ -36,3 +36,7 @@ packages/database/generated/
 
 # WorkBuddy session data
 .workbuddy/
+
+# DX1 runtime tracking (PIDs + logs + status snapshot)
+.runtime/
+.tmp_*

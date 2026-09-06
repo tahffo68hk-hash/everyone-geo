@@ -17,6 +17,21 @@ AIGC:
 目标不是复制任何现有商业系统或开源项目，而是吸收已被验证的产品逻辑，
 用更清晰的结构、更可信的数据闭环重新实现，并为未来 **GEO Preference Lab / GEO Preference Model** 预留数据基础。
 
+## 非开发者快速启动（One-Click Dev Control Center，DX1）
+
+> 项目负责人/审核人不需要记任何 pnpm 命令，也不需要打开多个终端。
+
+1. **双击** `START_GEOLENS.cmd`
+   —— 自动检查 Node 24 / Docker → 启动 PostgreSQL + Redis → 启动 API / Worker / Web
+   → 自动打开浏览器：**http://localhost:3000/dev/status**（GeoLens Project Control Center）。
+2. 在 Control Center 查看：当前做到哪个 Milestone、各组件是否健康、可演示功能入口、真实验证结论。
+3. 停止：双击 `STOP_GEOLENS.cmd`（只停 Web/API/Worker，PostgreSQL/Redis/Docker 保留）。
+4. 状态：双击 `STATUS_GEOLENS.cmd`（实时一览 + 按任意键打开 Control Center）。
+
+- 机器可读项目状态：`project-status.json`（根目录，每个 Milestone 完成时由 Agent 更新）。
+- 进程/日志管理：`.runtime/`（PID 文件 + `logs/` 详细日志 + `status.json` 快照），已被 .gitignore 忽略。
+- 详细设计见 [docs/DX1_CONTROL_CENTER.md](docs/DX1_CONTROL_CENTER.md) 与 [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md)。
+
 ## 产品优先级（自上而下）
 
 1. 真实数据闭环
