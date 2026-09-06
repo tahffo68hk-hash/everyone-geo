@@ -323,7 +323,7 @@ export default function BenchmarkPage() {
                   <label htmlFor="engine" className="mb-2 block text-sm font-medium">模型服务 / 检测引擎</label>
                   <select id="engine" value={engineId} className="w-full rounded-lg border border-slate-300 p-2" onChange={event => setEngineId(event.target.value)}>
                     {(runType === "demo" ? options.engines.filter(item => item.provider === "mock") : options.engines.filter(item => item.provider !== "mock")).map(item => (
-                      <option key={item.id} value={item.id}>{item.name}{item.provider === "deepseek" ? (item.configured ? " · 真实数据" : " · 未配置") : ""}</option>
+                      <option key={item.id} value={item.id}>{item.name}{item.provider === "deepseek" || item.provider === "qwen" ? (item.configured ? " · 真实数据" : " · 未配置") : ""}</option>
                     ))}
                   </select>
                 </div>
