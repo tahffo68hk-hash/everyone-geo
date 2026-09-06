@@ -9,7 +9,7 @@ import {
   type RunJob, type RunResult,
 } from '@geo/queue';
 import {
-  DeepSeekProvider, LLMProviderError, LLMProviderRegistry, MockProvider,
+  DeepSeekProvider, LLMProviderError, LLMProviderRegistry, MockProvider, QwenProvider,
   DEFAULT_REAL_PROVIDER_TIMEOUT_MS, enginePresentation,
   type LLMProvider, type ProviderErrorKind, type ProviderRequest, type ProviderResponse,
 } from '@geo/llm';
@@ -105,9 +105,12 @@ export type LogRecord = {
 export type WorkerLogger = (record: LogRecord) => void;
 export const jsonLogger: WorkerLogger = record => console.log(JSON.stringify(record));
 
-/** Providers available to every worker: mock (local) + deepseek (real, guarded). */
+/** Providers available to every worker: mock (local) + deepseek + qwen (real, guarded). */
 export function createProviderRegistry(): LLMProviderRegistry {
-  return new LLMProviderRegistry().register(new MockProvider()).register(new DeepSeekProvider());
+  return new LLMProviderRegistry()
+    .register(new MockProvider())
+    .register(new DeepSeekProvider())
+    .register(new QwenProvider());
 }
 
 export function createRunProcessor(db: PrismaClient, options: {
