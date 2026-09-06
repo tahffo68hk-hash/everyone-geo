@@ -5,17 +5,17 @@
   "currentMilestone": "M7",
   "overallStatus": "IN_PROGRESS",
   "nextUp": {
-    "id": "M7C",
-    "name": "Content Opportunities",
+    "id": "M7D",
+    "name": "Experiment & Re-test",
     "status": "NOT_STARTED"
   },
-  "updatedAt": "2026-09-06T14:50:24.000Z",
+  "updatedAt": "2026-09-06T15:40:00.000Z",
   "updatedBy": "agent",
-  "updatedNote": "M7B Optimization Recommendations DONE（M7A/B DONE）；M7C=NEXT（不自动开始）。M7 仍 IN_PROGRESS —— Overall 8/9 DONE · ≈89%",
+  "updatedNote": "M7C Content Opportunities DONE（M7A/B/C DONE）；M7D=NEXT（不自动开始）。M7 仍 IN_PROGRESS —— Overall 8/9 DONE · ≈89%（M7D 完成并正式验收后才 M7 DONE）",
   "git": {
     "branch": "master",
-    "head": "1ef30db",
-    "headLabel": "test(m6): cover competitor discovery lifecycle",
+    "head": "82d7fb8",
+    "headLabel": "(will update at final commit)",
     "baselineBeforeDX1": "1137d23"
   },
   "realRunEvidence": {
@@ -597,23 +597,23 @@
       "dataType": "n/a",
       "demoRoute": null,
       "summary": [
-        "M7A GEO Diagnosis Foundation —— 完成：绑定 BenchmarkReport 的确定性问题诊断（数据模型+迁移；geolens-diagnosis-v1 规则引擎于 geo-core 纯函数；11 类 Finding+Severity/优先级确定性；DQ 恒先；FindingEvidence 只归档链接不复制 Evidence；快照不漂移+幂等；Provider Gap 复用 compare；中文 UI+Evidence 下钻）",
-        "M7B Optimization Recommendations —— 完成：Deterministic recommendation engine（geolens-recommendation-v1，geo-core 纯函数）：Finding→Strategy 映射+clustering/dedup+priority(0-100)+effort/expectedSignal/targetAsset/verificationMethod+DataQualityGuard（小样本不高成本改造）；RecommendationRun/Recommendation/RecommendationFinding/ActionItem 模型+迁移；API（创建幂等/回链/accept·dismiss/action 状态）；中文 UI /app/recommendations + Diagnosis 集成 + 行动项 checklist + Evidence 下钻；hypothesis disclaimer 恒显",
-        "M7C Content Opportunities —— NEXT：具体内容机会/brief（本轮不做）",
-        "M7D Experiment & Re-test —— NOT_STARTED"
+        "M7A GEO Diagnosis Foundation —— DONE/FROZEN（同上）",
+        "M7B Optimization Recommendations —— DONE/FROZEN（同上）",
+        "M7C Content Opportunities —— DONE：ContentOpportunityRun/ContentOpportunity/Recommendation·Query·Evidence 链接/ContentBlock 模型+迁移 m7c_content_opportunities（dev+geo_test+generate）；geolens-content-opportunity-v1 纯函数引擎（geo-core content-opportunities.ts）：Recommendation→Opportunity 映射+Query clustering/dedup（无 embedding）+priority 0-100+DQ guard（DOCUMENTATION 高成本≤49）+DATA_COLLECTION 不生成普通机会；API（生成幂等/列表/详情/blocks/queries/evidence/rec 来源/status 人工流转）；中文 UI /app/opportunities 高密度 Table+详情（Why/目标 Query 表/建议结构块/Evidence 下钻/免责声明）+Recommendation 集成+工作台入口；全部 0 real AI calls",
+        "M7D Experiment & Re-test —— NEXT（未实现：不建 Experiment/不跑复测）"
       ],
       "gates": {
         "implementation": {
           "status": "DONE",
-          "detail": "feat(m7)：rec 数据模型+migration / geo-core deterministic engine / recommendations api+action items / 中文 UI"
+          "detail": "feat(m7)：content opportunity 数据模型+迁移 / geo-core deterministic engine（39 单测） / opportunities api+evidence links（18 e2e） / 中文内容机会 workspace"
         },
         "testing": {
           "status": "DONE",
-          "detail": "geo-core 116（rec 23）+ api e2e 115（10 suites，rec 13）+ worker 31 + queue 15 + llm 35 + web tsc/build + check-ui-zh PASS；M3–M7A 无回归"
+          "detail": "geo-core 155（M7C 39）+ api e2e 133（11 suites，M7C 18）+ worker 31 + queue 15 + llm 35 + database guard 15 + web tsc/build(.next-m7c) + check-ui-zh(23 文件) PASS；M3–M7B 无回归"
         },
         "demo": {
           "status": "DONE",
-          "detail": "geo_dev 真机 Demo（0 real calls，engine 2ms）：Report→Diagnosis→Recommendations(5/13 actions)→建议详情行动项→依据 Finding→Evidence 下钻"
+          "detail": "geo_dev 真机 Demo（0 real calls，engine 411ms）：M7B Demo RecommendationRun(5 建议) → ContentOpportunityRun（4 机会：PRODUCT_PAGE/DATA_REFERENCE/USE_CASE_PAGE×2，9 query links，9 evidence links）→ 列表/详情/目标 Query/来源建议/Evidence 下钻 rawResponse → 状态 APPROVED→撤回；幂等复用验证"
         }
       },
       "checkpoints": [
@@ -627,7 +627,7 @@
         },
         {
           "name": "M7C Content Opportunities",
-          "status": "NOT_STARTED"
+          "status": "DONE"
         },
         {
           "name": "M7D Experiment & Re-test",

@@ -640,3 +640,57 @@ M7B 完成：把 M7A 诊断转成少量、去重、可执行、有依据、可�
 - project-status：M7B DONE、M7C=NEXT；M7 仍 IN_PROGRESS，Overall 8/9 DONE · ≈89%。
 - M7C TODO（下一里程碑，未开始）：Content Opportunities —— 具体内容机会/brief；
   届时可能引入 M7C 专用端点与内容 workspace，M7B 的 verificationMethod 供 M7D 复测使用。
+
+## 2026-09-06 — M7C Content Opportunities（feat(m7)/docs(m7)，未 push）
+
+M7C 完成：把 M7A/M7B 转成「少量、去重、可解释、可执行的内容任务 brief」。0 次真实 AI
+调用、0 成本、未进入 M7D、未 push。
+
+- Architecture decision：ContentOpportunityRun 绑定 RecommendationRun（snapshot provenance
+  最清晰）；Opportunity 保留全部 source recommendation/finding/query/evidence 链接。
+  Why no LLM / no embedding / no full content：M7C 只回答 “What should we create?”，
+  brief foundation（标题方向 ≠ 最终标题、建议结构块 ≠ 正文、expectedSignals ≠ expectedDelta），
+  真正效果留 M7D 复测。
+- 数据模型：ContentOpportunityRun / ContentOpportunity（titleDirection/summary/rationale/
+  priority 0-100/assetType/contentIntent/effort/expectedSignals/target*Counts/status/
+  dataQualityLimited/targetEngines·targetCompetitors Json snapshot）、
+  ContentOpportunityRecommendation、ContentOpportunityQuery（queryTextSnapshot +
+  category/intent/locale 快照对齐 + brandAbsent/competitorPositive + engines metadata）、
+  ContentOpportunityEvidence（evidenceId/runId/queryTextSnapshot/reason 指向性引用，非 FK）、
+  ContentOpportunityBlock（blockType/title/purpose，禁止正文）；migration
+  m7c_content_opportunities（dev+geo_test+generate，additive）。
+- 引擎（geo-core content-opportunities.ts，39 单测全绿）：recommendation→opportunity 映射
+  集中常量（含 CITATION_READINESS ≥6 Query → DOCUMENTATION 的确定性分支）；clustering key
+  opportunityType|category|competitor|contentIntent；query dedup 用 NFKC+trim+lower 键但
+  快照原样展示；priority = 0.45×recScore + 0.25×queryCoverage + 0.15×competitorSignal +
+  0.15×engineCoverage（clamp 0-100）；DataQualityGuard：DQ 提示下 effort HIGH 机会压 ≤49 并
+  置 dataQualityLimited；DATA_COLLECTION 不生成普通内容机会（blockedByDataQuality）；
+  竞品只来自 approved semantics；title/blocks 模板无虚假事实。
+- API（apps/api/src/opportunities，Auth/Tenant/幂等/Swagger 同链路）：POST/GET
+  recommendation-runs/:id/opportunities、GET opportunity-runs/:id(/opportunities)、
+  GET content-opportunities/:id(/recommendations|/queries|/evidence)、PATCH
+  content-opportunities/:id/status（人工 PROPOSED/APPROVED/DISMISSED，无 EXECUTING）。
+  e2e 18/18（含幂等、tenant 404、401、快照稳定、当前 Query 编辑不影响机会快照、非法状态
+  400、old/new version 并存、evidence 不复制 rawResponse、无 expectedDelta/正文）。
+- UI（中文，check-ui-zh PASS 23 文件；web tsc + build(.next-m7c) PASS）：
+  /app/opportunities 高密度 Table（优先级/内容方向/类型/场景/建议资产/目标 Query 数/目标
+  模型/关联竞品/预期影响/工作量/状态 + 筛选 + Skeleton/空态 + 演示标注 + Fact vs Hypothesis
+  免责声明）+ /app/opportunities/:id 详情（Why/来源建议/建议结构块编号/目标 Query 表格 →
+  Evidence 下钻 rawResponse + status 流转）；/app/recommendations/:id 增「生成内容机会 /
+  查看内容机会」（不重复生成）；工作台入口；labels.ts 增 OPPORTUNITY_TYPE/ASSET/INTENT/
+  STATUS + OPPORTUNITY_NAV。
+- 真机 Demo（geo_dev，0 real calls，engine 411ms，幂等复用验证）：复用 M7B Demo
+  RecommendationRun（5 建议，metric=demo）→ ContentOpportunityRun v1（4 机会：
+  PRODUCT_PAGE/DATA_REFERENCE/USE_CASE_PAGE×2；9 query links；9 evidence links；
+  1 target engine mock/mock-alpha；0 approved competitor 关联 → 如实显示）→ 详情目标 Query
+  表格/建议结构块/来源建议 → Evidence 下钻（m4 分析 rawResponse 59 chars）→ 状态
+  APPROVED→PROPOSED 撤回。demo 数据保留（m7c-demo-*@geolens.local 已挂入 M7B Demo Org）。
+- 回归：geo-core 155（M7C 39）/ llm 35 / queue 15 / worker 31 / database guard 15 /
+  api e2e 133（11 suites，M7C 18）/ web tsc + next build（.next-m7c）+ check-ui-zh 全绿；
+  M3–M7B 无回归。secret 扫描 PASS（docs/DATABASE.md 仅占位示例；无真实 Key/DB URL/日志泄密）。
+- project-status：M7C DONE、M7D=NEXT；M7 仍 IN_PROGRESS —— Overall 8/9 DONE · ≈89%
+  （M7D 完成并正式验收后才 M7 DONE）。
+- Known limitations：deterministic rules（非 LLM strategist）、无 embedding clustering、
+  title direction/结构块非最终稿、priority/effort 为 internal heuristic、无 website
+  inventory（建议资产 ≠ 确认缺失）、无 causal guarantee；真正效果必须 M7D 相同 Benchmark
+  复测。M7D TODO：Opportunity → Execution → Before/After Benchmark → Delta（不实现）。
