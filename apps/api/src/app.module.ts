@@ -10,9 +10,10 @@ import { CompetitorsModule } from "./competitors/competitors.module";
 import { ReportsModule } from "./reports/reports.module";
 import { DiagnosisModule } from "./diagnosis/diagnosis.module";
 import { RecommendationsModule } from "./recommendations/recommendations.module";
+import { OpportunitiesModule } from "./opportunities/opportunities.module";
 
 @Module({
-  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule],
+  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule],
   controllers: [HealthController],
 })
 export class AppModule {}
