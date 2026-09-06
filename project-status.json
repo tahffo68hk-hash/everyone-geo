@@ -2,16 +2,16 @@
   "schemaVersion": 1,
   "project": "GeoLens",
   "description": "GeoLens — AI Visibility Intelligence（GEO 监测数据平台）",
-  "currentMilestone": "M5",
-  "overallStatus": "ACTIVE",
+  "currentMilestone": "M6",
+  "overallStatus": "IN_PROGRESS",
   "nextUp": {
-    "id": "M6",
-    "name": "Real GEO Benchmark / Multi-Provider",
+    "id": "M6B",
+    "name": "Competitor Discovery",
     "status": "NOT_STARTED"
   },
-  "updatedAt": "2026-09-06T12:30:11+08:00",
-  "updatedBy": "DX1",
-  "updatedNote": "DX1 One-Click Dev Control Center 落地：新增 project-status.json、.cmd 启动器与 /dev/status 驾驶舱",
+  "updatedAt": "2026-09-06T06:23:11.179Z",
+  "updatedBy": "agent",
+  "updatedNote": "M6A Benchmark Foundation 完成；M6 IN_PROGRESS（checkpoints 详见 M6 卡片），M6B/C/D 未开始",
   "git": {
     "branch": "master",
     "head": "1137d23",
@@ -23,9 +23,28 @@
     "verified": true,
     "totalRealRuns": 4,
     "verifiedAt": "2026-09-05T23:30:00+08:00",
-    "round1": { "runs": 1, "runId": "d27a6256", "model": "deepseek-v4-flash", "sourceType": "official_api", "retrievalMode": "api_plain" },
-    "round2": { "taskId": "f80ade73", "runs": 3, "queries": 3, "engine": "deepseek-api", "result": "Q1/Q2/Q3 均 SUCCEEDED，attempt=1 无 retry" },
-    "sample": { "project": "ProjectMentor", "queries": 3, "brandMentions": 0, "visibility": "0/3 = 0%", "citations": "0（未伪造）", "metricSource": "real" }
+    "round1": {
+      "runs": 1,
+      "runId": "d27a6256",
+      "model": "deepseek-v4-flash",
+      "sourceType": "official_api",
+      "retrievalMode": "api_plain"
+    },
+    "round2": {
+      "taskId": "f80ade73",
+      "runs": 3,
+      "queries": 3,
+      "engine": "deepseek-api",
+      "result": "Q1/Q2/Q3 均 SUCCEEDED，attempt=1 无 retry"
+    },
+    "sample": {
+      "project": "ProjectMentor",
+      "queries": 3,
+      "brandMentions": 0,
+      "visibility": "0/3 = 0%",
+      "citations": "0（未伪造）",
+      "metricSource": "real"
+    }
   },
   "milestones": [
     {
@@ -42,13 +61,28 @@
         "文档：ARCHITECTURE / PRODUCT_MAP / DECISIONS（D-001~D-008）"
       ],
       "gates": {
-        "implementation": { "status": "DONE", "detail": "仓库骨架与配置落盘" },
-        "testing": { "status": "PASS", "detail": "Node 24.20.0 / pnpm 11.1.0 / git 环境确认" },
-        "demo": { "status": "N/A", "detail": "无独立演示" }
+        "implementation": {
+          "status": "DONE",
+          "detail": "仓库骨架与配置落盘"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "Node 24.20.0 / pnpm 11.1.0 / git 环境确认"
+        },
+        "demo": {
+          "status": "N/A",
+          "detail": "无独立演示"
+        }
       },
       "checkpoints": [
-        { "name": "Workspace 骨架", "status": "DONE" },
-        { "name": "根配置与文档", "status": "DONE" }
+        {
+          "name": "Workspace 骨架",
+          "status": "DONE"
+        },
+        {
+          "name": "根配置与文档",
+          "status": "DONE"
+        }
       ],
       "verification": {
         "method": "环境与结构确认",
@@ -70,14 +104,32 @@
         "首页含 API 连通探测（fetch /health）"
       ],
       "gates": {
-        "implementation": { "status": "DONE", "detail": "Web + API 骨架联调代码就绪" },
-        "testing": { "status": "PASS", "detail": "/health 返回 ok，前后端联通" },
-        "demo": { "status": "PASS", "detail": "首页显示 API /health 状态（/）" }
+        "implementation": {
+          "status": "DONE",
+          "detail": "Web + API 骨架联调代码就绪"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "/health 返回 ok，前后端联通"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "首页显示 API /health 状态（/）"
+        }
       },
       "checkpoints": [
-        { "name": "Next.js Web", "status": "DONE" },
-        { "name": "NestJS API + /health", "status": "DONE" },
-        { "name": "前后端联调", "status": "DONE" }
+        {
+          "name": "Next.js Web",
+          "status": "DONE"
+        },
+        {
+          "name": "NestJS API + /health",
+          "status": "DONE"
+        },
+        {
+          "name": "前后端联调",
+          "status": "DONE"
+        }
       ],
       "verification": {
         "method": "手工起服验证",
@@ -101,15 +153,36 @@
         "prisma migrate + 幂等 seed；/health/db 只读连通检查"
       ],
       "gates": {
-        "implementation": { "status": "DONE", "detail": "schema/migrate/seed/verify + API 接入" },
-        "testing": { "status": "PASS", "detail": "verify.ts 13 项 PASS（关系链/唯一约束/级联）" },
-        "demo": { "status": "PASS", "detail": "/health/db connected（organizationCount 只读）" }
+        "implementation": {
+          "status": "DONE",
+          "detail": "schema/migrate/seed/verify + API 接入"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "verify.ts 13 项 PASS（关系链/唯一约束/级联）"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "/health/db connected（organizationCount 只读）"
+        }
       },
       "checkpoints": [
-        { "name": "Prisma schema 8 表", "status": "DONE" },
-        { "name": "migrate + seed 幂等", "status": "DONE" },
-        { "name": "verify.ts 验收", "status": "DONE" },
-        { "name": "/health/db", "status": "DONE" }
+        {
+          "name": "Prisma schema 8 表",
+          "status": "DONE"
+        },
+        {
+          "name": "migrate + seed 幂等",
+          "status": "DONE"
+        },
+        {
+          "name": "verify.ts 验收",
+          "status": "DONE"
+        },
+        {
+          "name": "/health/db",
+          "status": "DONE"
+        }
       ],
       "verification": {
         "method": "自动化验收脚本",
@@ -133,15 +206,36 @@
         "auth（Argon2 + JWT HttpOnly Cookie）保留并以隔离测试收尾；geo_dev / geo_test 拆分 + 数据卫生"
       ],
       "gates": {
-        "implementation": { "status": "DONE", "detail": "运行环境与数据卫生收尾" },
-        "testing": { "status": "PASS", "detail": "auth 13 项 / 保护 15 项 / verify 通过；pnpm -r build 全绿" },
-        "demo": { "status": "PASS", "detail": "演示账号可登录 /login -> /app（alice@geolens.local / Password123!）" }
+        "implementation": {
+          "status": "DONE",
+          "detail": "运行环境与数据卫生收尾"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "auth 13 项 / 保护 15 项 / verify 通过；pnpm -r build 全绿"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "演示账号可登录 /login -> /app（alice@geolens.local / Password123!）"
+        }
       },
       "checkpoints": [
-        { "name": "NTFS 迁移", "status": "DONE" },
-        { "name": "hoisted layout（D-013）", "status": "DONE" },
-        { "name": "auth 保留 + 隔离测试", "status": "DONE" },
-        { "name": "geo_dev / geo_test 数据卫生", "status": "DONE" }
+        {
+          "name": "NTFS 迁移",
+          "status": "DONE"
+        },
+        {
+          "name": "hoisted layout（D-013）",
+          "status": "DONE"
+        },
+        {
+          "name": "auth 保留 + 隔离测试",
+          "status": "DONE"
+        },
+        {
+          "name": "geo_dev / geo_test 数据卫生",
+          "status": "DONE"
+        }
       ],
       "verification": {
         "method": "回归矩阵",
@@ -166,16 +260,40 @@
         "MonitorTask API：登录、创建 5 Query×3 Engine=15 Runs、状态查询"
       ],
       "gates": {
-        "implementation": { "status": "DONE", "detail": "队列 + Worker + 状态机 + 恢复逻辑" },
-        "testing": { "status": "PASS", "detail": "acceptance 6 场景 PASS；queue 15 / worker 11 / API e2e 19 / guard 15" },
-        "demo": { "status": "PASS", "detail": "Monitor Demo：登录后 /app/monitor 可创建并查看 15 Runs" }
+        "implementation": {
+          "status": "DONE",
+          "detail": "队列 + Worker + 状态机 + 恢复逻辑"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "acceptance 6 场景 PASS；queue 15 / worker 11 / API e2e 19 / guard 15"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "Monitor Demo：登录后 /app/monitor 可创建并查看 15 Runs"
+        }
       },
       "checkpoints": [
-        { "name": "Redis + BullMQ", "status": "DONE" },
-        { "name": "Worker", "status": "DONE" },
-        { "name": "15 Runs 演示", "status": "DONE" },
-        { "name": "Retry", "status": "DONE" },
-        { "name": "Restart Recovery", "status": "DONE" }
+        {
+          "name": "Redis + BullMQ",
+          "status": "DONE"
+        },
+        {
+          "name": "Worker",
+          "status": "DONE"
+        },
+        {
+          "name": "15 Runs 演示",
+          "status": "DONE"
+        },
+        {
+          "name": "Retry",
+          "status": "DONE"
+        },
+        {
+          "name": "Restart Recovery",
+          "status": "DONE"
+        }
       ],
       "verification": {
         "method": "acceptance（真 DB + 真 Redis + 真实 Worker 子进程）",
@@ -184,9 +302,24 @@
         "result": "6 scenarios PASS（15-runs/retry/perm-fail/PARTIAL/restart/Redis-outage）"
       },
       "tests": [
-        { "name": "queue unit", "command": "pnpm --filter @geo/queue test", "result": "15 PASS", "lastRunAt": "2026-09-05T21:13:00+08:00" },
-        { "name": "worker integration", "command": "pnpm --filter @geolens/worker test", "result": "11 PASS", "lastRunAt": "2026-09-05T21:13:00+08:00" },
-        { "name": "API e2e", "command": "pnpm --filter @geolens/api test:e2e", "result": "19 PASS", "lastRunAt": "2026-09-05T21:13:00+08:00" }
+        {
+          "name": "queue unit",
+          "command": "pnpm --filter @geo/queue test",
+          "result": "15 PASS",
+          "lastRunAt": "2026-09-05T21:13:00+08:00"
+        },
+        {
+          "name": "worker integration",
+          "command": "pnpm --filter @geolens/worker test",
+          "result": "11 PASS",
+          "lastRunAt": "2026-09-05T21:13:00+08:00"
+        },
+        {
+          "name": "API e2e",
+          "command": "pnpm --filter @geolens/api test:e2e",
+          "result": "19 PASS",
+          "lastRunAt": "2026-09-05T21:13:00+08:00"
+        }
       ]
     },
     {
@@ -205,19 +338,52 @@
         "recoverAnalyses：Worker 重启后补齐缺失 Analysis 且不重写 Evidence"
       ],
       "gates": {
-        "implementation": { "status": "DONE", "detail": "证据链 + 分析引擎 + 指标 + API + UI" },
-        "testing": { "status": "PASS", "detail": "acceptance-m4 5 场景 PASS；geo-core 49 / worker 17 / API e2e 26 / guard 15；M3 acceptance 回归 PASS" },
-        "demo": { "status": "PASS", "detail": "Evidence Demo：真实链路 15 Runs -> 15 Evidence -> 15 Analysis，/app/monitor 可逐条查看" }
+        "implementation": {
+          "status": "DONE",
+          "detail": "证据链 + 分析引擎 + 指标 + API + UI"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "acceptance-m4 5 场景 PASS；geo-core 49 / worker 17 / API e2e 26 / guard 15；M3 acceptance 回归 PASS"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "Evidence Demo：真实链路 15 Runs -> 15 Evidence -> 15 Analysis，/app/monitor 可逐条查看"
+        }
       },
       "checkpoints": [
-        { "name": "Raw Evidence 不可变模型", "status": "DONE" },
-        { "name": "Brand Mention", "status": "DONE" },
-        { "name": "Competitor Detection", "status": "DONE" },
-        { "name": "Mention Position", "status": "DONE" },
-        { "name": "Recommendation", "status": "DONE" },
-        { "name": "Sentiment", "status": "DONE" },
-        { "name": "Citation", "status": "DONE" },
-        { "name": "Metrics", "status": "DONE" }
+        {
+          "name": "Raw Evidence 不可变模型",
+          "status": "DONE"
+        },
+        {
+          "name": "Brand Mention",
+          "status": "DONE"
+        },
+        {
+          "name": "Competitor Detection",
+          "status": "DONE"
+        },
+        {
+          "name": "Mention Position",
+          "status": "DONE"
+        },
+        {
+          "name": "Recommendation",
+          "status": "DONE"
+        },
+        {
+          "name": "Sentiment",
+          "status": "DONE"
+        },
+        {
+          "name": "Citation",
+          "status": "DONE"
+        },
+        {
+          "name": "Metrics",
+          "status": "DONE"
+        }
       ],
       "verification": {
         "method": "acceptance（真实 Worker 子进程）",
@@ -226,9 +392,24 @@
         "result": "5 scenarios PASS（A1 证据链 / A2 不可变 / A3 版本化 / A4 指标对账 / A5 restart 恢复）"
       },
       "tests": [
-        { "name": "geo-core unit", "command": "pnpm --filter @geo/core test", "result": "49 PASS", "lastRunAt": "2026-09-05T22:16:00+08:00" },
-        { "name": "worker integration", "command": "pnpm --filter @geolens/worker test", "result": "17 PASS", "lastRunAt": "2026-09-05T22:16:00+08:00" },
-        { "name": "API e2e", "command": "pnpm --filter @geolens/api test:e2e", "result": "26 PASS", "lastRunAt": "2026-09-05T22:16:00+08:00" }
+        {
+          "name": "geo-core unit",
+          "command": "pnpm --filter @geo/core test",
+          "result": "49 PASS",
+          "lastRunAt": "2026-09-05T22:16:00+08:00"
+        },
+        {
+          "name": "worker integration",
+          "command": "pnpm --filter @geolens/worker test",
+          "result": "17 PASS",
+          "lastRunAt": "2026-09-05T22:16:00+08:00"
+        },
+        {
+          "name": "API e2e",
+          "command": "pnpm --filter @geolens/api test:e2e",
+          "result": "26 PASS",
+          "lastRunAt": "2026-09-05T22:16:00+08:00"
+        }
       ]
     },
     {
@@ -248,16 +429,40 @@
         "Metrics 隔离：metricSource = demo | real | mixed（mixed 只基于真实子集）"
       ],
       "gates": {
-        "implementation": { "status": "DONE", "detail": "Provider 抽象 + DeepSeek 接入 + 双引擎（Mock/Real）全链" },
-        "testing": { "status": "PASS", "detail": "llm 21 / worker 22 / API e2e 32 / guard 15；Fake HTTP 集成 5/5；M3+M4 acceptance 回归 PASS" },
-        "demo": { "status": "PASS", "detail": "Real Monitor Results：4 次真实 Run（HTTP 200），UI 区分 Mock/Demo 与 REAL·Official API" }
+        "implementation": {
+          "status": "DONE",
+          "detail": "Provider 抽象 + DeepSeek 接入 + 双引擎（Mock/Real）全链"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "llm 21 / worker 22 / API e2e 32 / guard 15；Fake HTTP 集成 5/5；M3+M4 acceptance 回归 PASS"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "Real Monitor Results：4 次真实 Run（HTTP 200），UI 区分 Mock/Demo 与 REAL·Official API"
+        }
       },
       "checkpoints": [
-        { "name": "Official DeepSeek API", "status": "DONE" },
-        { "name": "Real Evidence", "status": "DONE" },
-        { "name": "Real Metrics", "status": "DONE" },
-        { "name": "Cost Guard", "status": "DONE" },
-        { "name": "Secret Guard", "status": "DONE" }
+        {
+          "name": "Official DeepSeek API",
+          "status": "DONE"
+        },
+        {
+          "name": "Real Evidence",
+          "status": "DONE"
+        },
+        {
+          "name": "Real Metrics",
+          "status": "DONE"
+        },
+        {
+          "name": "Cost Guard",
+          "status": "DONE"
+        },
+        {
+          "name": "Secret Guard",
+          "status": "DONE"
+        }
       ],
       "verification": {
         "method": "真实 Smoke Test（用户批准后执行，两轮共 4 Runs）",
@@ -266,41 +471,83 @@
         "result": "4/4 SUCCEEDED，HTTP 200，attempt=1 无 retry；模型 deepseek-v4-flash；ProjectMentor 3 Query 提及 0/3（Small sample / baseline only，不代表行业结论）"
       },
       "tests": [
-        { "name": "llm unit", "command": "pnpm --filter @geo/llm test", "result": "21 PASS", "lastRunAt": "2026-09-05T23:04:00+08:00" },
-        { "name": "worker integration", "command": "pnpm --filter @geolens/worker test", "result": "22 PASS", "lastRunAt": "2026-09-05T23:04:00+08:00" },
-        { "name": "API e2e", "command": "pnpm --filter @geolens/api test:e2e", "result": "32 PASS", "lastRunAt": "2026-09-05T23:04:00+08:00" },
-        { "name": "pnpm -r build", "command": "pnpm -r build", "result": "all PASS", "lastRunAt": "2026-09-05T23:04:00+08:00" }
+        {
+          "name": "llm unit",
+          "command": "pnpm --filter @geo/llm test",
+          "result": "21 PASS",
+          "lastRunAt": "2026-09-05T23:04:00+08:00"
+        },
+        {
+          "name": "worker integration",
+          "command": "pnpm --filter @geolens/worker test",
+          "result": "22 PASS",
+          "lastRunAt": "2026-09-05T23:04:00+08:00"
+        },
+        {
+          "name": "API e2e",
+          "command": "pnpm --filter @geolens/api test:e2e",
+          "result": "32 PASS",
+          "lastRunAt": "2026-09-05T23:04:00+08:00"
+        },
+        {
+          "name": "pnpm -r build",
+          "command": "pnpm -r build",
+          "result": "all PASS",
+          "lastRunAt": "2026-09-05T23:04:00+08:00"
+        }
       ]
     },
     {
       "id": "M6",
       "name": "Real GEO Benchmark / Multi-Provider",
-      "status": "NOT_STARTED",
+      "status": "IN_PROGRESS",
       "completedAt": null,
       "commit": null,
       "dataType": "mixed",
       "demoRoute": null,
       "summary": [
-        "规划中：多 Provider 横向对比（Qwen / OpenAI-compatible / Kimi 等按批准推进）， 真实 GEO Benchmark 基线，跨模型 Visibility/推荐一致性研究",
-        "禁止自动开始：M6 需要单独授权，DX1 不触碰"
+        "M6A Real GEO Benchmark Foundation —— 完成：版本化 BenchmarkSuite/Query/Run 数据模型、ProjectMentor GEO Benchmark v1（24 主 query + 2 branded sanity）、复用 Monitor pipeline 的 Benchmark Run（Evidence 唯一事实源）、overall/category/query 三级 geolens-v1 指标、/app/benchmark UI、demo/real 隔离 + real-run 上限保护、Swagger /docs",
+        "M6B Competitor Discovery —— NEXT：真实竞对发现替代 A/B/C 占位，Share of Voice 才能在真实集上出结论",
+        "M6C Benchmark Reporting + Model Identity —— requestedModel/responseModel 拆分、周期报告",
+        "M6D Second Provider —— 第二个 Provider 接入与横向对比"
       ],
       "gates": {
-        "implementation": { "status": "NOT_STARTED", "detail": "尚未开始" },
-        "testing": { "status": "NOT_STARTED", "detail": "尚未开始" },
-        "demo": { "status": "NOT_STARTED", "detail": "尚未开始" }
+        "implementation": {
+          "status": "DONE",
+          "detail": "feat(m6) 系列：suites + pipeline + metrics + UI"
+        },
+        "testing": {
+          "status": "DONE",
+          "detail": "api e2e 15 项 + worker benchmark integration 2 项；M3/M4/M5 回归 46/46 通过"
+        },
+        "demo": {
+          "status": "DONE",
+          "detail": "/app/benchmark 页面：Demo Run → Worker → Evidence → Analysis → Metrics"
+        }
       },
       "checkpoints": [
-        { "name": "Provider Adapter 泛化", "status": "NOT_STARTED" },
-        { "name": "Qwen Provider", "status": "NOT_STARTED" },
-        { "name": "Integration Test", "status": "NOT_STARTED" },
-        { "name": "Real Test", "status": "NOT_STARTED" },
-        { "name": "UI / Benchmark 展示", "status": "NOT_STARTED" }
+        {
+          "name": "M6A Benchmark Foundation",
+          "status": "DONE"
+        },
+        {
+          "name": "M6B Competitor Discovery",
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "M6C Benchmark Reporting + Model Identity",
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "M6D Second Provider",
+          "status": "NOT_STARTED"
+        }
       ],
       "verification": {
-        "method": null,
-        "command": null,
-        "lastRunAt": null,
-        "result": "NOT_STARTED"
+        "method": "migrate deploy + api e2e + worker integration + tsc",
+        "command": "pnpm --filter @geolens/api test:e2e && cd apps/worker && node --require ../../packages/database/scripts/test-env.cjs --import tsx --test test/benchmark.integration.test.ts",
+        "lastRunAt": "2026-09-06T06:23:11.178Z",
+        "result": "PASS"
       },
       "tests": []
     }

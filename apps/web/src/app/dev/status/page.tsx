@@ -648,7 +648,7 @@ export default async function DevStatusPage() {
             <span className="rounded-lg bg-slate-100 px-3 py-1 text-slate-600">
               Next: {project?.nextUp?.id ?? "?"} {project?.nextUp?.name ?? ""}
             </span>
-            <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700">不自动开始 M6</span>
+            <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700">不自动开始 M6B/M6C/M6D（逐项授权）</span>
           </div>
           <p className="mt-3 text-xs text-slate-400">
             project-status.json 更新于 {project?.updatedAt ?? "?"}（{project?.updatedBy ?? ""}）· {project?.updatedNote ?? ""}
