@@ -554,3 +554,42 @@ Provider、未进入 M6D。M6A/M6B/UX-CN 全部回归通过。
   届时 API/Web 也会一并升级到 M6D）。
 - project-status：M6D IMPLEMENTATION_DONE + REAL_SMOKE_1Q_PASS；Overall 仍 7/8 DONE ·
   88%。3 Query smoke 与 24 Query 正式 Qwen Benchmark 由用户决定后再执行。
+
+## 2026-09-06 — M7 启动 + M7A GEO Diagnosis Foundation（feat(m7)/docs(m7)，未 push）
+
+M6 用户正式验收（含 M6D 真实 Qwen Smoke #1）→ project-status：M6 DONE，M7 正式启动，
+M7A DONE、M7B NEXT。M7A 全程 0 次真实 AI 调用、未进入 M7B。
+
+- M7A 架构（design decisions）：
+  1) Diagnosis 绑定 BenchmarkReport（快照）而非项目实时数据 —— report.analysisVersion 指定
+     读取既有 Analysis 事实，规则不重算指标；快照不漂移 + GET 不重跑。
+  2) 规则引擎 = geo-core 纯函数（src/diagnosis.ts，deterministic）：11 类 Finding +
+     DIAGNOSIS_V1_RULES 集中阈值（internal heuristic，非行业标准）+ Severity 由阈值决定 +
+     PriorityScore = severityWeight×0.5 + 受影响比例×0.25 + 证据信号×0.25（0–100，无伪 ML）。
+  3) findingType 用 String（版本演进可扩展，同 analysisVersion 风格）；severity 用 enum；
+     Report/Evidence 引用为普通 UUID 归档（不级联、只引用不复制 rawResponse —— Evidence 仍唯一事实源）。
+  4) DATA_QUALITY_WARNING 总是最先（样本/成功率/PARTIAL/demo/混合提示）；同 severity 内恒排最前。
+  5) Provider Gap 复用 M6 Reports compare：NOT_COMPARABLE → 400；仅 COMPARABLE 或仅
+     Provider/模型差异的 PARTIALLY 才输出 PROVIDER_GAP（跨模型标注）。
+  6) 幂等：同 (reportId, diagnosisVersion, secondaryReportId[null 等价]) 返回既有 DiagnosisRun。
+- 模型/迁移：20260906135242_m7a_diagnosis（新增 DiagnosisRun/DiagnosisFinding/
+  DiagnosisFindingEvidence + enum DiagnosisSeverity），geo_dev migrate dev + geo_test deploy
+  + client generate（dll lock 按既有方法处理）；无 destructive。
+- 引擎测试（geo-core）：diagnosis 29/29（severity boundary/priority 确定性/相同输入相同输出/
+  DQ 恒先/CRTA/dominance/position/citation/sentiment/provider gap/comparison/无输入突变）；
+  geo-core 合计 93/93。API e2e：diagnosis 14/14；全量 API e2e 102/102（9 suites）。
+  修复 1 例环境耦合测试：multi-provider guard 的「未配置 400」前提在宿主 .env 已配置真实
+  QWEN_API_KEY 时不成立 → 测试断言前显式清空 env（不是放宽业务断言）。
+- UI（中文，check-ui-zh PASS）：/app/diagnosis 列表（测试集/数据类型/诊断版本/时间/计数/
+  高·中·低·提示）+ /app/diagnosis/:id 详情（报告头/优先级分布/Finding 卡：标题/类型/场景/
+  事实/解释/影响问题数/证据数/优先级分数/查看证据→EvidenceDialog rawResponse 下钻）；
+  /app/reports 列表每行「生成 GEO 问题诊断」（幂等 POST → 跳详情）；工作台加入口；
+  labels.ts 增 FINDING_TYPE/SEVERITY/DIAGNOSIS_NAV。web tsc + next build（隔离 .next-m7a）PASS。
+- 真机 Demo（geo_dev，0 real calls，Engine duration 2ms）：6 条 mock Evidence(m4 分析) →
+  Report → Diagnosis（6 findings：样本量较小 MEDIUM / 演示数据提示 INFO / 低推荐 LOW /
+  位置偏后 LOW / comparison 场景缺口 LOW / 引用信号说明 INFO）→ Finding Evidence 下钻
+  rawResponse 可读。demo 数据保留（m7a-demo-* 用户可登录查看），临时脚本/API 已清理。
+- secret 扫描：仅单元测试占位符（sk-test-*/sk-m6d-e2e-fake-key）；无真实 Key/DB URL 入库、
+  无 .env 入库（tracked 仅 .env.example）→ PASS。
+- M7B TODO（下一里程碑，未开始）：Optimization Recommendations —— 基于诊断生成建议；
+  届时可能引入 diagnosis v2 扩展类型；M7A 阈值 internal heuristic disclaimer 延续。
