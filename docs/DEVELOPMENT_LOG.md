@@ -492,3 +492,37 @@ Provider、未进入 M6D。M6A/M6B/UX-CN 全部回归通过。
 - project-status.json：M6C DONE、M6D=NEXT、Overall 仍 7/8 DONE · 88%（M6 未 DONE）。
 - TODO（后续 migration/refactor）：Evidence.model/modelVersion legacy 字段清理
   （Phase 1 保留兼容，新代码已优先读 requestedModel/responseModel）。
+
+## 2026-09-06 — M6D Second Provider（Qwen）+ Multi-Provider Comparison（feat(m6)/docs(m6)，未 push，REAL_SMOKE_PENDING）
+
+接入第二真实 Provider（通义千问 Qwen，DashScope OpenAI-compatible）并通过统一 Provider
+接口完成 Multi-Provider Benchmark Comparison。**默认 NO REAL CALL**（QWEN_API_KEY 未配置，
+停留在 REAL_SMOKE_PENDING，不失败、不自行调用）；未接其他 Provider、未进下一里程碑。
+
+- Provider abstraction 审计：接口已可复用（Kind union + registry + requested/response
+  identity）；Qwen Adapter 独立实现不复制 DeepSeek。配置 QWEN_API_KEY/QWEN_BASE_URL/
+  QWEN_MODEL/QWEN_TIMEOUT_MS；总开关仍 ENABLE_REAL_PROVIDERS；enginePresentation/
+  qwenConfigured 只回布尔。Engine seed：seed-engine-qwen.ts（qwen-api，幂等 upsert）。
+- 错误模型复用：401/403→auth、429→rate_limit、5xx→server、timeout/network→可重试、
+  invalid/empty→协议错误永久。sourceType=official_api / retrievalMode=api_plain
+  （官方模型 API，不冒充 Web Search）。
+- Multi-Provider Benchmark：Run 仍 = 1 Provider（同 Suite 分别 DeepSeek/Qwen）；UI 明示
+  计划（N 问题 × Provider）；startRun 允许 real={deepseek,qwen}，未配置 400 中文；
+  超过 REAL_PROVIDER_MAX_RUNS_PER_TASK → 400 明示「计划 N 次真实调用…超过当前安全上限」，
+  不自动拆批。
+- 跨 Provider 对比语义升级：provider 不同但 suite/metricSource/analysisVersion/
+  competitorSetVersion 一致 → PARTIALLY_COMPARABLE（跨模型是 GEO 核心价值，含中文口径
+  说明）；模型身份 unknown 降级 soft；全一致 COMPARABLE；硬失配 NOT。对比展示 A/B
+  Provider 与模型身份、成功样本（样本数不同给「样本完整性不同，比较需谨慎」）。
+- UI（中文）：reports/compare 显示模型服务 A/B + 请求/响应模型 + 判定说明；率用
+  百分点 pp（+10pp 而非 +40%）；场景对比矩阵；问题级 Evidence A/B（同 queryText 对齐，
+  两个 Provider 各「查看原始回答」）；成功样本与警告。
+- queue/worker schema：RunResult provider enum 增加 qwen（z.enum）。worker 31/31（qwen
+  fake 成功→Run/Evidence/Analysis/身份、401/500/disabled/not_configured、幂等重放）。
+- 测试：llm 35（qwen 13）、API e2e 88（新增 multi-provider 6：同 suite 双 Provider 报告、
+  PARTIALLY_COMPARABLE、样本警告、证据回链、cost guard、401/404）；core 64 / queue 15 /
+  web tsc+build / check-ui-zh PASS。安全：QWEN_API_KEY/Authorization 不进 Evidence/API
+  响应/日志/payload（单测 + e2e 断言）。
+- project-status：M6D checkpoint=IN_PROGRESS（IMPLEMENTATION_DONE / REAL_SMOKE_PENDING）；
+  Overall 仍 7/8 DONE · 88%。真实 Qwen smoke：PENDING USER APPROVAL —— 授权后先 1 Query
+  （HTTP 200/Evidence/identity）→ ≤3 Query → 24 Query 正式 Benchmark 需再次单独确认。
