@@ -337,7 +337,7 @@ function mergeGroups(target: DiscoveryLexiconGroup, incoming: DiscoveryLexiconGr
   target.firstOffset = Math.min(target.firstOffset, incoming.firstOffset);
   target.aliases = [...new Set([...target.aliases, ...incoming.aliases])].sort((a, b) =>
     (target.variantCounts.get(b) ?? 0) - (target.variantCounts.get(a) ?? 0) ||
-    a.length - b.length || a.localeCompare(b));
+    b.length - a.length || a.localeCompare(b));
   target.canonicalName = target.aliases[0];
 }
 
@@ -385,7 +385,7 @@ export function discoverCandidates(rawResponse: string, options: DiscoveryOption
 
   // ---- 第 3 步：把相邻 token 组装为候选 run ----
   const detections = [...rawTokens, ...hintHits].sort((a, b) => a.start - b.start || a.end - b.end);
-  const runs: Array<{ tokens: string[]; occurrences: BrandOccurrence[] }> = [];
+  const runs: Array<{ tokens: string[]; occurrences: BrandOccurrence[]; text: string }> = [];
   let cursor = 0;
   while (cursor < detections.length) {
     const first = detections[cursor];
@@ -416,7 +416,10 @@ export function discoverCandidates(rawResponse: string, options: DiscoveryOption
         }
         return false;
       });
-      if (!overlapsExclusion) runs.push({ tokens: runTokens, occurrences });
+      if (!overlapsExclusion) {
+        const text = rawResponse.slice(occurrences[0].start, occurrences[occurrences.length - 1].end);
+        runs.push({ tokens: runTokens, occurrences, text });
+      }
     }
     cursor = next;
   }
@@ -436,12 +439,10 @@ export function discoverCandidates(rawResponse: string, options: DiscoveryOption
 
   for (const run of runs) {
     const candidateGroup: DiscoveryLexiconGroup = {
-      keyTokens: run.tokens, canonicalName: run.occurrences[0].text, aliases: [],
+      keyTokens: run.tokens, canonicalName: run.text, aliases: [],
       variantCounts: new Map(), firstOffset: run.occurrences[0].start,
     };
-    for (const occ of run.occurrences) {
-      candidateGroup.variantCounts.set(occ.text, (candidateGroup.variantCounts.get(occ.text) ?? 0) + 1);
-    }
+    candidateGroup.variantCounts.set(run.text, 1);
     candidateGroup.aliases = [...candidateGroup.variantCounts.keys()];
     candidateGroup.canonicalName = candidateGroup.aliases[0];
 

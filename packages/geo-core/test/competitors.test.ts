@@ -55,7 +55,8 @@ test('同一候选多个变体在一个文本内归并为同一候选（OpenAI C
   assert.deepEqual(r2[0].keyTokens, r1[0].keyTokens);
   const candidate = r1[0];
   assert.ok(candidate.aliases.some(a => a.toLowerCase() === 'chatgpt'));
-  assert.ok(candidate.aliases.includes('OpenAI'));
+  assert.ok(candidate.aliases.includes('OpenAI ChatGPT')); // 完整 run 文本作为别名变体
+  assert.ok(candidate.aliases.includes('ChatGPT'));
   // lexicon 内只保留一个身份组
   assert.equal(lexicon.byKey.size, 1);
 });
