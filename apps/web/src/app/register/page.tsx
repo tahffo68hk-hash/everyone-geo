@@ -5,6 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { friendlyError } from "@/lib/labels";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -26,7 +27,7 @@ export default function RegisterPage() {
       });
       router.push("/app");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "注册失败");
+      setError(friendlyError(err));
     } finally {
       setBusy(false);
     }

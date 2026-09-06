@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GeoLens | AI Visibility Intelligence",
-  description: "GEO 监测数据平台 - AI Visibility Intelligence",
+  title: "GeoLens · AI 可见度智能平台",
+  description: "GEO 监测数据平台 · AI 可见度智能分析（AI Visibility Intelligence）",
 };
 
 export default function RootLayout({

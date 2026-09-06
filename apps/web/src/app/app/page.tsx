@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { formatProjectStatus, formatRole } from "@/lib/labels";
 
 type Member = {
   id: string;
@@ -104,10 +105,10 @@ export default function AppPage() {
           创建监测任务
         </Link>
         <Link href="/app/benchmark" className="inline-block rounded-lg border border-blue-700 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50">
-          GEO Benchmark（M6A）
+          GEO 基准测试
         </Link>
         <Link href="/app/competitors" className="inline-block rounded-lg border border-indigo-700 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50">
-          Competitor Discovery（M6B）
+          竞品分析（竞品发现）
         </Link>
       </div>
 
@@ -133,7 +134,7 @@ export default function AppPage() {
                     <span className="block font-medium">{org.name}</span>
                     <span className="block text-xs text-slate-400">
                       {org.slug} · {org._count.projects} 个项目 · 角色
-                      {org.role}
+                      {formatRole(org.role)}
                     </span>
                   </button>
                 </li>
@@ -165,7 +166,7 @@ export default function AppPage() {
                             : "bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {p.status}
+                        {formatProjectStatus(p.status)}
                       </span>
                     </div>
                     {p.description && (

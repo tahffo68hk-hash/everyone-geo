@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import {
+  EMPTY_TEXT, formatAnalysisStatus, formatEntityType, formatRetrievalMode,
+  formatSentiment, formatSourceType, formatStatus, friendlyError, withRaw,
+} from "@/lib/labels";
 
 type Analysis = {
   id: string; analysisVersion: string; brandMentioned: boolean; mentionPosition: number | null;
@@ -61,7 +65,7 @@ export function EvidenceDialog({ runId, onClose }: { runId: string; onClose: () 
           timer = setTimeout(fetchRun, Math.min(2000 * 2 ** Math.floor(polls / 3), 15000));
         }
       } catch (cause) {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "无法加载证据。");
+        if (!controller.signal.aborted) setError(friendlyError(cause));
       } finally { if (!controller.signal.aborted) setLoading(false); }
     }
     void fetchRun();
@@ -71,29 +75,39 @@ export function EvidenceDialog({ runId, onClose }: { runId: string; onClose: () 
   const analysis = evidence?.analyses.find((item) => item.id === analysisId) ?? evidence?.analyses[0];
   return (
     <dialog ref={dialog} aria-labelledby="evidence-heading" onCancel={onClose} className="m-auto max-h-[90vh] w-[calc(100%_-_2rem)] max-w-4xl overflow-y-auto rounded-2xl bg-white p-6 text-slate-900 shadow-xl backdrop:bg-slate-900/50">
-      <div className="flex items-center justify-between gap-4"><h2 id="evidence-heading" className="text-xl font-semibold">运行证据</h2><button autoFocus type="button" onClick={onClose} className={buttonClass}>关闭</button></div>
-      <p className="mt-2 break-all text-xs text-slate-500">Run ID：{runId}</p>
+      <div className="flex items-center justify-between gap-4"><h2 id="evidence-heading" className="text-xl font-semibold">检测记录 · 原始证据</h2><button autoFocus type="button" onClick={onClose} className={buttonClass}>关闭</button></div>
+      <p className="mt-2 break-all text-xs text-slate-500">检测记录 ID（Run ID）：{runId}</p>
       <button type="button" onClick={() => setRetry((value) => value + 1)} className={`${buttonClass} mt-3`}>刷新证据</button>
       {loading && <p role="status" className="mt-4">正在加载证据…</p>}
       {error && <p role="alert" className="mt-4 text-red-700">{error}</p>}
-      {run && <p className="mt-4 text-sm">运行：{run.status} · 尝试 {run.attempt} 次 · 分析：{run.analysisStatus}{run.analysisErrorCode ? `（${run.analysisErrorCode}）` : ""}</p>}
-      {run && !evidence && <p className="mt-4 text-sm text-slate-600">暂无证据。运行完成后可刷新查看；失败或取消的运行可能没有证据。</p>}
+      {run && <p className="mt-4 text-sm">运行状态：{formatStatus(run.status)} · 尝试 {run.attempt} 次 · 分析状态：{formatAnalysisStatus(run.analysisStatus)}{run.analysisErrorCode ? `（错误码 ${run.analysisErrorCode}）` : ""}</p>}
+      {run && !evidence && <p className="mt-4 text-sm text-slate-600">{EMPTY_TEXT.evidence}。运行完成后可刷新查看；失败或取消的运行可能没有证据。</p>}
       {evidence && <div className="mt-5 space-y-6">
-        {evidence.sourceType.toLowerCase() === "mock" && <p className="inline-block rounded bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">Mock / Demo · 模拟数据</p>}
-        {evidence.sourceType.toLowerCase() === "official_api" && <p className="inline-block rounded bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-900">DeepSeek API Response · Official API 真实调用</p>}
+        {evidence.sourceType.toLowerCase() === "mock" && <p className="inline-block rounded bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">演示数据（Mock/Demo）</p>}
+        {evidence.sourceType.toLowerCase() === "official_api" && <p className="inline-block rounded bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-900">DeepSeek API 真实调用 · 官方 API（official_api）</p>}
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
-          {[["查询", evidence.queryText], ["Provider", evidence.provider], ["引擎", `${evidence.engineName} (${evidence.engineKey})`], ["模型", evidence.model], ["模型版本", evidence.modelVersion ?? "—"], ["时间", evidence.createdAt], ["来源", evidence.sourceType === "official_api" ? "Official API" : evidence.sourceType], ["检索模式", evidence.retrievalMode === "api_plain" ? "API 普通对话（非联网搜索）" : evidence.retrievalMode], ["Token 用量", usageTokens(evidence.metadata) ?? "—"]].map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words">{value}</dd></div>)}
+          {[
+            ["原始问题（queryText）", evidence.queryText],
+            ["模型服务（provider）", evidence.provider],
+            ["检测引擎", `${evidence.engineName}（${evidence.engineKey}）`],
+            ["模型（model）", evidence.model],
+            ["模型版本", evidence.modelVersion ?? "—"],
+            ["时间", evidence.createdAt],
+            ["数据来源（sourceType）", withRaw(formatSourceType(evidence.sourceType), evidence.sourceType)],
+            ["检索模式（retrievalMode）", withRaw(formatRetrievalMode(evidence.retrievalMode), evidence.retrievalMode)],
+            ["Token 用量", usageTokens(evidence.metadata) ?? "—"],
+          ].map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words">{value}</dd></div>)}
         </dl>
-        <section><h3 className="mb-2 font-semibold">完整 Prompt</h3><pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-sm">{evidence.rawPrompt}</pre></section>
-        <section><h3 className="mb-2 font-semibold">原始响应</h3><pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-sm">{evidence.rawResponse}</pre></section>
+        <section><h3 className="mb-2 font-semibold">原始提示词（rawPrompt）</h3><pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-sm">{evidence.rawPrompt}</pre></section>
+        <section><h3 className="mb-2 font-semibold">模型原始回答（rawResponse）</h3><pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-sm">{evidence.rawResponse}</pre></section>
         <section>
           <h3 className="mb-3 font-semibold">分析结果</h3>
           {!analysis ? <p className="text-sm text-slate-500">{run?.analysisStatus === "FAILED" ? "分析失败；原始证据仍可查看。" : "尚无分析结果，可稍后刷新。"}</p> : <>
             <label htmlFor="analysis-version" className="mr-2 text-sm">已保存分析版本</label>
             <select id="analysis-version" value={analysis.id} onChange={(event) => setAnalysisId(event.target.value)} className="max-w-full rounded border border-slate-300 p-2 text-sm">{evidence.analyses.map((item) => <option key={item.id} value={item.id}>{item.analysisVersion} · {item.createdAt}</option>)}</select>
-            <p className="mt-3 text-sm">品牌提及：{analysis.brandMentioned ? "是" : "否"} · 提及排名：{analysis.mentionPosition ?? "—"} · 推荐：{analysis.recommended ? "是" : "否"} · 情感：{analysis.sentiment}</p>
+            <p className="mt-3 text-sm">是否提及品牌：{analysis.brandMentioned ? "是" : "否"} · 提及位置：{analysis.mentionPosition ?? "—"} · 是否被推荐：{analysis.recommended ? "是" : "否"} · 情感倾向：{formatSentiment(analysis.sentiment)}</p>
             <h4 className="mt-4 font-medium">品牌与竞品提及</h4>
-            {!analysis.mentions.length ? <p className="mt-2 text-sm text-slate-500">无提及记录。</p> : <ul className="mt-2 space-y-3 text-sm">{analysis.mentions.map((mention) => <li key={mention.id} className="rounded border border-slate-200 p-3"><p>{mention.displayName}（{mention.canonicalName}） · {mention.entityType} · 排名 {mention.position} · {mention.sentiment}</p><p className="mt-1 whitespace-pre-wrap break-words text-slate-600">{mention.context}</p></li>)}</ul>}
+            {!analysis.mentions.length ? <p className="mt-2 text-sm text-slate-500">无提及记录。</p> : <ul className="mt-2 space-y-3 text-sm">{analysis.mentions.map((mention) => <li key={mention.id} className="rounded border border-slate-200 p-3"><p>{mention.displayName}（{mention.canonicalName}） · {formatEntityType(mention.entityType)} · 提及位置 {mention.position} · {formatSentiment(mention.sentiment)}</p><p className="mt-1 whitespace-pre-wrap break-words text-slate-600">{mention.context}</p></li>)}</ul>}
             <h4 className="mt-4 font-medium">引用来源</h4>
             {!analysis.citations.length ? <p className="mt-2 text-sm text-slate-500">无引用记录。</p> : <>
               {structuredCitationCount(evidence.metadata) > 0

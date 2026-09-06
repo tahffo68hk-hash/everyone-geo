@@ -5,6 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { friendlyError } from "@/lib/labels";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function LoginPage() {
       });
       router.push("/app");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "登录失败");
+      setError(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -37,7 +38,7 @@ export default function LoginPage() {
         className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
       >
         <h1 className="text-xl font-semibold text-slate-900">登录 GeoLens</h1>
-        <p className="text-sm text-slate-500">AI Visibility Intelligence</p>
+        <p className="text-sm text-slate-500">AI 可见度智能平台（AI Visibility Intelligence）</p>
 
         <label className="block text-sm font-medium text-slate-700">
           邮箱
