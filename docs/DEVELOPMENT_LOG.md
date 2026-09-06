@@ -389,3 +389,40 @@ pnpm-lock.yaml。
   Evidence + 24 Analysis，重启后可于 UI 直接查看）。
 - 会话内注意：工具宿主以 job object 回收子进程，Bash/PS 工具无法留驻常驻服务；
   验证用进程随命令退出。持久启动仍走 START_GEOLENS.cmd（用户双击）。
+
+## 2026-09-06 — M6B Competitor Discovery（feat(m6)/test(m6)/docs(m6)，未 push）
+
+在 M6A 冻结（e754670）之上完成 M6B 闭环：REAL Evidence → Candidate 发现 → 人工评审 →
+版本化 Competitor Set → m6b 重分析 → SoV 显式绑定版本。全程 0 次 DeepSeek 请求、不进入
+M6C、不引入第二 Provider。
+
+- 数据模型（迁移 20260906084138_m6b_competitors，geo_dev + geo_test 已 deploy）：
+  CompetitorCandidate / CompetitorCandidateEvidence（候选↔Evidence 链接，非副本，
+  @@unique(candidateId,evidenceId)）/ CompetitorSet(name+version 唯一，DRAFT/ACTIVE/
+  ARCHIVED) / CompetitorSetEntry（canonicalName/aliases/type/sortOrder 快照，candidateId
+  为非 FK 归档）；Analysis 增 competitorSetId/competitorSetVersion（非 FK，索引）。
+- @geo/core 提取器 discoverCandidates + createDiscoveryLexicon：确定性、无概率；uppercase
+  token 起步 → lexicon/排除名大小写命中（小写变体续命）→ 相邻组装（≤6 token，仅英文
+  连接词/ASCII 间隔，中文顿号不拼）→ suffix 归并（"ChatGPT"⊂"OpenAI ChatGPT"）→
+  自身品牌/A/B/C 占位整段排除；推荐信号复用 m4 RuleJudge。新增 15 项单测，
+  geo-core 合计 64/64。
+- API（apps/api/src/competitors，auth+租户隔离+swagger）：discovery(幂等 refresh，
+  REJECTED 跳过、0 命中 DISCOVERED 清理)、candidates 列表/详情(evidenceLinks 回链
+  Evidence→Run→Query)、review(Approve 必须显式 DIRECT/ADJACENT/SUBSTITUTE、Reject→
+  NON_COMPETITOR、改名/aliases 冲突 400)、sets 创建(默认=全部 APPROVED 快照)/列表/详情/
+  activate(冻结+同 name 旧 ACTIVE 自动归档)、reanalysis(m6b-competitors-v1，本地
+  RuleJudge，Evidence 不可变、m4 保留、幂等)、sov(显式绑定 Set 版本；未 ACTIVE/未
+  重分析 → pending)。发现只消费 REAL Evidence（sourceType∈official_api/browser/
+  third_party_api/manual 且 provider≠mock）：fixture 中 24 条 mock Demo Evidence = 0 输入、
+  estimated 排除、ProjectMentor 自身品牌与 A/B/C 占位均不入候选。
+- 修复的关键缺陷：候选 canonical/aliases 以 extractor 跨 Evidence 最终词表为准（逐条
+  Evidence 处理期间归并 canonical 会随计数在 ChatGPT↔chatgpt 翻转，服务端自建计数会
+  选错小写形式）；e2e 另修正两处断言（B 项目自身语料不含 "ChatGPT" 以真正测无泄漏；
+  activate 为 POST 默认 201）。
+- 测试：competitor e2e 16 项全绿；API 全量 6 套件 65/65（M3/M4/M5/M6A 回归）；worker
+  24/24；queue 15/15；geo-core/database/llm/web tsc 全绿。真机验收：/app/competitors
+  闭环（Discovery → Approve/DIRECT → Set v1 → Activate → Re-analysis → SoV ready），
+  0 次 DeepSeek 调用；诚实口径：真实语料为小样本，SoV 仅为绑定版本集的发现信号。
+- 提交序列：b52d4e8（candidates，schema/迁移/core）+ feat(m6) api 模块 + feat(m6) review
+  UI + test(m6) e2e + docs(m6)（本日志 + docs/m6-competitors.md + project-status.json：
+  M6B DONE、M6C=NEXT、Overall 7/8 DONE · 88%）。未 push；M6C 待用户指令后启动。
