@@ -219,3 +219,27 @@ ExitCode=0（如 `docker compose up -d` 正常把 progress/status 写到 stderr�
 - 沙箱验证受限说明：本沙箱 PowerShell 对 native 输出捕获/Start-Process 均有宿主层限制，
   无法端到端模拟真机双击；已做语法回归（help/status 控制流）+ 全量静态复核，真机 A-E 验收
   需用户执行。未产生任何真实 API 费用。
+
+## 2026-09-06 — DX1 Launcher Fix #3：容器健康探测确定性（fix 独立 commit）
+
+真机 [3/8] PostgreSQL FAILED，异常消息 = compose 正常进度行 "Container geo-postgres Running"。
+即使 a0ad7b3 已改用 2> 文件重定向，部分 PS 5.1 宿主仍会把 native stderr 提升为终止错误
+（NativeCommandError，消息=stderr 原文），叠加 $ErrorActionPreference='Stop' → launcher 中断。
+
+- Invoke-NativeProcess v3（层层设防，native stderr 永远不可能终止流程）：
+  a. 每次调用生成唯一 stdout/stderr 文件 `.runtime/tmp/native-<guid>.*`，读后即删——
+     绝不复用固定路径，杜绝上一次调用残留被下次读取（stale 串数据）；
+  b. 调用前函数内 $ErrorActionPreference 临时降级 'Continue'（提升成 ErrorRecord 也只非终止）；
+  c. 调用包 try/catch，残余提升吞掉并附 stderr 摘要，不向上抛；
+  d. ExitCode 在调用结束后立即捕获（读取文件/恢复目录之前），成败只看 ExitCode；
+  e. exe 缺失直接返回 127 + 明确 stderr。
+- 容器健康探测确定性重构：新增 Get-ContainerStatus —— 用
+  `docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}'`
+  机器可解析输出（不解析 compose ps 人类表格 / "Container xxx Running" 进度文案），归一化为
+  healthy|starting|unhealthy|running|exited|missing|unknown。Wait-ContainerHealthy：healthy→PASS、
+  starting/unknown/unhealthy→2s 重试、missing/exited→快速 FAIL、超时→FAIL，失败带真实
+  status+inspect exit+本次 stderr 摘要。Get-RedisPong 改返回 {ok,exitCode,stdout,stderr}，
+  PONG 判定 = ExitCode 0 且 stdout(trim)=PONG，不因 stderr 判失败。Postgres 120s / Redis 60s。
+- 真机验证仍待用户执行（START 8/8 → 幂等 START → STATUS → STOP → 再 START）；沙箱内已做
+  help/status 语法回归 + 健康函数 StrictMode harness 冒烟（逻辑无崩溃；native 不真正执行故
+  status=unknown/exit=-1 属沙箱宿主限制，非脚本缺陷）。未产生任何真实 API 费用。

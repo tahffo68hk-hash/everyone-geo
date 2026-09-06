@@ -30,6 +30,7 @@ $ErrorActionPreference = 'Stop'
 $RootDir      = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $RuntimeDir   = Join-Path $RootDir '.runtime'
 $LogsDir      = Join-Path $RuntimeDir 'logs'
+$NativeTmpDir = Join-Path $RuntimeDir 'tmp'   # 每次 native 调用的独立 stdout/stderr 临时文件
 $StatusJson   = Join-Path $RuntimeDir 'status.json'
 $MetaJson     = Join-Path $RuntimeDir 'meta.json'
 $EnvFile      = Join-Path $RootDir '.env'
@@ -131,43 +132,50 @@ function Resolve-ExePath([string]$Name) {
 }
 
 # ================================================================
-# 统一 native 进程调用（Windows PowerShell 5.1 安全版）
+# 统一 native 进程调用（Windows PowerShell 5.1 安全版，v3）
 #
-# 根因：PS 5.1 中 native stderr 一旦经 2>&1 / *>&1 合并，会被逐行包装成
-# ErrorRecord；在 $ErrorActionPreference='Stop' 下，即使进程 ExitCode=0
-# （如 `docker compose up -d` 把正常 progress/status 写到 stderr），也会被
-# 误判为终止错误（NativeCommandError）导致 launcher 中途退出。
+# 真机三连坑（前两次已修，第三次根因见下）：
+#   1) PS 5.1 中 native stderr 经 2>&1/*>&1 合并 → 逐行包装成 ErrorRecord，
+#      在 $ErrorActionPreference='Stop' 下 ExitCode=0 也会被判为终止错误。
+#   2) Start-Process(UseShellExecute=$false) 重建子进程环境为大小写不敏感
+#      字典，环境里同时存在 http_proxy/HTTP_PROXY 时抛 "已添加项"。
+#   3) 即便用 2> 文件重定向，部分 PS 5.1 宿主/场景下 native stderr 仍会被
+#      提升为终止错误（NativeCommandError，消息=stderr 原文，例如
+#      "Container geo-postgres Running"），导致 [3/8] PostgreSQL FAILED。
 #
-# 永久修复原则：
-#   - 一律 `& exe args 1> StdoutFile 2> StderrFile`：PS 5.1 中 native stderr
-#     经 `2>` 直接写入文件，不会产生 ErrorRecord（只有 2>&1/*>&1 合并才会
-#     包装）；stdout/stderr 因此根本不进入 PowerShell 错误流，主窗口干净；
-#   - 成功 / 失败只依据 $LASTEXITCODE（进程 ExitCode）；ExitCode=0 时即使
-#     stderr 有内容（如 "Container geo-redis Running"）也必须视为成功；
-#   - ExitCode != 0 时由调用方读取 stderr 摘要决定告警 / throw。
-# 因此任何 native 命令（docker / node / pnpm / ...）都不得再用 2>&1 管道。
-#
-# 注：不使用 Start-Process + -Redirect* 是因为 PS 5.1 的 Start-Process 在
-# UseShellExecute=$false 时会用大小写不敏感字典重建子进程环境；当环境块中
-# 同时存在 http_proxy / HTTP_PROXY 这类大小写重复变量时会抛
-# "已添加项 / Item has already been added"（PowerShell 已知缺陷）。
-# 本 helper 为同步执行；不做超时强杀，长时间命令的超时由上层轮询兜底。
+# v3 安全层（层层设防，使 native stderr 永远不可能终止启动流程）：
+#   a. 每次调用生成唯一 stdout/stderr 文件（native-<guid>.*），调用结束读取
+#      后即删 —— 绝不复用固定路径，杜绝上一次调用残留被本次读取（stale）；
+#   b. 调用前把函数内 $ErrorActionPreference 临时降级为 'Continue'，
+#      即使宿主把 stderr 提升成 ErrorRecord 也只非终止、不中断；
+#   c. 调用包 try/catch：仍被提升为终止错误时捕获并吞掉，附到 stderr 摘要；
+#   d. 成败只依据进程 ExitCode —— 调用结束后【立即】捕获 $LASTEXITCODE
+#      （在读取文件、恢复目录之前）；stderr 非空绝不代表失败；
+#   e. 进程未真正启动（exe 缺失/不可执行）时返回 127 + 明确 stderr。
 # ================================================================
 function Invoke-NativeProcess {
   param(
     [Parameter(Mandatory = $true)][string]$FilePath,
     [string[]]$ArgumentList = @(),
     [string]$WorkingDirectory = '',
-    [string]$StdoutFile = '',
-    [string]$StderrFile = '',
-    [int]$MaxText = 200000    # 返回文本上限（防止把巨量日志读进内存）
+    [string]$StdoutFile = '',   # 显式指定则落固定日志（compose up / build 等长命令）
+    [string]$StderrFile = '',   # 不指定则自动分配唯一临时文件并回收
+    [int]$MaxText = 200000      # 返回文本上限（防止把巨量日志读进内存）
   )
-  if (-not $StdoutFile) { $StdoutFile = Join-Path $LogsDir 'native.out.log' }
-  if (-not $StderrFile) { $StderrFile = Join-Path $LogsDir 'native.err.log' }
-  Remove-IfExists $StdoutFile
-  Remove-IfExists $StderrFile
+  # —— 每次调用独立 stdout/stderr 生命周期 ——
+  $autoOut = [string]::IsNullOrEmpty($StdoutFile)
+  $autoErr = [string]::IsNullOrEmpty($StderrFile)
+  if ($autoOut) { $StdoutFile = Join-Path $NativeTmpDir ('native-{0}.out.log' -f ([guid]::NewGuid().ToString('N'))) }
+  if ($autoErr) { $StderrFile = Join-Path $NativeTmpDir ('native-{0}.err.log' -f ([guid]::NewGuid().ToString('N'))) }
+  New-Item -ItemType Directory -Force -Path $NativeTmpDir | Out-Null
 
   $exe = Resolve-ExePath $FilePath
+  # 找不到可执行文件：直接返回 127（不抛错，让调用方按 ExitCode 处理）
+  if (-not [IO.Path]::IsPathRooted($exe) -and -not (Get-Command $exe -ErrorAction SilentlyContinue)) {
+    if ($autoOut) { Remove-IfExists $StdoutFile }
+    if ($autoErr) { Remove-IfExists $StderrFile }
+    return @{ ExitCode = 127; Stdout = ''; Stderr = "命令不存在：$exe" }
+  }
   # 含空格/引号的参数手动补引号，避免被拆成多个参数
   $quoted = @($ArgumentList | ForEach-Object {
     if ($_ -match '[\s"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ }
@@ -178,21 +186,38 @@ function Invoke-NativeProcess {
     if (-not (Test-Path -LiteralPath $WorkingDirectory)) { throw "工作目录不存在：$WorkingDirectory" }
     Set-Location -LiteralPath $WorkingDirectory
   }
+  # 只做 1> / 2> 文件重定向，绝不使用 2>&1 / *>&1；函数内临时 EAP=Continue
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $started = $false
+  $invokeError = $null
   try {
-    # 关键：只做 1> / 2> 文件重定向，绝不使用 2>&1 / *>&1
     $null = & $exe @quoted 1> $StdoutFile 2> $StderrFile
+    $started = $true
+  } catch {
+    $invokeError = $_.Exception.Message   # 残余提升吞掉，不向上抛
   } finally {
+    $ErrorActionPreference = $prevEap
     if ($WorkingDirectory) { Set-Location -LiteralPath $prev.Path }
   }
-  # 进程 ExitCode：成败的唯一依据。native 运行后 PowerShell 总会设置
-  # $global:LASTEXITCODE；StrictMode 下未定义时引用会抛，故 try 兜底。
+  # —— 进程 ExitCode：成败唯一依据；调用结束后立即捕获 ——
   $code = -1
   try { $code = [int]$global:LASTEXITCODE } catch { $code = -1 }
+  if (-not $started -and $code -lt 0) {
+    $code = 127
+    if (-not $invokeError) { $invokeError = "无法启动命令：$exe" }
+  }
 
   $stdout = Read-TextFile $StdoutFile
   $stderr = Read-TextFile $StderrFile
+  if ($invokeError -and $stderr -notmatch [regex]::Escape($invokeError)) {
+    $stderr = ($invokeError + "`n" + $stderr).Trim()
+  }
   if ($stdout.Length -gt $MaxText) { $stdout = $stdout.Substring(0, $MaxText) }
   if ($stderr.Length -gt $MaxText) { $stderr = $stderr.Substring(0, $MaxText) }
+  # 临时文件用完即删（内容已读入内存），显式指定的日志文件保留
+  if ($autoOut) { Remove-IfExists $StdoutFile }
+  if ($autoErr) { Remove-IfExists $StderrFile }
   return @{ ExitCode = $code; Stdout = $stdout; Stderr = $stderr }
 }
 
@@ -386,17 +411,59 @@ function Get-DockerServerUp() {
   } catch { return $false }
 }
 
-function Get-ContainerHealth([string]$Name) {
-  $r = Invoke-CommandCapture 'docker' @('inspect', '-f', '{{.State.Health.Status}}', $Name)
-  if ($r.ExitCode -ne 0) { return 'absent' }
-  $v = $r.Stdout.Trim()
-  if ($v -eq '') { return 'absent' }
-  return $v  # healthy | starting | unhealthy | none
+# docker inspect 机器可解析健康探测（不解析 compose ps 人类文本 / "Container xxx Running"）。
+# 模板带 {{if .State.Health}} 守卫：有 healthcheck 返回 Health.Status，
+# 无 healthcheck 才回退 State.Status。返回归一化枚举：
+#   healthy | starting | unhealthy | running | exited | missing | unknown
+function Get-ContainerStatus([string]$Name) {
+  $tmpl = '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}'
+  $r = Invoke-NativeProcess -FilePath 'docker' -ArgumentList @('inspect', '-f', $tmpl, $Name)
+  $norm = 'unknown'
+  if ($r.ExitCode -ne 0) {
+    if ([string]$r.Stderr -match 'No such|no such|not found') { $norm = 'missing' }
+  } else {
+    $v = (([string]$r.Stdout) -replace "`r|`n", '').Trim().ToLowerInvariant()
+    if ($v -eq 'healthy')      { $norm = 'healthy' }
+    elseif ($v -eq 'starting') { $norm = 'starting' }
+    elseif ($v -eq 'unhealthy'){ $norm = 'unhealthy' }
+    elseif ($v -eq 'running')  { $norm = 'running' }   # 仅当容器无 healthcheck 时可能出现
+    elseif ($v -eq 'created')  { $norm = 'starting' }
+    elseif ($v -in @('exited', 'dead', 'paused', 'restarting', 'removing')) { $norm = 'exited' }
+    else                       { $norm = 'unknown' }
+  }
+  $err = [string]$r.Stderr
+  if ($err.Length -gt 300) { $err = $err.Substring(0, 300) }
+  return @{ status = $norm; exitCode = $r.ExitCode; stderr = $err }
 }
 
+# 等待容器 healthy。healthy -> PASS；starting/unknown/unhealthy -> 每 2s 重试；
+# missing/exited -> 快速 FAIL；超时 -> FAIL。返回 @{ ok; status; exitCode; stderr; waitedSec }
+function Wait-ContainerHealthy([string]$Name, [int]$TimeoutSec = 90) {
+  $startedAt = Get-Date
+  $deadline  = $startedAt.AddSeconds($TimeoutSec)
+  $last = $null
+  while ($true) {
+    $last = Get-ContainerStatus $Name
+    if ($last.status -eq 'healthy') {
+      return @{ ok = $true; status = 'healthy'; exitCode = $last.exitCode; stderr = $last.stderr; waitedSec = [int]((Get-Date) - $startedAt).TotalSeconds }
+    }
+    if ($last.status -in @('missing', 'exited')) {
+      # 容器不存在或已退出：无重试意义，快速失败
+      return @{ ok = $false; status = $last.status; exitCode = $last.exitCode; stderr = $last.stderr; waitedSec = [int]((Get-Date) - $startedAt).TotalSeconds }
+    }
+    if ((Get-Date) -ge $deadline) { break }
+    Start-Sleep -Seconds 2
+  }
+  $last = Get-ContainerStatus $Name
+  return @{ ok = $false; status = $last.status; exitCode = $last.exitCode; stderr = $last.stderr; waitedSec = [int]((Get-Date) - $startedAt).TotalSeconds }
+}
+
+# docker exec redis-cli ping：要求 ExitCode=0 且 stdout(trim)=PONG。
+# stderr 是否存在不判成败；容器未运行/不存在时 exit 非 0 自然失败。
 function Get-RedisPong() {
-  $r = Invoke-CommandCapture 'docker' @('exec', 'geo-redis', 'redis-cli', 'ping')
-  return ($r.ExitCode -eq 0 -and $r.Stdout.Trim() -eq 'PONG')
+  $r = Invoke-NativeProcess -FilePath 'docker' -ArgumentList @('exec', 'geo-redis', 'redis-cli', 'ping')
+  $out = (([string]$r.Stdout) -replace "`r|`n", '').Trim()
+  return @{ ok = ($r.ExitCode -eq 0 -and $out -eq 'PONG'); exitCode = $r.ExitCode; stdout = $out; stderr = ([string]$r.Stderr).Trim() }
 }
 
 function Wait-Until([scriptblock]$Cond, [int]$TimeoutSec, [string]$What) {
@@ -406,10 +473,6 @@ function Wait-Until([scriptblock]$Cond, [int]$TimeoutSec, [string]$What) {
     Start-Sleep -Seconds 2
   }
   return $false
-}
-
-function Wait-DockerHealth([string]$Name, [int]$TimeoutSec = 120) {
-  return (Wait-Until ({ (Get-ContainerHealth $Name) -eq 'healthy' }) $TimeoutSec "container $Name healthy")
 }
 
 # ---------------------------------------------------------------- 应用启动/停止
@@ -495,7 +558,7 @@ function Test-Command-Start() {
 "@
   Write-Info $title
   Log-File '=== START ==='
-  New-Item -ItemType Directory -Force -Path $RuntimeDir, $LogsDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $RuntimeDir, $LogsDir, $NativeTmpDir | Out-Null
   $steps = 0
 
   # [1/8] Node 24
@@ -545,10 +608,11 @@ function Test-Command-Start() {
       if (-not $errSum.Trim()) { $errSum = (Get-LastLogLine $coOutLog 400) }
       throw "docker compose up 失败（exit=$($cr.ExitCode)）：$errSum"
     }
-    $pg = Get-ContainerHealth 'geo-postgres'
-    if ($pg -ne 'healthy') {
-      $ok = Wait-DockerHealth 'geo-postgres' 120
-      if (-not $ok) { throw "PostgreSQL 未在 120s 内 healthy（health=$pg，见 docker-compose.log）" }
+    $pgWait = Wait-ContainerHealthy 'geo-postgres' 120
+    if (-not $pgWait.ok) {
+      $detail = "status=$($pgWait.status)，inspect exit=$($pgWait.exitCode)"
+      if ($pgWait.stderr) { $detail += "；stderr: $($pgWait.stderr)" }
+      throw "PostgreSQL 未在 120s 内 healthy（$detail，等待 $($pgWait.waitedSec)s；详见 docker-compose.err.log）"
     }
     Write-Ok "[$steps/8] PostgreSQL .......... HEALTHY"
   } catch {
@@ -559,9 +623,18 @@ function Test-Command-Start() {
 
   # [4/8] Redis（healthy + PONG）
   $steps++
-  $rd = Get-ContainerHealth 'geo-redis'
-  if ($rd -ne 'healthy') { $ok = Wait-DockerHealth 'geo-redis' 60; if (-not $ok) { Write-Fail "[$steps/8] Redis ............... FAILED（health=$rd）"; throw 'Redis 未 healthy' } }
-  if (-not (Get-RedisPong)) { Write-Fail "[$steps/8] Redis ............... FAILED（PONG 失败）"; throw 'Redis PONG 失败' }
+  $rdWait = Wait-ContainerHealthy 'geo-redis' 60
+  if (-not $rdWait.ok) {
+    $detail = "status=$($rdWait.status)，inspect exit=$($rdWait.exitCode)"
+    if ($rdWait.stderr) { $detail += "；stderr: $($rdWait.stderr)" }
+    Write-Fail "[$steps/8] Redis ............... FAILED（$detail）"
+    throw 'Redis 容器未 healthy'
+  }
+  $pong = Get-RedisPong
+  if (-not $pong.ok) {
+    Write-Fail "[$steps/8] Redis ............... FAILED（redis-cli ping：exit=$($pong.exitCode) stdout=[$($pong.stdout)] stderr=[$($pong.stderr)]）"
+    throw 'Redis PONG 失败'
+  }
   Write-Ok "[$steps/8] Redis ............... HEALTHY (PONG)"
 
   # 幂等：已由 DX1 启动则跳过启动
@@ -720,9 +793,9 @@ function Update-StatusSnapshot() {
   $ds = Get-DockerServerUp
   $snap.dockerServer = $ds
   $snap.infrastructure = @{
-    postgres = if ($ds) { Get-ContainerHealth 'geo-postgres' } else { 'DOWN' }
-    redis    = if ($ds) { Get-ContainerHealth 'geo-redis' } else { 'DOWN' }
-    redisPong = if ($ds) { Get-RedisPong } else { $false }
+    postgres = if ($ds) { (Get-ContainerStatus 'geo-postgres').status } else { 'DOWN' }
+    redis    = if ($ds) { (Get-ContainerStatus 'geo-redis').status } else { 'DOWN' }
+    redisPong = if ($ds) { (Get-RedisPong).ok } else { $false }
   }
   $snap.apps = @{}
   foreach ($name in @('web', 'api', 'worker')) {
@@ -834,7 +907,7 @@ GeoLens Dev Control Center (DX1)
 
 # ---------------------------------------------------------------- 入口
 try {
-  New-Item -ItemType Directory -Force -Path $RuntimeDir, $LogsDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $RuntimeDir, $LogsDir, $NativeTmpDir | Out-Null
   # 允许 .env 的 API_PORT 覆盖（默认 3001）
   $envApiPort = Get-DotEnvValue $EnvFile 'API_PORT'
   if ($envApiPort -and $envApiPort -match '^\d+$') {
