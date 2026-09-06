@@ -435,6 +435,107 @@ export class BenchmarkService implements OnModuleDestroy {
     };
   }
 
+  // ---------------------------------------------------------------
+  // Frozen Snapshot Re-run（M7D：受控复测，杜绝 Re-test Query Drift）
+  // ---------------------------------------------------------------
+  /**
+   * 从历史 BenchmarkRun 的 BenchmarkRunQuery 快照再跑一轮（same queryText/category/
+   * intent/locale/weight/sanity/sortOrder）。绝不静默读取后来编辑过的当前
+   * BenchmarkQuery —— 每轮复测为 snapshot 语义新建镜像 Query 行（PAUSED/IMPORTED），
+   * 然后仍走既有 MonitorTask → Run → Queue → Worker → Evidence → Analysis 管线。
+   * @param sourceRunId 基线 BenchmarkRun（其 runQueries 即 frozen query set）
+   */
+  async startRunFromSnapshot(userId: string, sourceRunId: string, dto: { engineId: string; runType: 'demo' | 'real' }) {
+    const source = await this.db.client.benchmarkRun.findFirst({
+      where: { id: sourceRunId, organization: { members: { some: { userId } } } },
+      select: { id: true, projectId: true, suiteId: true, suiteName: true, suiteVersion: true, organizationId: true },
+    });
+    if (!source) throw new NotFoundException("基线 Benchmark Run 不存在或无权访问");
+
+    const snapRows = await this.db.client.benchmarkRunQuery.findMany({
+      where: { benchmarkRunId: source.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    if (snapRows.length === 0) {
+      throw new BadRequestException("基线没有可复用的冻结测试问题快照，无法保证与基线口径一致（拒绝复测）");
+    }
+
+    const engine = await this.db.client.engine.findFirst({ where: { id: dto.engineId, enabled: true } });
+    if (!engine) throw new BadRequestException("Engine 不存在或已停用");
+
+    const real = dto.runType === 'real';
+    const REAL_PROVIDERS = new Set(['deepseek', 'qwen']);
+    if (real) {
+      if (!REAL_PROVIDERS.has(engine.provider)) {
+        throw new BadRequestException("Real Run 只能使用 DeepSeek / Qwen（通义千问）Provider 引擎");
+      }
+      const presentation = enginePresentation(engine.provider, engine.config, process.env);
+      if (!presentation.configured) {
+        const providerLabel = engine.provider === 'qwen' ? 'Qwen（通义千问）' : 'DeepSeek';
+        throw new BadRequestException(`${providerLabel} Provider 未配置或未启用（需 ENABLE_REAL_PROVIDERS=true 且配置对应 API Key）。`);
+      }
+    } else if (engine.provider !== 'mock') {
+      throw new BadRequestException("Demo Run 只能使用 Mock 引擎（模拟数据，不产生真实调用）");
+    }
+
+    const plannedRuns = snapRows.length; // frozen queries × 1 provider
+    if (real) {
+      const cap = readRealProviderEnv(process.env).realProviderMaxRunsPerTask;
+      if (plannedRuns > cap) {
+        throw new BadRequestException(
+          `Frozen Re-test Real Run 计划 ${plannedRuns} 次真实调用（${snapRows.length} queries × 1 provider），` +
+          `超过 REAL_PROVIDER_MAX_RUNS_PER_TASK=${cap} 上限。请提高上限并显式确认后重试。`,
+        );
+      }
+    }
+
+    const created = await this.db.client.$transaction(async tx => {
+      // 为每个 snapshot 语义新建镜像 Query（保证文本 = 冻结快照，不受当前 Query 编辑影响）
+      const mirrorQueries: Array<{ id: string }> = [];
+      for (const row of snapRows) {
+        mirrorQueries.push(await tx.query.create({
+          data: {
+            projectId: source.projectId, text: row.queryText,
+            type: 'CUSTOM', source: 'IMPORTED', status: 'PAUSED', language: row.locale ?? 'zh-CN', region: 'cn',
+          },
+        }));
+      }
+      const monitorTask = await tx.monitorTask.create({
+        data: {
+          organizationId: source.organizationId, projectId: source.projectId,
+          totalRuns: plannedRuns,
+          runs: { create: snapRows.map((row, index) => ({ queryId: mirrorQueries[index].id, engineId: engine.id })) },
+        },
+      });
+
+      const benchmarkRun = await tx.benchmarkRun.create({
+        data: {
+          organizationId: source.organizationId, projectId: source.projectId,
+          suiteId: source.suiteId, suiteName: source.suiteName, suiteVersion: source.suiteVersion,
+          runType: real ? 'REAL' : 'DEMO', provider: engine.provider, engineId: engine.id,
+          monitorTaskId: monitorTask.id, plannedRuns,
+          status: 'PENDING',
+          metadata: { engineKey: engine.key, frozenFromRunId: source.id, frozenRetest: true } as JsonValue,
+          runQueries: { create: snapRows.map((row, index) => ({
+            benchmarkQueryId: row.benchmarkQueryId,
+            // projectQueryId 指向本复测新建的镜像 Query（getRun/metrics 经其对齐快照语义）
+            projectQueryId: mirrorQueries[index].id,
+            queryText: row.queryText, category: row.category, intent: row.intent,
+            locale: row.locale, weight: row.weight, sortOrder: row.sortOrder, sanity: row.sanity,
+          })) },
+        },
+      });
+      return benchmarkRun;
+    });
+
+    console.log(JSON.stringify({
+      event: 'frozen_retest_run_created', runId: created.id, sourceRunId: source.id,
+      runType: dto.runType, provider: engine.provider, plannedRuns,
+    }));
+    this.kickDispatch();
+    return this.getRun(userId, created.id);
+  }
+
   private kickDispatch() {
     if (this.dispatching) return;
     if (!this.queue) {

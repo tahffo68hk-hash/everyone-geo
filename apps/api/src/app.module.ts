@@ -11,9 +11,10 @@ import { ReportsModule } from "./reports/reports.module";
 import { DiagnosisModule } from "./diagnosis/diagnosis.module";
 import { RecommendationsModule } from "./recommendations/recommendations.module";
 import { OpportunitiesModule } from "./opportunities/opportunities.module";
+import { ExperimentsModule } from "./experiments/experiments.module";
 
 @Module({
-  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule],
+  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule, ExperimentsModule],
   controllers: [HealthController],
 })
 export class AppModule {}
