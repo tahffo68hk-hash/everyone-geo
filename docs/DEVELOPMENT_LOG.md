@@ -357,3 +357,35 @@ BenchmarkQuery 行（queryText/category/intent/sortOrder/sanity 全部取当前�
   （startRun 后 BenchmarkRunQuery = 24）。benchmark e2e 17/17；全套 api e2e 49/49
   （M3/M4/M5 回归）；worker 24/24（含 benchmark.integration 2/2）。
 - geo_dev + geo_test 均已 migrate deploy。未进 M6B、无真实 DeepSeek 调用。
+
+## 2026-09-06 — M6A Final Acceptance Hotfix（fix(m6) swagger peer align，未 push）
+
+M6A 真机最终验收（重启 API 使新代码生效）时暴露启动期崩溃：
+@nestjs/swagger@12.0.1 的 peerDependencies 要求 @nestjs/common ^12，而项目实际为
+@nestjs/common@11.2.3 / core@11.2.3 —— swagger 12 的 ESM 入口 import
+loadPackageSync from @nestjs/common/utils/load-package.util.js 在 common 11 上无此导出，
+任何 Node 版本下真实 boot 都会 SyntaxError 崩溃（api/worker dist 已在 14:2x 构建，但
+13:58 用户 START 的进程跑的是 M6A 之前的旧 dist，无 swagger import，故此前未暴露；
+e2e 全部通过是因为测试经 TestingModule 绕过 main.ts，从未加载 swagger）。
+
+修复：@nestjs/swagger 从 ^12.0.1 降级到 ^11（实际解析 11.4.7，peer 为
+@nestjs/common ^11.0.1），与项目 Nest 11 对齐，改动仅 apps/api/package.json +
+pnpm-lock.yaml。
+
+真机全链路验收（本机即真机，会话内临时起停 api/worker）：
+- API 以新 dist boot：/health 200（1s）、Swagger /docs 200（swagger 11 生效）。
+- 登录 alice@geolens.local → POST /benchmark-suites/23fb7de6…/runs demo(mock-alpha)
+  → 返回 plannedRuns=24、status=PENDING。
+- Worker 消费：poll RUNNING → SUCCEEDED（约 6s），runs 24/24 SUCCEEDED、
+  analysisStatus 24/24 SUCCEEDED、24 行均含 benchmarkQueryId（快照回链）、
+  sanity 行 0（2 条 sanity 未派发，正确）。
+- GET /benchmark-runs/:id/metrics：metricSource=demo；overall
+  {totalRuns:24, successfulRuns:24, analyzedRuns:24, visibilityRate:0,
+  recommendationRate:0, citationCount:0}（mock-alpha 不自然提及品牌——
+  visibility 0 为诚实 demo 口径）；byCategory 6 类各 queryEligibleCount=4/
+  queryMentionedCount=0；byQuery 24 行（category 分布 6×4，含 intent/sortOrder）；
+  competitorScope={status:pending-m6b}（M6B 前不输出 SoV 结论）。
+- 本次 Demo BenchmarkRun：843626da-c514-46ec-8eff-b2c33d95f327（已入库，含 24
+  Evidence + 24 Analysis，重启后可于 UI 直接查看）。
+- 会话内注意：工具宿主以 job object 回收子进程，Bash/PS 工具无法留驻常驻服务；
+  验证用进程随命令退出。持久启动仍走 START_GEOLENS.cmd（用户双击）。
