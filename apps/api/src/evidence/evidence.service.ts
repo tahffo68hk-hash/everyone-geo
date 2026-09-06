@@ -15,7 +15,9 @@ export class EvidenceService {
         engine: { select: { id: true, key: true, name: true } },
         evidence: { select: {
           id: true, runId: true, queryText: true, rawPrompt: true, rawResponse: true,
-          provider: true, engineKey: true, engineName: true, model: true, modelVersion: true,
+          provider: true, engineKey: true, engineName: true,
+          requestedModel: true, responseModel: true, // M6C model identity
+          model: true, modelVersion: true, // legacy 兼容
           retrievalMode: true, sourceType: true, metadata: true, createdAt: true,
           analyses: {
             orderBy: [{ createdAt: 'asc' }, { analysisVersion: 'asc' }],

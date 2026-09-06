@@ -10,7 +10,7 @@ import {
 } from '@geo/queue';
 import {
   DeepSeekProvider, LLMProviderError, LLMProviderRegistry, MockProvider,
-  DEFAULT_REAL_PROVIDER_TIMEOUT_MS,
+  DEFAULT_REAL_PROVIDER_TIMEOUT_MS, enginePresentation,
   type LLMProvider, type ProviderErrorKind, type ProviderRequest, type ProviderResponse,
 } from '@geo/llm';
 
@@ -139,6 +139,9 @@ export function createRunProcessor(db: PrismaClient, options: {
       engineKey: run.engine.key,
       engineName: run.engine.name,
       engineConfig: run.engine.config,
+      // M6C model identity：Worker 以 enginePresentation 单一解析 requestedModel 并传给
+      // Provider —— 与最终 Evidence.requestedModel 保持同一来源，不靠 Provider 猜测。
+      requestedModel: enginePresentation(run.engine.provider, run.engine.config).model ?? undefined,
       attempt: run.attempt,
       timeoutMs: mock ? timeoutMs : realTimeoutMs,
     };

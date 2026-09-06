@@ -50,6 +50,15 @@ function capturingFetch(): { fetch: FetchLike; calls: Array<{ url: string; init:
   return { fetch, calls };
 }
 
+/** Fake DeepSeek 响应：可指定 API 回报的 model（M6C requested ≠ response 场景）。 */
+function modelResponse(model: string): FetchLike {
+  return async () => jsonResponse({
+    id: 'chatcmpl-identity', object: 'chat.completion', created: 1700000000, model,
+    choices: [{ index: 0, message: { role: 'assistant', content: '返回内容' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+  });
+}
+
 // ---------------------------------------------------------------- config & registry
 
 test('config：默认 disabled / 无 key / 默认 baseUrl model timeout cap', () => {
@@ -109,6 +118,8 @@ test('mock：默认文案与 scenario 文案、durationMs', async () => {
   assert.equal(plain.sourceType, 'mock');
   assert.equal(plain.retrievalMode, 'unknown');
   assert.equal(plain.model, 'geolens-mock');
+  assert.equal(plain.requestedModel, 'geolens-mock'); // M6C mock identity
+  assert.equal(plain.responseModel, 'geolens-mock');  // M6C mock identity
   const scenario = await provider.execute(baseRequest({ engineConfig: { delayMs: 5, scenario: 'first' } }));
   assert.ok(scenario.content.includes('ProjectMentor'));
   assert.ok(scenario.durationMs >= 5);
@@ -203,14 +214,17 @@ test('deepseek：请求映射（url/headers/body/model/messages/temperature/max_
   assert.equal(messages[1].content, baseRequest().queryText);
 });
 
-test('deepseek：响应映射（provider/model/modelVersion/usage/requestId/finishReason/rawPrompt）', async () => {
+test('deepseek：响应映射（provider/requestedModel/responseModel/model/modelVersion/usage/requestId/finishReason/rawPrompt）', async () => {
   const { fetch, calls } = capturingFetch();
   const provider = new DeepSeekProvider({ fetch, env: env() });
   const response = await provider.execute(baseRequest());
   assert.equal(response.provider, 'deepseek');
   assert.equal(response.sourceType, 'official_api');
   assert.equal(response.retrievalMode, 'api_plain');
-  assert.equal(response.model, 'deepseek-chat');
+  // M6C model identity：requested = 请求模型；response = Provider 回报模型
+  assert.equal(response.requestedModel, 'deepseek-chat');
+  assert.equal(response.responseModel, 'deepseek-chat');
+  assert.equal(response.model, 'deepseek-chat'); // legacy = responseModel ?? requestedModel
   assert.equal(response.modelVersion, 'deepseek-chat');
   assert.equal(response.content, '推荐 ProjectMentor。');
   assert.equal(response.requestId, 'chatcmpl-test-1');
@@ -221,13 +235,25 @@ test('deepseek：响应映射（provider/model/modelVersion/usage/requestId/fini
   assert.equal(calls[0].init.signal instanceof AbortSignal, true);
 });
 
-test('deepseek：payload 未报告 model → modelVersion=null 且用配置 model', async () => {
+test('deepseek：requested ≠ response —— 请求 deepseek-chat、API 回报 deepseek-v4-flash 正常保存', async () => {
+  const provider = new DeepSeekProvider({ fetch: modelResponse('deepseek-v4-flash'), env: env({ DEEPSEEK_MODEL: 'deepseek-chat' }) });
+  const response = await provider.execute(baseRequest());
+  assert.equal(response.requestedModel, 'deepseek-chat');
+  assert.equal(response.responseModel, 'deepseek-v4-flash');
+  assert.notEqual(response.requestedModel, response.responseModel); // 两者语义分离
+  assert.equal(response.model, 'deepseek-v4-flash'); // legacy 保持旧行为
+  assert.equal(response.modelVersion, 'deepseek-v4-flash');
+});
+
+test('deepseek：payload 未报告 model → responseModel=null 且用配置 model', async () => {
   const fetch: FetchLike = async (_url, _init) => jsonResponse({
     id: 'chatcmpl-x', choices: [{ index: 0, message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
   });
   const provider = new DeepSeekProvider({ fetch, env: env({ DEEPSEEK_MODEL: 'deepseek-chat' }) });
   const response = await provider.execute(baseRequest());
+  assert.equal(response.requestedModel, 'deepseek-chat');
+  assert.equal(response.responseModel, null);
   assert.equal(response.model, 'deepseek-chat');
   assert.equal(response.modelVersion, null);
 });

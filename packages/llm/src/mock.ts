@@ -75,8 +75,12 @@ export class MockProvider implements LLMProvider {
     const content = scenario !== undefined
       ? mockScenarioText(String(scenario), request.engineKey, request.queryText, request.entities ?? [])
       : `[mock:${request.engineKey}] ${request.queryText}`;
+    // M6C model identity：requested = Worker 传入（默认 mock 常量）；
+    // responseModel = mock 自身声明（geolens-mock）—— mock 即身份来源。
+    const requestedModel = request.requestedModel ?? 'geolens-mock';
     return {
       provider: 'mock', sourceType: this.sourceType, retrievalMode: this.retrievalMode,
+      requestedModel, responseModel: 'geolens-mock',
       model: 'geolens-mock', modelVersion: '1',
       content, rawPrompt: request.queryText,
       structuredCitations: parseCitations((config as Record<string, unknown>).citations),

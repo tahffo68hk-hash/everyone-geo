@@ -33,6 +33,9 @@ export function evidenceData(run: ClaimedRun, response: ProviderResponse, entiti
   return {
     runId: run.id, queryText: run.query.text, rawPrompt: response.rawPrompt, rawResponse: response.content,
     provider: response.provider, engineKey: run.engine.key, engineName: run.engine.name,
+    // M6C model identity：requestedModel / responseModel 为新语义字段；model /
+    // modelVersion 为 legacy 兼容（新代码优先读新字段）。
+    requestedModel: response.requestedModel, responseModel: response.responseModel,
     model: response.model, modelVersion: response.modelVersion,
     sourceType: response.sourceType, retrievalMode: response.retrievalMode,
     metadata: JSON.parse(JSON.stringify(metadata)) as Prisma.InputJsonValue,

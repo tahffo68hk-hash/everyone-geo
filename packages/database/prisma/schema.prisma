@@ -101,6 +101,7 @@ model Project {
   benchmarkRuns  BenchmarkRun[]
   competitorCandidates CompetitorCandidate[]
   competitorSets CompetitorSet[]
+  reports        BenchmarkReport[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -324,6 +325,16 @@ model Evidence {
   provider       String
   engineKey      String
   engineName     String
+  // M6C model identity（Evidence 仍 immutable，见 DB trigger）：
+  //   requestedModel = GeoLens 请求 Provider 时指定的模型（deepseek-chat）
+  //   responseModel  = Provider 响应中实际声明的模型（deepseek-v4-flash）；未声明则 null
+  // 历史证据（M6C 迁移前）：requestedModel 无不可变证明则保持 null；responseModel 仅
+  // 在可证明（如 rawProviderPayload 回声或 mock 常量身份）时回填 —— 严禁用当前 Engine
+  // 配置猜测历史请求模型。
+  requestedModel String?
+  responseModel  String?
+  // @deprecated legacy（Phase 1 保留兼容，新代码优先读 requestedModel/responseModel）：
+  //   model = responseModel ?? requestedModel；modelVersion = Provider 回报的版本/身份。
   model          String
   modelVersion   String?
   retrievalMode  RetrievalMode
@@ -478,6 +489,7 @@ model BenchmarkRun {
   engine       Engine         @relation(fields: [engineId], references: [id], onDelete: Restrict)
   monitorTask  MonitorTask    @relation(fields: [monitorTaskId], references: [id], onDelete: Restrict)
   runQueries   BenchmarkRunQuery[]
+  reports      BenchmarkReport[]
 
   @@index([projectId, createdAt])
   @@index([suiteId, createdAt])
@@ -509,6 +521,57 @@ model BenchmarkRunQuery {
   @@unique([benchmarkRunId, sortOrder])
   @@unique([benchmarkRunId, projectQueryId])
   @@index([benchmarkRunId])
+}
+
+// ============================================================
+// M6C - Benchmark Report（不可变 GEO 报告快照）+ Model Identity
+// ============================================================
+// 设计原则（M6C）：
+//   1) Report = snapshot：生成瞬间冻结 suite/engine/model identity/analysisVersion/
+//      competitorSet/metricsSnapshot 全部 provenance —— 之后任何行被编辑（BenchmarkQuery、
+//      Competitor Set、新 Analysis version）都不会改变已生成报告。
+//   2) 同一 BenchmarkRun 允许生成多个 Report（如 m4-rule-v1 与 m6b-competitors-v1 各一份），
+//      绝不 silently replace 旧报告。
+//   3) competitorSetId 为普通 UUID 记录（非 FK，归档语义）：即使 Set 行未来被删除，
+//      Report 的 name/version 快照仍自包含。
+//   4) requestedModel / responseModel 为运行时的模型身份快照（来自 Evidence 聚合），
+//      与 Evidence.model/modelVersion(legacy) 语义分离。
+model BenchmarkReport {
+  id               String           @id @default(uuid()) @db.Uuid
+  projectId        String           @db.Uuid
+  benchmarkRunId   String           @db.Uuid
+  // ---- provenance 快照（不可变解释所需）----
+  runType          BenchmarkRunType
+  suiteName        String
+  suiteVersion     String
+  provider         String
+  engineKey        String
+  engineName       String
+  requestedModel   String?
+  responseModel    String?
+  metricSource     String // demo | real | mixed（生成时判定）
+  analysisVersion  String
+  // ---- Competitor Set 快照（nullable：m4-rule-v1 无竞对集）----
+  competitorSetId      String? @db.Uuid
+  competitorSetName    String?
+  competitorSetVersion String?
+  // ---- 完成度快照（PARTIAL 必须可说明成功/失败样本数）----
+  completedRuns   Int
+  succeededRuns   Int
+  failedRuns      Int
+  analyzedRuns    Int
+  partial         Boolean // true = PARTIAL 语义：报告不代表完整测试集
+  metricsSnapshot Json
+  metadata        Json     @default("{}")
+  generatedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  benchmarkRun BenchmarkRun  @relation(fields: [benchmarkRunId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, generatedAt])
+  @@index([benchmarkRunId, generatedAt])
+  @@index([projectId, analysisVersion])
 }
 
 // ============================================================

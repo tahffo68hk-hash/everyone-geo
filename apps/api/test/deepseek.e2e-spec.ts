@@ -159,7 +159,10 @@ describe('DeepSeek provider guards (M5 e2e)', () => {
     for (const [run, brandMentioned, recommended] of [[realOk, true, true], [mockOk, false, false]] as const) {
       const evidence = await prisma.evidence.create({ data: {
         runId: run.id, queryText: 'q', rawPrompt: 'p', rawResponse: 'r', provider: run.engineId === deepseekEngineId ? 'deepseek' : 'mock',
-        engineKey: 'k', engineName: 'n', model: 'm', modelVersion: null,
+        engineKey: 'k', engineName: 'n',
+        requestedModel: run.engineId === deepseekEngineId ? 'deepseek-chat' : 'geolens-mock',
+        responseModel: run.engineId === deepseekEngineId ? 'deepseek-v4-flash' : 'geolens-mock',
+        model: 'm', modelVersion: null,
         retrievalMode: run.engineId === deepseekEngineId ? 'api_plain' : 'unknown',
         sourceType: run.engineId === deepseekEngineId ? 'official_api' : 'mock',
         metadata: {}, entitySnapshot: {},

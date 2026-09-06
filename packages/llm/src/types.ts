@@ -42,6 +42,13 @@ export interface ProviderRequest {
   engineName: string;
   /** Engine.config JSON (provider-specific tuning, never secrets). */
   engineConfig: unknown;
+  /**
+   * M6C model identity: the resolved requested model handed over by the Worker
+   * (single source of truth = enginePresentation). Providers fall back to their
+   * own resolution when absent (direct unit usage). Never assume it equals the
+   * model the provider reports back.
+   */
+  requestedModel?: string;
   /** Zero-based delivery attempt (claimRun increments before execute). */
   attempt: number;
   /** Abort budget for this single call. */
@@ -66,15 +73,29 @@ export interface StructuredCitation {
  * (persisted as Evidence.rawResponse); rawPrompt is the exact prompt text that
  * was sent. rawProviderPayload carries sanitized provider JSON - it never
  * contains Authorization headers or secrets.
+ *
+ * Model identity (M6C): requestedModel is the exact model string the provider
+ * was asked to use (resolved from Engine config / env at call time);
+ * responseModel is the model the provider actually declared in its response
+ * (null when the provider does not report one). They are NOT assumed equal.
+ *
+ * `model` / `modelVersion` are LEGACY fields kept for backward compatibility:
+ *   - model  = responseModel when the provider reported one, else requestedModel
+ *   - modelVersion = provider-reported version/identity, else null
+ * New code must prefer requestedModel / responseModel.
  */
 export interface ProviderResponse {
   provider: ProviderKind;
   /** Evidence classification for this provider output (never mock for real calls). */
   sourceType: SourceTypeValue;
   retrievalMode: RetrievalModeValue;
-  /** Resolved requested model (e.g. deepseek-chat). */
+  /** Model GeoLens requested from the provider (e.g. deepseek-chat). */
+  requestedModel: string;
+  /** Model the provider declared in its response (e.g. deepseek-v4-flash), else null. */
+  responseModel: string | null;
+  /** @deprecated legacy: responseModel ?? requestedModel. */
   model: string;
-  /** Model actually served by the provider when reported (else null). */
+  /** @deprecated legacy: provider-reported version/identity, else null. */
   modelVersion: string | null;
   content: string;
   rawPrompt: string;

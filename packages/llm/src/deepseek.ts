@@ -78,13 +78,15 @@ export class DeepSeekProvider implements LLMProvider {
     if (!cfg.realProvidersEnabled) throw new ProviderDisabledError();
     if (cfg.apiKey === null) throw new ProviderNotConfiguredError();
     const options = readConfig(request.engineConfig);
-    const model = options.model ?? cfg.model;
+    // M6C：requestedModel 以 Worker 传入为准（enginePresentation 单一解析），
+    // 直接单测调用时回退到 engine config / env 自身解析。
+    const requestedModel = request.requestedModel ?? options.model ?? cfg.model;
     const timeoutMs = Math.max(1000, Math.min(120_000, request.timeoutMs || cfg.timeoutMs));
     const messages = options.systemPrompt
       ? [{ role: 'system', content: options.systemPrompt }, { role: 'user', content: request.queryText }]
       : [{ role: 'user', content: request.queryText }];
-    const rawPrompt = JSON.stringify({ model, messages });
-    const body: Record<string, unknown> = { model, messages, stream: false };
+    const rawPrompt = JSON.stringify({ model: requestedModel, messages });
+    const body: Record<string, unknown> = { model: requestedModel, messages, stream: false };
     if (options.temperature !== undefined) body.temperature = options.temperature;
     if (options.maxTokens !== undefined) body.max_tokens = options.maxTokens;
 
@@ -120,9 +122,14 @@ export class DeepSeekProvider implements LLMProvider {
     }
     const payload = parsePayload(text);
     const mapped = mapCompletion(payload);
+    // M6C model identity：requestedModel = 本请求实际发送的 model（engine config 或
+    // env 解析）；responseModel = Provider 响应中声明的 model（存在时），两者不假设相等
+    // （真实 DeepSeek：请求 deepseek-chat，可能响应 deepseek-v4-flash）。
     return {
       provider: 'deepseek', sourceType: this.sourceType, retrievalMode: this.retrievalMode,
-      model: mapped.model ?? model,
+      requestedModel,
+      responseModel: mapped.model ?? null,
+      model: mapped.model ?? requestedModel,
       modelVersion: mapped.model ?? null,
       content: mapped.content,
       rawPrompt,
