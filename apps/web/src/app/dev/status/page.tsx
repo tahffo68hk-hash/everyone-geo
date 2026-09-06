@@ -4,9 +4,12 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  formatProgressStatus,
+} from "@/lib/labels";
 
 export const metadata: Metadata = {
-  title: "GeoLens Project Control Center",
+  title: "GeoLens 项目控制中心（开发环境）",
 };
 
 export const dynamic = "force-dynamic"; // 每次请求实时检测，禁止 build 期预渲染
@@ -235,6 +238,11 @@ const MS_PILL: Record<MsStatus, string> = {
   NOT_STARTED: "bg-slate-100 text-slate-600 border-slate-300",
   BLOCKED: "bg-red-100 text-red-800 border-red-300",
 };
+const GATE_KEYS: Record<string, string> = {
+  implementation: "实现（Implementation）",
+  testing: "测试（Testing）",
+  demo: "演示（Demo）",
+};
 
 async function collect() {
   const project = existsSync(PROJECT_JSON) ? await readJson<ProjectStatus>(PROJECT_JSON) : null;
@@ -294,11 +302,11 @@ async function collect() {
 
   const workerNote = workerAlive
     ? workerReady
-      ? `Ready（PID ${workerPid}，日志含 READY 标记）`
+      ? `就绪（PID ${workerPid}，日志含 READY 标记）`
       : `已启动但未见 READY（PID ${workerPid}）`
     : workerPid > 0
-      ? `Down（PID ${workerPid} 已失效）`
-      : "Down（无 PID 记录）";
+      ? `已停止（PID ${workerPid} 已失效）`
+      : "已停止（无 PID 记录）";
 
   return {
     project,
@@ -347,8 +355,8 @@ export default async function DevStatusPage() {
         <div className="mx-auto max-w-5xl px-6 py-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">GeoLens · development only</div>
-              <h1 className="mt-1 text-2xl font-bold">Project Control Center</h1>
+              <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">GeoLens · 仅开发环境（dev only）</div>
+              <h1 className="mt-1 text-2xl font-bold">项目控制中心</h1>
               <p className="mt-1 text-sm text-slate-500">本地开发驾驶舱 · 观察用，不做危险操作 · 检测时间 {c.checkedAt}</p>
             </div>
             <a href={CONTROL_URL} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
@@ -364,24 +372,24 @@ export default async function DevStatusPage() {
                 {milestones.find((m) => m.id === current)?.name ?? "DeepSeek Real Provider"}
               </div>
               <div className="text-sm text-blue-700">
-                Status: {milestones.find((m) => m.id === current)?.status ?? "DONE"}
-                {project?.nextUp ? ` · Next: ${project.nextUp.id ?? ""} ${project.nextUp.name ?? ""}（不自动开始）` : ""}
+                状态：{formatProgressStatus(milestones.find((m) => m.id === current)?.status)}
+                {project?.nextUp ? ` · 下一步：${project.nextUp.id ?? ""} ${project.nextUp.name ?? ""}（不自动开始）` : ""}
               </div>
             </div>
             <div className="ml-auto text-right">
-              <div className="text-xs text-slate-500">Overall Progress（按 Milestone 状态计算）</div>
+              <div className="text-xs text-slate-500">总体进度（按里程碑状态计算）</div>
               <div className="mt-1 text-sm font-semibold text-slate-700">
-                {done}/{total} DONE · {pct}%
+                {done}/{total} 已完成 · {pct}%
               </div>
             </div>
           </div>
 
           {/* Progress blocks — 从数据推导，不硬编码 */}
-          <div className="mt-3 flex gap-1" aria-label="Overall progress">
+          <div className="mt-3 flex gap-1" aria-label="总体进度">
             {milestones.map((m) => (
               <div
                 key={m.id}
-                title={`${m.id} ${m.name}: ${m.status}`}
+                title={`${m.id} ${m.name}：${formatProgressStatus(m.status)}`}
                 className={`h-2.5 flex-1 rounded-sm ${
                   m.status === "DONE"
                     ? "bg-emerald-500"
@@ -405,35 +413,35 @@ export default async function DevStatusPage() {
       <div className="mx-auto max-w-5xl space-y-6 px-6 pt-6">
         {/* ============ SYSTEM STATUS ============ */}
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">System Status</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">系统状态</h2>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <StatusTile
               label="Web"
               state={c.web.probeOk || c.web.pageOk ? "ok" : "down"}
-              text={c.web.probeOk || c.web.pageOk ? "Running" : "Down"}
+              text={c.web.probeOk || c.web.pageOk ? "运行中" : "已停止"}
               note={c.web.alive ? `PID ${c.web.pid}（实时）` : "由本页面提供"}
             />
             <StatusTile
               label="API"
               state={c.api.ok ? "ok" : "down"}
-              text={c.api.ok ? "Healthy" : "Down"}
+              text={c.api.ok ? "正常" : "已停止"}
               note={c.api.alive ? `PID ${c.api.pid}（实时 /health）` : "实时 /health"}
             />
             <StatusTile
               label="Worker"
               state={c.worker.ready ? "ok" : c.worker.alive ? "warn" : "down"}
-              text={c.worker.ready ? "Ready" : c.worker.alive ? "Starting" : "Down"}
+              text={c.worker.ready ? "就绪" : c.worker.alive ? "启动中" : "已停止"}
               note={c.worker.alive ? `PID ${c.worker.pid}（实时 PID + 日志 READY）` : "PID 文件 + 日志标记"}
             />
             <StatusTile
               label="PostgreSQL"
               state={c.infra.postgres.value === "healthy" ? "ok" : "down"}
-              text={c.infra.postgres.value === "healthy" ? "Healthy" : "Down / unknown"}
+              text={c.infra.postgres.value === "healthy" ? "正常" : "已停止/未知"}
               note={
                 c.infra.postgres.from === "live"
                   ? `docker inspect（实时 @ ${c.infra.postgres.at}）`
                   : c.infra.postgres.from === "snapshot"
-                    ? `Last verified ${c.infra.postgres.at}（docker inspect）`
+                    ? `最近核验 ${c.infra.postgres.at}（docker inspect）`
                     : "未检测到（先运行 START 或 STATUS）"
               }
             />
@@ -442,10 +450,10 @@ export default async function DevStatusPage() {
               state={c.infra.redis.value === "healthy" && c.infra.redisPong === true ? "ok" : "down"}
               text={
                 c.infra.redis.value === "healthy" && c.infra.redisPong === true
-                  ? "Healthy"
+                  ? "正常"
                   : c.infra.redisPong === null
-                    ? "Unknown"
-                    : "Down"
+                    ? "未知"
+                    : "已停止"
               }
               note={
                 c.infra.redis.from === "live"
@@ -453,14 +461,14 @@ export default async function DevStatusPage() {
                     ? `docker exec redis-cli ping ${c.infra.redisPong ? "= PONG" : "≠ PONG"}（实时 @ ${c.infra.redis.at}）`
                     : "docker inspect（实时）"
                   : c.infra.redis.from === "snapshot"
-                    ? `Last verified ${c.infra.redis.at}（snapshot，运行 STATUS 可刷新）`
+                    ? `最近核验 ${c.infra.redis.at}（快照，运行 STATUS 可刷新）`
                     : "未检测到（先运行 START 或 STATUS）"
               }
             />
             <StatusTile
-              label="DB Health"
+              label="数据库健康（DB Health）"
               state={c.api.dbOk ? "ok" : "down"}
-              text={c.api.dbOk ? "Pass" : "Fail"}
+              text={c.api.dbOk ? "通过" : "未通过"}
               note="实时 /health/db（经 API）"
             />
             <StatusTile
@@ -468,10 +476,10 @@ export default async function DevStatusPage() {
               state={c.config.deepseekConfigured === null ? "warn" : c.config.deepseekConfigured ? "ok" : "down"}
               text={
                 c.config.deepseekConfigured === null
-                  ? "Unknown"
+                  ? "未知"
                   : c.config.deepseekConfigured
-                    ? "Configured (YES)"
-                    : "Not configured (NO)"
+                    ? "已配置"
+                    : "未配置"
               }
               note={
                 c.config.fromSnapshot
@@ -480,14 +488,14 @@ export default async function DevStatusPage() {
               }
             />
             <StatusTile
-              label="Real Providers"
+              label="真实模型服务（Real Providers）"
               state={c.config.realProvidersEnabled === null ? "warn" : c.config.realProvidersEnabled ? "ok" : "warn"}
               text={
                 c.config.realProvidersEnabled === null
-                  ? "Unknown"
+                  ? "未知"
                   : c.config.realProvidersEnabled
-                    ? "Enabled"
-                    : "Disabled"
+                    ? "已启用"
+                    : "未启用"
               }
               note="启动器快照 · ENABLE_REAL_PROVIDERS 默认 false"
             />
@@ -496,38 +504,38 @@ export default async function DevStatusPage() {
 
         {/* ============ QUICK ACTIONS ============ */}
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Quick Actions（仅安全入口，无系统管理按钮）</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">快捷入口（仅安全入口，无系统管理按钮）</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            <QuickLink href="/app" label="Open Dashboard" />
-            <QuickLink href="/app/monitor" label="Open Monitor / Evidence" />
-            <QuickLink href={`#ms-${current.replace(/\W/g, "")}`} label="View Latest Milestone" />
-            <QuickLink href={CONTROL_URL} label="Refresh Status" />
+            <QuickLink href="/app" label="打开工作台" />
+            <QuickLink href="/app/monitor" label="打开 GEO 监测 / 原始证据" />
+            <QuickLink href={`#ms-${current.replace(/\W/g, "")}`} label="查看当前里程碑" />
+            <QuickLink href={CONTROL_URL} label="刷新状态" />
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Open Dashboard / Monitor 需要登录（演示账号：<code className="rounded bg-slate-100 px-1">alice@geolens.local</code> /{" "}
+            打开工作台 / 监测需要登录（演示账号：<code className="rounded bg-slate-100 px-1">alice@geolens.local</code> /{" "}
             <code className="rounded bg-slate-100 px-1">Password123!</code>）。
           </p>
         </section>
 
         {/* ============ M5 REAL EVIDENCE (verified) ============ */}
         <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-amber-700">M5 Real API — Verified</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-amber-700">M5 真实 API 调用（已验证）</h2>
           <p className="mt-2 text-sm text-amber-900">
-            真实调用 <b>{project?.realRunEvidence?.totalRealRuns ?? 4} Real Runs</b>（HTTP 200，attempt=1 无重试，引擎
+            真实调用 <b>{project?.realRunEvidence?.totalRealRuns ?? 4} 次真实运行（Real Runs）</b>（HTTP 200，attempt=1 无重试，引擎
             deepseek-api；模型 deepseek-v4-flash；Evidence sourceType=official_api / retrievalMode=api_plain，未伪造引用）。
           </p>
           <p className="mt-1 text-sm text-amber-900">
-            最新真实 GEO 样本：ProjectMentor · DeepSeek · 3 Query → Brand mentions{" "}
-            <b>{project?.realRunEvidence?.sample?.brandMentions ?? 0}/3</b>（Visibility 0%）。
+            最新真实 GEO 样本：ProjectMentor · DeepSeek · 3 条测试问题 → 品牌提及{" "}
+            <b>{project?.realRunEvidence?.sample?.brandMentions ?? 0}/3</b>（品牌可见率 0%）。
           </p>
           <p className="mt-2 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-            ⚠️ Small sample / baseline only —— 不代表稳定行业结论
+            ⚠️ 样本量较小，仅作为发现信号（baseline）—— 不代表稳定行业结论
           </p>
         </section>
 
         {/* ============ PROJECT PROGRESS ============ */}
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Project Progress（点击 Milestone 展开详情）</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">项目进度（点击里程碑展开详情）</h2>
           <ol className="mt-3 space-y-2">
             {milestones.map((m, idx) => (
               <li key={m.id} id={`ms-${m.id.replace(/\W/g, "")}`} className="scroll-mt-4">
@@ -537,7 +545,7 @@ export default async function DevStatusPage() {
                     <span className="w-14 font-mono text-sm font-bold text-slate-800">{m.id}</span>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700">{m.name}</span>
                     <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${MS_PILL[m.status] ?? "bg-slate-100 text-slate-600"}`}>
-                      {m.status.replace("_", " ")}
+                      {formatProgressStatus(m.status)}
                     </span>
                     <span className="text-xs text-slate-400">#{idx + 1} / {total}</span>
                     <span className="text-xs text-slate-300 transition-transform group-open:rotate-180">▾</span>
@@ -559,9 +567,9 @@ export default async function DevStatusPage() {
                           if (!gate) return null;
                           return (
                             <div key={g} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{g}</div>
+                              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{GATE_KEYS[g] ?? g}</div>
                               <div className="mt-0.5 font-semibold text-slate-800">
-                                {GATE_ICON[gate.status]} {gate.status}
+                                {GATE_ICON[gate.status]} {formatProgressStatus(gate.status)}
                               </div>
                               {gate.detail && <div className="mt-0.5 text-xs text-slate-500">{gate.detail}</div>}
                             </div>
@@ -573,7 +581,7 @@ export default async function DevStatusPage() {
                     {/* checkpoints（实时看 Agent 做到第几步） */}
                     {m.checkpoints && m.checkpoints.length > 0 && (
                       <div className="mt-3">
-                        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Checkpoints</div>
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">检查点（Checkpoints）</div>
                         <div className="mt-1 flex flex-wrap gap-1.5">
                           {m.checkpoints.map((cp, i) => (
                             <span key={i} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
@@ -587,10 +595,10 @@ export default async function DevStatusPage() {
                     {/* verification —— 拒绝 Agent 自我宣称，展示可核验来源 */}
                     {m.verification && (
                       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                        <div className="font-bold text-slate-500">Verification（有据可查，非 Agent 自述）</div>
+                        <div className="font-bold text-slate-500">核验（Verification · 有据可查，非 Agent 自述）</div>
                         {m.verification.method && <div className="mt-0.5">方法：{m.verification.method}</div>}
                         {m.verification.command && <div className="mt-0.5 font-mono">命令：{m.verification.command}</div>}
-                        {m.verification.lastRunAt && <div className="mt-0.5">Last verified：{m.verification.lastRunAt}</div>}
+                        {m.verification.lastRunAt && <div className="mt-0.5">最近核验：{m.verification.lastRunAt}</div>}
                         {m.verification.result && <div className="mt-0.5">结果：{m.verification.result}</div>}
                       </div>
                     )}
@@ -599,10 +607,10 @@ export default async function DevStatusPage() {
                       <table className="mt-3 w-full border-collapse text-xs">
                         <thead>
                           <tr className="border-b border-slate-200 text-left text-slate-400">
-                            <th className="py-1 pr-3 font-semibold">Test</th>
-                            <th className="py-1 pr-3 font-semibold">Command</th>
-                            <th className="py-1 pr-3 font-semibold">Result</th>
-                            <th className="py-1 font-semibold">Last Run</th>
+                            <th className="py-1 pr-3 font-semibold">测试</th>
+                            <th className="py-1 pr-3 font-semibold">命令</th>
+                            <th className="py-1 pr-3 font-semibold">结果</th>
+                            <th className="py-1 font-semibold">最近运行</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -620,7 +628,7 @@ export default async function DevStatusPage() {
 
                     {m.demoRoute && (
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="text-slate-400">Demo：</span>
+                        <span className="text-slate-400">演示：</span>
                         <a href={m.demoRoute} className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 font-medium text-blue-700 hover:bg-blue-100">
                           {m.demoRoute} →
                         </a>
@@ -639,16 +647,16 @@ export default async function DevStatusPage() {
 
         {/* ============ STAGE 审核当前开发状态 ============ */}
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Current Development Stage</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">当前开发阶段</h2>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
             <span className="rounded-lg bg-emerald-100 px-3 py-1 font-semibold text-emerald-800">
               {project?.currentMilestone ?? "?"} {milestones.find((m) => m.id === current)?.name ?? ""}
             </span>
             <span className="text-slate-400">→</span>
             <span className="rounded-lg bg-slate-100 px-3 py-1 text-slate-600">
-              Next: {project?.nextUp?.id ?? "?"} {project?.nextUp?.name ?? ""}
+              下一步：{project?.nextUp?.id ?? "?"} {project?.nextUp?.name ?? ""}
             </span>
-            <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700">不自动开始 M6B/M6C/M6D（逐项授权）</span>
+            <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700">不自动开始 M6C/M6D（逐项授权）</span>
           </div>
           <p className="mt-3 text-xs text-slate-400">
             project-status.json 更新于 {project?.updatedAt ?? "?"}（{project?.updatedBy ?? ""}）· {project?.updatedNote ?? ""}
@@ -658,7 +666,7 @@ export default async function DevStatusPage() {
         {/* ============ 日志摘要（少量、脱敏） ============ */}
         {(c.errors.api || c.errors.worker) && (
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Last Errors（最后一行，仅摘要）</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">最近错误（最后一行，仅摘要）</h2>
             <div className="mt-2 space-y-1 font-mono text-xs text-slate-500">
               {c.errors.worker && <div>Worker：{c.errors.worker}</div>}
               {c.errors.api && <div>API：{c.errors.api}</div>}
@@ -668,7 +676,7 @@ export default async function DevStatusPage() {
         )}
 
         <footer className="pt-4 text-center text-xs text-slate-400">
-          GeoLens Project Control Center · dev-only · 详细日志 .runtime/logs · 停止用 STOP_GEOLENS.cmd
+          GeoLens 项目控制中心 · 仅开发环境 · 详细日志 .runtime/logs · 停止用 STOP_GEOLENS.cmd
         </footer>
       </div>
     </main>
