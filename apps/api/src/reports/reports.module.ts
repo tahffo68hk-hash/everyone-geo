@@ -7,5 +7,6 @@ import { ReportsService } from "./reports.service";
   imports: [BenchmarkModule],
   controllers: [ReportsController],
   providers: [ReportsService],
+  exports: [ReportsService], // M7A Diagnosis 复用 compare 语义（Provider Gap compatibility）
 })
 export class ReportsModule {}

@@ -212,7 +212,10 @@ describe("Multi-Provider M6D e2e", () => {
     ids.suiteForGuard = suite.id;
 
     try {
-      // qwen 无配置（默认未启用/无 Key）→ 400 中文 guard
+      // qwen 无配置（显式清空 env，防止宿主 .env 已配置真实 Key 而改变前提）→ 400 中文 guard
+      delete process.env.ENABLE_REAL_PROVIDERS;
+      delete process.env.QWEN_API_KEY;
+      delete process.env.QWEN_MODEL;
       const noCfg = await owner.post(`/benchmark-suites/${suite.id}/runs`).send({ engineId: ids.qw, runType: "real" });
       expect(noCfg.status).toBe(400);
       expect(String(noCfg.body.message)).toContain("未配置");

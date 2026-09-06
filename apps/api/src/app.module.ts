@@ -8,9 +8,10 @@ import { EvidenceModule } from "./evidence/evidence.module";
 import { BenchmarkModule } from "./benchmark/benchmark.module";
 import { CompetitorsModule } from "./competitors/competitors.module";
 import { ReportsModule } from "./reports/reports.module";
+import { DiagnosisModule } from "./diagnosis/diagnosis.module";
 
 @Module({
-  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule],
+  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule],
   controllers: [HealthController],
 })
 export class AppModule {}
