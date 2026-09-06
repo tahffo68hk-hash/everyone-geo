@@ -99,9 +99,14 @@ export default function AppPage() {
         </button>
       </header>
 
-      <Link href="/app/monitor" className="mb-6 inline-block rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800">
-        创建监测任务
-      </Link>
+      <div className="mb-6 flex flex-wrap gap-3">
+        <Link href="/app/monitor" className="inline-block rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800">
+          创建监测任务
+        </Link>
+        <Link href="/app/benchmark" className="inline-block rounded-lg border border-blue-700 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50">
+          GEO Benchmark（M6A）
+        </Link>
+      </div>
 
       {me && me.organizations.length === 0 ? (
         <p className="text-sm text-slate-500">你还没有加入任何组织。</p>
