@@ -19,6 +19,7 @@ type RunDetail = {
   evidence: null | {
     id: string; runId: string; queryText: string; rawPrompt: string; rawResponse: string;
     provider: string; engineKey: string; engineName: string; model: string; modelVersion: string | null;
+    requestedModel: string | null; responseModel: string | null; // M6C model identity
     retrievalMode: string; sourceType: string; metadata: unknown; createdAt: string; analyses: Analysis[];
   };
 };
@@ -90,14 +91,19 @@ export function EvidenceDialog({ runId, onClose }: { runId: string; onClose: () 
             ["原始问题（queryText）", evidence.queryText],
             ["模型服务（provider）", evidence.provider],
             ["检测引擎", `${evidence.engineName}（${evidence.engineKey}）`],
-            ["模型（model）", evidence.model],
-            ["模型版本", evidence.modelVersion ?? "—"],
+            ["请求模型（requestedModel）", evidence.requestedModel ?? "历史记录未保存"],
+            ["响应模型（responseModel）", evidence.responseModel ?? "未知"],
+            ["模型（model · legacy）", evidence.model],
+            ["模型版本（legacy）", evidence.modelVersion ?? "—"],
             ["时间", evidence.createdAt],
             ["数据来源（sourceType）", withRaw(formatSourceType(evidence.sourceType), evidence.sourceType)],
             ["检索模式（retrievalMode）", withRaw(formatRetrievalMode(evidence.retrievalMode), evidence.retrievalMode)],
             ["Token 用量", usageTokens(evidence.metadata) ?? "—"],
           ].map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words">{value}</dd></div>)}
         </dl>
+        {!evidence.requestedModel && !evidence.responseModel && (
+          <p className="text-xs text-slate-400">注：该记录创建于模型身份字段引入之前，请求/响应模型未保存（不猜测历史）。</p>
+        )}
         <section><h3 className="mb-2 font-semibold">原始提示词（rawPrompt）</h3><pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-sm">{evidence.rawPrompt}</pre></section>
         <section><h3 className="mb-2 font-semibold">模型原始回答（rawResponse）</h3><pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-sm">{evidence.rawResponse}</pre></section>
         <section>

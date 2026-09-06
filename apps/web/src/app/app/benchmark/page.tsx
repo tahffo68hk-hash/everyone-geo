@@ -458,10 +458,70 @@ export default function BenchmarkPage() {
               </section>
             )}
             {metricsError && <p role="alert" className="text-sm text-red-700">{metricsError}</p>}
+
+            {/* M6C：已完成 Run → 生成不可变 GEO 报告 */}
+            {run && run.terminal && (
+              <ReportBuilder benchmarkRunId={run.id} runType={run.runType} />
+            )}
           </>
         )}
       </div>
       {evidenceRunId && <EvidenceDialog key={evidenceRunId} runId={evidenceRunId} onClose={() => setEvidenceRunId(null)} />}
     </main>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* M6C：报告生成（快照语义：analysisVersion 显式选择）                    */
+/* ------------------------------------------------------------------ */
+function ReportBuilder({ benchmarkRunId, runType }: { benchmarkRunId: string; runType: string }) {
+  const [version, setVersion] = useState("m4-rule-v1");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [createdId, setCreatedId] = useState("");
+
+  async function generate() {
+    setBusy(true); setError(""); setCreatedId("");
+    try {
+      const body = await api<{ id: string; analysisVersion: string }>(
+        `/benchmark-runs/${encodeURIComponent(benchmarkRunId)}/reports`,
+        { method: "POST", body: JSON.stringify({ analysisVersion: version }) },
+      );
+      setCreatedId(body.id);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-6">
+      <h2 className="text-lg font-semibold">生成 GEO 基准测试报告</h2>
+      <p className="mt-1 text-xs text-slate-500">报告 = 不可变快照：生成后测试集 / 分析版本 / 竞品集合 / 指标不再漂移。{runType === "DEMO" ? "演示数据，仅供功能验证。" : "真实数据。"}</p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="text-sm text-slate-600">
+          分析版本（analysisVersion）
+          <select value={version} onChange={event => setVersion(event.target.value)} className="mt-1 block rounded-lg border border-slate-300 p-2 font-mono text-xs">
+            <option value="m4-rule-v1">m4-rule-v1</option>
+            <option value="m6b-competitors-v1">m6b-competitors-v1（含竞品集，需已重分析）</option>
+          </select>
+        </label>
+        <button type="button" disabled={busy} onClick={() => void generate()}
+          className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50">
+          {busy ? "生成中…" : "生成报告"}
+        </button>
+        <Link href="/app/reports" className="rounded-lg border border-blue-700 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50">
+          查看报告列表
+        </Link>
+      </div>
+      {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
+      {createdId && (
+        <p role="status" className="mt-2 text-sm text-emerald-700">
+          报告已生成（analysisVersion 快照已冻结）：{" "}
+          <Link href={`/app/reports/${createdId}`} className="text-blue-700 underline">打开 GEO 报告 →</Link>
+        </p>
+      )}
+    </section>
   );
 }

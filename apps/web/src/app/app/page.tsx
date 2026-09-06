@@ -110,6 +110,9 @@ export default function AppPage() {
         <Link href="/app/competitors" className="inline-block rounded-lg border border-indigo-700 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50">
           竞品分析（竞品发现）
         </Link>
+        <Link href="/app/reports" className="inline-block rounded-lg border border-teal-700 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50">
+          GEO 基准测试报告
+        </Link>
       </div>
 
       {me && me.organizations.length === 0 ? (
