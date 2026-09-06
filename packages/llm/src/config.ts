@@ -7,6 +7,8 @@
 
 export const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com';
 export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-chat';
+export const QWEN_DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+export const QWEN_DEFAULT_MODEL = 'qwen-plus';
 export const DEFAULT_REAL_PROVIDER_TIMEOUT_MS = 60_000;
 export const DEFAULT_REAL_PROVIDER_MAX_RUNS_PER_TASK = 3;
 
@@ -36,6 +38,30 @@ export function readRealProviderEnv(env: NodeJS.ProcessEnv = process.env): RealP
     realProvidersEnabled: env.ENABLE_REAL_PROVIDERS === 'true',
     realProviderMaxRunsPerTask: boundedInt(env.REAL_PROVIDER_MAX_RUNS_PER_TASK, DEFAULT_REAL_PROVIDER_MAX_RUNS_PER_TASK, 1, 1000),
   };
+}
+
+export interface QwenProviderEnv {
+  apiKey: string | null;
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+}
+
+/** Qwen（DashScope OpenAI-compatible mode）服务端配置；Key 只进内存/env。 */
+export function readQwenProviderEnv(env: NodeJS.ProcessEnv = process.env): QwenProviderEnv {
+  return {
+    apiKey: env.QWEN_API_KEY && env.QWEN_API_KEY.trim() !== '' ? env.QWEN_API_KEY.trim() : null,
+    baseUrl: (env.QWEN_BASE_URL && env.QWEN_BASE_URL.trim() !== '' ? env.QWEN_BASE_URL.trim() : QWEN_DEFAULT_BASE_URL).replace(/\/+$/u, ''),
+    model: env.QWEN_MODEL && env.QWEN_MODEL.trim() !== '' ? env.QWEN_MODEL.trim() : QWEN_DEFAULT_MODEL,
+    timeoutMs: boundedInt(env.QWEN_TIMEOUT_MS, DEFAULT_REAL_PROVIDER_TIMEOUT_MS, 5000, 120_000),
+  };
+}
+
+/** Qwen 配置完整 = 总开关 + Key（不代表 API 可达）。 */
+export function qwenConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  const global = readRealProviderEnv(env);
+  const qwen = readQwenProviderEnv(env);
+  return global.realProvidersEnabled && qwen.apiKey !== null;
 }
 
 /** Configuration completeness only - it never means the API is reachable. */
@@ -68,6 +94,12 @@ export function enginePresentation(provider: string, engineConfig: unknown, env:
     const config = engineConfig !== null && typeof engineConfig === 'object' && !Array.isArray(engineConfig) ? engineConfig as Record<string, unknown> : {};
     const model = typeof config.model === 'string' && config.model.trim() !== '' ? config.model.trim() : cfg.model;
     return { provider, sourceType: 'official_api', model, configured: deepseekConfigured(env) };
+  }
+  if (provider === 'qwen') {
+    const cfg = readQwenProviderEnv(env);
+    const config = engineConfig !== null && typeof engineConfig === 'object' && !Array.isArray(engineConfig) ? engineConfig as Record<string, unknown> : {};
+    const model = typeof config.model === 'string' && config.model.trim() !== '' ? config.model.trim() : cfg.model;
+    return { provider, sourceType: 'official_api', model, configured: qwenConfigured(env) };
   }
   return { provider, sourceType: null, model: null, configured: false };
 }

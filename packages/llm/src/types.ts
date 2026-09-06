@@ -7,7 +7,7 @@
  */
 
 /** Providers implemented today. Future providers extend this union. */
-export type ProviderKind = 'mock' | 'deepseek';
+export type ProviderKind = 'mock' | 'deepseek' | 'qwen';
 
 /** Mirrors the Prisma SourceType enum values used by Evidence.sourceType. */
 export type SourceTypeValue =

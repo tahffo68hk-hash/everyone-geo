@@ -11,7 +11,7 @@ export const MAX_RUN_ATTEMPTS = 3;
 // Redis carries only an identifier. Tenant, query and engine data come from PostgreSQL.
 export const runJobSchema = z.object({ runId: z.uuid() }).strict();
 export const runResultSchema = z.object({
-  provider: z.enum(['mock', 'deepseek']),
+  provider: z.enum(['mock', 'deepseek', 'qwen']),
   text: z.string(),
   durationMs: z.number().finite().nonnegative(),
 }).strict();
