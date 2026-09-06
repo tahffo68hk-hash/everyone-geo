@@ -105,6 +105,7 @@ model Project {
   diagnosisRuns  DiagnosisRun[]
   recommendationRuns RecommendationRun[]
   contentOpportunityRuns ContentOpportunityRun[]
+  experiments      OptimizationExperiment[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -977,6 +978,7 @@ model ContentOpportunity {
   queries          ContentOpportunityQuery[]
   evidenceLinks    ContentOpportunityEvidence[]
   blocks           ContentOpportunityBlock[]
+  experiments      OptimizationExperiment[]
 
   @@index([opportunityRunId, priorityScore])
   @@index([opportunityRunId, status])
@@ -1050,4 +1052,178 @@ model ContentOpportunityBlock {
   opportunity ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
 
   @@index([opportunityId, sortOrder])
+}
+
+// ============================================================
+// M7D - Optimization Experiment & Re-test（受控复测基础）
+// ============================================================
+// 设计原则（M7D）：
+//   1) OptimizationExperiment 绑定一个 ContentOpportunity 及其 Baseline Report：
+//      Before / Execution / Retest / Evaluation 四层语义分开，绝不覆盖。
+//   2) Frozen Re-test：After 必须复用 Baseline BenchmarkRunQuery 快照
+//      （queryText/category/intent/locale/weight/sanity/sortOrder），绝不静默读取
+//      后来编辑过的当前 BenchmarkQuery —— 通过 benchmark 层 startRunFromSnapshot
+//      与 querySetFingerprint（SHA-256 of ordered semantic rows）保证同口径。
+//   3) Evaluation 生成即 immutable snapshot（geolens-experiment-evaluation-v1）；
+//      未来 v2 通过新版本并存，不重算旧记录。Retest 支持多次（#1/#2/#3…）。
+//   4) Demo/Real isolation：metricSource 继承来源；Demo 只能绑 Demo，Real 只能绑 Real；
+//      Demo 报告永不进入 Real 结论。Real Re-test 必须走既有 Real Provider Guard
+//      （planned call count ≤ REAL_PROVIDER_MAX_RUNS_PER_TASK）。
+//   5) 状态仅人工推进：PLANNED → EXECUTION_RECORDED → RETEST_READY → RETEST_RUNNING
+//      → READY_FOR_EVALUATION → EVALUATED（或 CANCELLED）。不自动“执行完成”。
+//   6) Execution 只做用户确认的变更记录（绝不自动修改/验证外部页面；assetReference
+//      仅记录 URL/页面标识，本系统不 fetch）。
+//   7) Evidence/BenchmarkRun/Report 一律不可变：本层只存 before/after 的 evidenceId/
+//      reportId 指向性引用，绝不复制 rawResponse。
+
+model OptimizationExperiment {
+  id                    String   @id @default(uuid()) @db.Uuid
+  projectId             String   @db.Uuid
+  contentOpportunityId  String   @db.Uuid
+  experimentVersion     String   // geolens-experiment-v1
+  title                 String
+  hypothesis            String   // 确定性模板（“可能改善”，非“一定提升”）
+  status                String   @default("PLANNED") // PLANNED/EXECUTION_RECORDED/RETEST_READY/RETEST_RUNNING/READY_FOR_EVALUATION/EVALUATED/CANCELLED
+  // ---- Baseline provenance 快照（来自 ContentOpportunity 来源 Report；普通 uuid 归档，非 FK）----
+  baselineReportId      String   @db.Uuid
+  querySetFingerprint   String   // 基线测试集指纹（SHA-256，语义行有序序列化）
+  metricSource          String   // demo | real | mixed（继承基线；Demo/Real 隔离）
+  provider              String
+  engineId              String?  @db.Uuid
+  engineKey             String?
+  engineName            String?
+  requestedModel        String?
+  responseModel         String?
+  analysisVersion       String
+  competitorSetVersion  String?
+  suiteName             String?
+  suiteVersion          String?
+  plannedQueryCount     Int      @default(0)
+  executionRecordedAt   DateTime?
+  completedAt           DateTime?
+  metadata              Json     @default("{}")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  project          Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contentOpportunity ContentOpportunity  @relation(fields: [contentOpportunityId], references: [id], onDelete: Restrict)
+  executions       ExperimentExecution[]
+  retests          ExperimentRetest[]
+  evaluations      ExperimentEvaluation[]
+
+  @@index([projectId, createdAt])
+  @@index([contentOpportunityId, createdAt])
+  @@index([baselineReportId])
+  @@index([status])
+}
+
+model ExperimentExecution {
+  id             String   @id @default(uuid()) @db.Uuid
+  experimentId   String   @db.Uuid
+  executionType  String   // MANUAL_CONTENT_UPDATE / MANUAL_PAGE_CREATE / MANUAL_FAQ_UPDATE / MANUAL_DOCUMENTATION_UPDATE / MANUAL_OTHER
+  changeSummary  String   // 用户确认的变更摘要
+  assetType      String?  // 优化对象（assetType canonical）
+  assetReference String?  // 用户记录的 URL / 页面标识（系统不 fetch / 不验证）
+  executedAt     DateTime // 用户声明的执行时间（必须 >= baseline report.generatedAt）
+  status         String   @default("RECORDED") // RECORDED / REVOKED
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  experiment OptimizationExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId, executedAt])
+}
+
+model ExperimentRetest {
+  id                String   @id @default(uuid()) @db.Uuid
+  experimentId      String   @db.Uuid
+  sequence          Int      // #1/#2/#3…（多次复测不覆盖旧记录）
+  // ---- 复测 run / 报告（普通 uuid 归档；run 完成后回填）----
+  benchmarkRunId    String?  @db.Uuid
+  reportId          String?  @db.Uuid
+  status            String   @default("QUEUED") // QUEUED / RUNNING / SUCCEEDED / FAILED / PARTIAL / CANCELLED
+  runType           String   // DEMO / REAL
+  provider          String
+  engineId          String?  @db.Uuid
+  engineKey         String?
+  requestedModel    String?
+  plannedQueryCount Int
+  expectedCallCount Int      // planned queries × provider（成本 guard 用）
+  querySetFingerprint String // 复测冻结集指纹（须与基线一致）
+  startedAt         DateTime?
+  completedAt       DateTime?
+  metadata          Json     @default("{}")
+  createdAt         DateTime @default(now())
+
+  experiment OptimizationExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId, sequence])
+  @@index([experimentId, status])
+}
+
+model ExperimentEvaluation {
+  id                String   @id @default(uuid()) @db.Uuid
+  experimentId      String   @db.Uuid
+  retestId          String   @db.Uuid // 普通 uuid 归档
+  evaluationVersion String   // geolens-experiment-evaluation-v1（未来 v2 并存，不重算 v1）
+  beforeReportId    String   @db.Uuid
+  afterReportId     String   @db.Uuid
+  // ---- 结论快照（immutable）----
+  outcome           String   // IMPROVED_SIGNALS / MIXED_SIGNALS / NO_CLEAR_CHANGE / REGRESSED_SIGNALS / INCONCLUSIVE
+  compatibility     Json     @default("{}") // { verdict, dimensions[], warnings[] }
+  summarySnapshot   Json     @default("{}") // 指标汇总 / 状态数等（随 Evaluation 冻结）
+  metricSource      String   // before/after 一致才可 EVALUATED（否则 NOT_COMPARABLE）
+  generatedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  experiment OptimizationExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  metricDeltas ExperimentMetricDelta[]
+  queryDeltas  ExperimentQueryDelta[]
+
+  @@index([experimentId, generatedAt])
+  @@index([retestId, evaluationVersion])
+}
+
+model ExperimentMetricDelta {
+  id            String  @id @default(uuid()) @db.Uuid
+  evaluationId  String  @db.Uuid
+  metricName    String  // visibilityRate / recommendationRate / averageMentionPosition / shareOfVoice / citationCount / citationDomainCount
+  beforeValue   Float?
+  afterValue    Float?
+  deltaValue    Float?  // after - before（位置类 delta raw 可能为负但 UI 显示“提升 N 位”）
+  deltaUnit     String  // pp / position / count（严禁用相对 %）
+  direction     String? // IMPROVED / DECLINED / NEUTRAL（按 metric 方向定义）
+  meaningful    String  // MEANINGFUL / SMALL / NEUTRAL（internal heuristic）
+  primarySignal Boolean @default(false) // 是否属于该机会 expectedSignals 主信号
+  createdAt     DateTime @default(now())
+
+  evaluation ExperimentEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+
+  @@index([evaluationId])
+}
+
+model ExperimentQueryDelta {
+  id                String   @id @default(uuid()) @db.Uuid
+  evaluationId      String   @db.Uuid
+  sortOrder         Int
+  queryTextSnapshot String
+  category          String?
+  beforeEvidenceId  String?  @db.Uuid // 指向性引用（Evidence immutable，不复制 rawResponse）
+  afterEvidenceId   String?  @db.Uuid
+  beforeMentioned   Boolean?
+  afterMentioned    Boolean?
+  beforeRecommended Boolean?
+  afterRecommended  Boolean?
+  beforePosition    Int?
+  afterPosition     Int?
+  beforeCitationCount Int    @default(-1) // -1 = 无可用数据
+  afterCitationCount  Int    @default(-1)
+  transitionType    String   // GAINED_VISIBILITY / LOST_VISIBILITY / … / NOT_EVALUABLE（failed run ≠ brand missing）
+  status            String   @default("EVALUATED") // EVALUATED / NOT_EVALUABLE
+  createdAt         DateTime @default(now())
+
+  evaluation ExperimentEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+
+  @@index([evaluationId, sortOrder])
 }
