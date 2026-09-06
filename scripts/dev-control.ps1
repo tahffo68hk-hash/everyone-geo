@@ -83,7 +83,10 @@ function Write-PidFile([string]$Path, [int]$Pid) {
 }
 
 function Remove-IfExists([string]$Path) {
-  if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force }
+  # 尽力删除：失败静默忽略（重定向文件会被 PS 1>/2> 覆盖写；pid/dist 删不掉
+  # 不影响主流程，避免个别环境把删除错误升级成启动中断）。
+  if (-not (Test-Path -LiteralPath $Path)) { return }
+  try { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop } catch {}
 }
 
 function Get-DotEnvValue([string]$Path, [string]$Key) {
@@ -112,12 +115,92 @@ function Get-ProcessCmdline([int]$Pid) {
   return ''
 }
 
+function Read-TextFile([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return '' }
+  try { return [IO.File]::ReadAllText($Path, [Text.UTF8Encoding]::new($false)) } catch { return '' }
+}
+
+function Resolve-ExePath([string]$Name) {
+  if ([IO.Path]::IsPathRooted($Name)) {
+    if (Test-Path -LiteralPath $Name) { return $Name }
+    return $Name
+  }
+  $c = Get-Command $Name -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($c -and $c.Source) { return $c.Source }
+  return $Name
+}
+
+# ================================================================
+# 统一 native 进程调用（Windows PowerShell 5.1 安全版）
+#
+# 根因：PS 5.1 中 native stderr 一旦经 2>&1 / *>&1 合并，会被逐行包装成
+# ErrorRecord；在 $ErrorActionPreference='Stop' 下，即使进程 ExitCode=0
+# （如 `docker compose up -d` 把正常 progress/status 写到 stderr），也会被
+# 误判为终止错误（NativeCommandError）导致 launcher 中途退出。
+#
+# 永久修复原则：
+#   - 一律 `& exe args 1> StdoutFile 2> StderrFile`：PS 5.1 中 native stderr
+#     经 `2>` 直接写入文件，不会产生 ErrorRecord（只有 2>&1/*>&1 合并才会
+#     包装）；stdout/stderr 因此根本不进入 PowerShell 错误流，主窗口干净；
+#   - 成功 / 失败只依据 $LASTEXITCODE（进程 ExitCode）；ExitCode=0 时即使
+#     stderr 有内容（如 "Container geo-redis Running"）也必须视为成功；
+#   - ExitCode != 0 时由调用方读取 stderr 摘要决定告警 / throw。
+# 因此任何 native 命令（docker / node / pnpm / ...）都不得再用 2>&1 管道。
+#
+# 注：不使用 Start-Process + -Redirect* 是因为 PS 5.1 的 Start-Process 在
+# UseShellExecute=$false 时会用大小写不敏感字典重建子进程环境；当环境块中
+# 同时存在 http_proxy / HTTP_PROXY 这类大小写重复变量时会抛
+# "已添加项 / Item has already been added"（PowerShell 已知缺陷）。
+# 本 helper 为同步执行；不做超时强杀，长时间命令的超时由上层轮询兜底。
+# ================================================================
+function Invoke-NativeProcess {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$ArgumentList = @(),
+    [string]$WorkingDirectory = '',
+    [string]$StdoutFile = '',
+    [string]$StderrFile = '',
+    [int]$MaxText = 200000    # 返回文本上限（防止把巨量日志读进内存）
+  )
+  if (-not $StdoutFile) { $StdoutFile = Join-Path $LogsDir 'native.out.log' }
+  if (-not $StderrFile) { $StderrFile = Join-Path $LogsDir 'native.err.log' }
+  Remove-IfExists $StdoutFile
+  Remove-IfExists $StderrFile
+
+  $exe = Resolve-ExePath $FilePath
+  # 含空格/引号的参数手动补引号，避免被拆成多个参数
+  $quoted = @($ArgumentList | ForEach-Object {
+    if ($_ -match '[\s"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ }
+  })
+
+  $prev = Get-Location
+  if ($WorkingDirectory) {
+    if (-not (Test-Path -LiteralPath $WorkingDirectory)) { throw "工作目录不存在：$WorkingDirectory" }
+    Set-Location -LiteralPath $WorkingDirectory
+  }
+  try {
+    # 关键：只做 1> / 2> 文件重定向，绝不使用 2>&1 / *>&1
+    $null = & $exe @quoted 1> $StdoutFile 2> $StderrFile
+  } finally {
+    if ($WorkingDirectory) { Set-Location -LiteralPath $prev.Path }
+  }
+  # 进程 ExitCode：成败的唯一依据。native 运行后 PowerShell 总会设置
+  # $global:LASTEXITCODE；StrictMode 下未定义时引用会抛，故 try 兜底。
+  $code = -1
+  try { $code = [int]$global:LASTEXITCODE } catch { $code = -1 }
+
+  $stdout = Read-TextFile $StdoutFile
+  $stderr = Read-TextFile $StderrFile
+  if ($stdout.Length -gt $MaxText) { $stdout = $stdout.Substring(0, $MaxText) }
+  if ($stderr.Length -gt $MaxText) { $stderr = $stderr.Substring(0, $MaxText) }
+  return @{ ExitCode = $code; Stdout = $stdout; Stderr = $stderr }
+}
+
 function Invoke-CommandCapture([string]$FilePath, [string[]]$ArgList) {
-  # 返回 { ExitCode, Stdout }；同步执行且不外泄到控制台。
-  $out = & $FilePath @ArgList 2>&1
-  $code = $LASTEXITCODE
-  if ($out -isnot [string]) { $out = ($out | Out-String) }
-  return @{ ExitCode = $code; Stdout = [string]$out }
+  # 兼容壳：供 docker version / inspect / exec 等短探测命令使用；
+  # 只消费 ExitCode 与 Stdout（stderr 正常输出一律不视为失败）。
+  $r = Invoke-NativeProcess -FilePath $FilePath -ArgumentList $ArgList
+  return @{ ExitCode = $r.ExitCode; Stdout = $r.Stdout }
 }
 
 function Test-HttpOk([string]$Url, [int]$TimeoutSec = 5) {
@@ -252,7 +335,12 @@ function Resolve-Node() {
   if (-not (Test-Path -LiteralPath $NodeExe)) {
     throw "未找到固定 Node：$NodeExe。请确认已安装 Node 24 到 D:\tools\node24（见 docs/DEVELOPMENT_WORKFLOW.md）。"
   }
-  $ver = (& $NodeExe -v 2>&1 | Out-String).Trim()
+  $r = Invoke-NativeProcess -FilePath $NodeExe -ArgumentList @('-v')
+  if ($r.ExitCode -ne 0) {
+    throw "无法执行 Node（exit=$($r.ExitCode)）：$($r.Stderr)"
+  }
+  $ver = $r.Stdout.Trim()
+  if (-not $ver) { $ver = $r.Stderr.Trim() }
   if ($ver -ne $ExpectedNode) {
     throw "Node 版本不符：期望 $ExpectedNode，实际 $ver。请修复 D:\tools\node24 后再试。"
   }
@@ -272,21 +360,30 @@ function Resolve-PnpmMjs() {
   if ($candidates.Count -eq 0) {
     throw '未找到 pnpm CLI（pnpm.mjs/pnpm.cjs）。请安装 pnpm 11.1.0 后重试。'
   }
-  # 优选 11.1.0
+  # 优选 11.1.0（探测失败的候选静默跳过，不中断）
   foreach ($c in $candidates) {
-    $v = (& $NodeExe $c -v 2>&1 | Out-String).Trim()
+    $r = Invoke-NativeProcess -FilePath $NodeExe -ArgumentList @($c, '-v')
+    if ($r.ExitCode -ne 0) { continue }
+    $v = $r.Stdout.Trim()
+    if (-not $v) { $v = $r.Stderr.Trim() }
     if ($v -eq '11.1.0') { return @{ mjs = $c; version = $v } }
   }
   $first = $candidates[0]
-  $v = (& $NodeExe $first -v 2>&1 | Out-String).Trim()
+  $r = Invoke-NativeProcess -FilePath $NodeExe -ArgumentList @($first, '-v')
+  if ($r.ExitCode -eq 0) {
+    $v = $r.Stdout.Trim()
+    if (-not $v) { $v = $r.Stderr.Trim() }
+  } else { $v = '?' }
   Write-Warn "警告：未找到 pnpm 11.1.0（找到 $v @ $first）。继续使用，但版本与项目固定不一致。"
   return @{ mjs = $first; version = $v }
 }
 
 # ---------------------------------------------------------------- Docker / 基础设施
 function Get-DockerServerUp() {
-  $r = Invoke-CommandCapture 'docker' @('version', '--format', '{{.Server.Version}}')
-  return ($r.ExitCode -eq 0 -and $r.Stdout -match '\d+\.\d+')
+  try {
+    $r = Invoke-CommandCapture 'docker' @('version', '--format', '{{.Server.Version}}')
+    return ($r.ExitCode -eq 0 -and $r.Stdout -match '\d+\.\d+')
+  } catch { return $false }
 }
 
 function Get-ContainerHealth([string]$Name) {
@@ -333,13 +430,24 @@ function Start-App-Background([string]$Name) {
   # OS 级文件重定向（非管道）：父进程退出后子进程仍可继续写日志，不会 EPIPE。
   Remove-IfExists (Join-Path $LogsDir ($Name + '.log'))
   Remove-IfExists (Join-Path $LogsDir ($Name + '.err.log'))
-  $p = Start-Process -FilePath $file `
-    -ArgumentList $argList `
-    -WorkingDirectory $work `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $LogsDir ($Name + '.log')) `
-    -RedirectStandardError (Join-Path $LogsDir ($Name + '.err.log')) `
-    -PassThru
+  try {
+    $p = Start-Process -FilePath $file `
+      -ArgumentList $argList `
+      -WorkingDirectory $work `
+      -WindowStyle Hidden `
+      -RedirectStandardOutput (Join-Path $LogsDir ($Name + '.log')) `
+      -RedirectStandardError (Join-Path $LogsDir ($Name + '.err.log')) `
+      -PassThru
+  } catch {
+    # PS 5.1 已知缺陷：Start-Process(UseShellExecute=false) 重建环境字典时，
+    # 若存在 http_proxy/HTTP_PROXY 之类大小写重复变量会抛“已添加项”。
+    if ($_.Exception.Message -match '已添加项|already been added') {
+      throw ("启动 $Name 失败：当前环境存在大小写重复的变量（如 http_proxy 与 HTTP_PROXY）导致 " +
+        'PowerShell 5.1 Start-Process 缺陷。请在“系统属性→环境变量”删除重复项后重试。' +
+        "（原始错误：$($_.Exception.Message)）")
+    }
+    throw "启动失败：$Name — $($_.Exception.Message)"
+  }
   if (-not $p) { throw "启动失败：$Name" }
   Write-PidFile $def.pid $p.Id
   return @{ pid = $p.Id; marker = $def.marker; startedAt = (Now-Str) }
@@ -350,12 +458,17 @@ function Build-Package([string]$Name, [ref]$pnpm) {
   $dist = Join-Path $RootDir "apps\$Name\dist"
   Remove-IfExists $dist
   Write-Info "  编译 $filter ..."
-  $logPath = Join-Path $LogsDir "build-$Name.log"
-  $out = & $NodeExe $pnpm.Value.mjs --filter $filter build *>&1 | Out-String
-  $code = $LASTEXITCODE
-  Add-Content -LiteralPath $logPath -Value ("{0}  exit={1}`n{2}" -f (Now-Str), $code, (Redact-Text $out)) -Encoding UTF8
-  if ($code -ne 0) {
-    throw "构建失败：$filter（exit=$code，详见 $logPath）"
+  $outLog = Join-Path $LogsDir "build-$Name.log"
+  $errLog = Join-Path $LogsDir "build-$Name.err.log"
+  # pnpm 把正常进度/告警写到 stderr：成败只看 ExitCode，stderr 一律落文件不刷主窗口。
+  $r = Invoke-NativeProcess -FilePath $NodeExe `
+    -ArgumentList @($pnpm.Value.mjs, '--filter', $filter, 'build') `
+    -StdoutFile $outLog -StderrFile $errLog
+  Add-Content -LiteralPath $outLog -Value ("`n{0}  exit={1}" -f (Now-Str), $r.ExitCode) -Encoding UTF8
+  if ($r.ExitCode -ne 0) {
+    $tail = Get-LastLogLine $errLog 400
+    if (-not $tail) { $tail = Get-LastLogLine $outLog 400 }
+    throw "构建失败：$filter（exit=$($r.ExitCode)） $tail 详见 $errLog"
   }
 }
 
@@ -416,16 +529,33 @@ function Test-Command-Start() {
 
   # [3/8] PostgreSQL（compose up -d -> healthy）
   $steps++
-  Write-Info "  docker compose up -d ..."
-  $composeLog = Join-Path $LogsDir 'docker-compose.log'
-  $cup = & docker compose -f (Join-Path $RootDir 'docker-compose.yml') up -d *>&1 | Out-String
-  Add-Content -LiteralPath $composeLog -Value ("{0}  exit={1}`n{2}" -f (Now-Str), $LASTEXITCODE, (Redact-Text $cup)) -Encoding UTF8
-  $pg = Get-ContainerHealth 'geo-postgres'
-  if ($pg -ne 'healthy') {
-    $ok = Wait-DockerHealth 'geo-postgres' 120
-    if (-not $ok) { Write-Fail "[$steps/8] PostgreSQL .......... FAILED（health=$pg，见 docker-compose.log）"; throw 'PostgreSQL 未在 120s 内 healthy' }
+  try {
+    $composeFile = Join-Path $RootDir 'docker-compose.yml'
+    Write-Info "  docker compose up -d（输出写入 docker-compose.log）..."
+    $coOutLog = Join-Path $LogsDir 'docker-compose.log'
+    $coErrLog = Join-Path $LogsDir 'docker-compose.err.log'
+    # compose 的 progress/status 走 stderr 属正常：只按 ExitCode 判成败。
+    $cr = Invoke-NativeProcess -FilePath 'docker' `
+      -ArgumentList @('compose', '-f', $composeFile, 'up', '-d') `
+      -StdoutFile $coOutLog -StderrFile $coErrLog
+    Add-Content -LiteralPath $coOutLog -Value ("`n{0}  exit={1}" -f (Now-Str), $cr.ExitCode) -Encoding UTF8
+    if ($cr.ExitCode -ne 0) {
+      $errSum = Redact-Text $cr.Stderr
+      if ($errSum.Length -gt 600) { $errSum = $errSum.Substring(0, 600) }
+      if (-not $errSum.Trim()) { $errSum = (Get-LastLogLine $coOutLog 400) }
+      throw "docker compose up 失败（exit=$($cr.ExitCode)）：$errSum"
+    }
+    $pg = Get-ContainerHealth 'geo-postgres'
+    if ($pg -ne 'healthy') {
+      $ok = Wait-DockerHealth 'geo-postgres' 120
+      if (-not $ok) { throw "PostgreSQL 未在 120s 内 healthy（health=$pg，见 docker-compose.log）" }
+    }
+    Write-Ok "[$steps/8] PostgreSQL .......... HEALTHY"
+  } catch {
+    Write-Fail "[$steps/8] PostgreSQL .......... FAILED"
+    Write-Fail "  $($_.Exception.Message)"
+    throw
   }
-  Write-Ok "[$steps/8] PostgreSQL .......... HEALTHY"
 
   # [4/8] Redis（healthy + PONG）
   $steps++
@@ -560,8 +690,17 @@ function Test-Command-Stop([switch]$AlsoCompose) {
   }
   if ($AlsoCompose) {
     Write-Info "  docker compose stop（保留数据卷与容器定义）..."
-    docker compose -f (Join-Path $RootDir 'docker-compose.yml') stop 2>&1 | Out-Null
-    Write-Ok "  PostgreSQL / Redis 已停止（容器保留）。"
+    $sOutLog = Join-Path $LogsDir 'docker-compose-stop.log'
+    $sErrLog = Join-Path $LogsDir 'docker-compose-stop.err.log'
+    $sr = Invoke-NativeProcess -FilePath 'docker' `
+      -ArgumentList @('compose', '-f', (Join-Path $RootDir 'docker-compose.yml'), 'stop') `
+      -StdoutFile $sOutLog -StderrFile $sErrLog
+    Add-Content -LiteralPath $sOutLog -Value ("`n{0}  exit={1}" -f (Now-Str), $sr.ExitCode) -Encoding UTF8
+    if ($sr.ExitCode -ne 0) {
+      Write-Warn "  docker compose stop 返回非零（exit=$($sr.ExitCode)），详见 $sOutLog / $sErrLog"
+    } else {
+      Write-Ok "  PostgreSQL / Redis 已停止（容器保留）。"
+    }
   } else {
     Write-Ok "  PostgreSQL / Redis 保留运行（如需一并停止请用 stop-all）。"
   }

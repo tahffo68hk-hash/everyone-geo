@@ -194,3 +194,28 @@ M2.5 收尾后接手半成品 M3（Codex 中断）。先做只读接管审计（
   - Start-Process 文件重定向（非 .NET Process 异步管道）：父进程退出后子进程日志不 EPIPE。
   - .cmd 首行不得有 BOM（否则首条命令报错）；PowerShell 脚本须 UTF-8 with BOM 中文才不乱码。
   - JS 对象字面量 `N/A:` 非法标识符，需写成 `"N/A":`。
+
+## 2026-09-06 — DX1 Launcher Fix：PowerShell 5.1 native stderr 安全处理（fix 独立 commit）
+
+真机 START_GEOLENS.cmd 失败根因：脚本顶部 `$ErrorActionPreference='Stop'` + 对 native 命令
+使用 `2>&1` / `*>&1` 合并输出。PS 5.1 会把 native stderr **逐行包装成 ErrorRecord**，即使进程
+ExitCode=0（如 `docker compose up -d` 正常把 progress/status 写到 stderr：
+"Container geo-redis Running"）也被误判为终止错误（NativeCommandError）→ launcher 中途退出。
+
+- 修复（scripts/dev-control.ps1）：新增统一 helper `Invoke-NativeProcess`，全部 native 调用
+  （docker version / compose up / inspect / exec / compose stop、node -v、pnpm build/-v）一律改为
+  `& exe args 1> StdoutFile 2> StderrFile`——PS 5.1 中 native stderr 经 `2>` 直接落文件、
+  **不产生 ErrorRecord**（只有 2>&1 合并才包装）；成败只依据 ExitCode；stderr 有内容但
+  ExitCode=0 视为成功。详细 stdout/stderr 写 .runtime/logs，主窗口只显示 [n/8] 状态。
+  删除全部旧 `2>&1/*>&1` 调用（git grep 验证清零）。
+- 顺带发现并规避：PS 5.1 的 Start-Process(UseShellExecute=$false) 会用大小写不敏感字典重建
+  子进程环境，环境块里若同时存在 http_proxy / HTTP_PROXY 之类大小写重复变量会抛
+  "已添加项 / Item has already been added"（PowerShell 已知缺陷）。短命令 helper 因此不用
+  Start-Process；仅常驻进程 Start-App-Background 保留 Start-Process（需脱离父进程+日志文件），
+  加 catch 给出可操作中文指引。
+- 其他加固：`$LASTEXITCODE` 读取包 try/catch（StrictMode 下未定义时避免抛错）；
+  Remove-IfExists 失败静默（删除失败不应中断启动流程）。
+- 三个 .cmd wrapper 保留用户真机调优后的 ASCII 版（无 chcp/中文，纯 ASCII、无 BOM、CRLF）。
+- 沙箱验证受限说明：本沙箱 PowerShell 对 native 输出捕获/Start-Process 均有宿主层限制，
+  无法端到端模拟真机双击；已做语法回归（help/status 控制流）+ 全量静态复核，真机 A-E 验收
+  需用户执行。未产生任何真实 API 费用。
