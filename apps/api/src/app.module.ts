@@ -6,9 +6,10 @@ import { PrismaModule } from "./prisma.module";
 import { HealthController } from "./health.controller";
 import { EvidenceModule } from "./evidence/evidence.module";
 import { BenchmarkModule } from "./benchmark/benchmark.module";
+import { CompetitorsModule } from "./competitors/competitors.module";
 
 @Module({
-  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule],
+  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule],
   controllers: [HealthController],
 })
 export class AppModule {}
