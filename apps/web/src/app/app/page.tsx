@@ -106,6 +106,9 @@ export default function AppPage() {
         <Link href="/app/benchmark" className="inline-block rounded-lg border border-blue-700 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50">
           GEO Benchmark（M6A）
         </Link>
+        <Link href="/app/competitors" className="inline-block rounded-lg border border-indigo-700 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50">
+          Competitor Discovery（M6B）
+        </Link>
       </div>
 
       {me && me.organizations.length === 0 ? (
