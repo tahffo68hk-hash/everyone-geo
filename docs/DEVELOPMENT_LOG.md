@@ -287,3 +287,44 @@ DX1 launcher 主链真机打通（8/8 全绿 + 自动打开 /dev/status），但
   Ready / PostgreSQL Healthy / Redis Healthy / DB Pass / DeepSeek Configured (YES) / Real Providers
   Enabled）；Overall Progress 7/8 DONE 88%；milestones M0~M6（含 M2.5→#ms-M25）；Current M5 →
   Next M6（不自动开始）；View Latest Milestone → #ms-M5；project-status.json 更新时间正常显示。
+
+## 2026-09-06 — M6A Real GEO Benchmark Foundation（分 4 个 feat/docs commit，未 push）
+
+正式进入 M6（M6 NOT_STARTED → IN_PROGRESS），本轮只做 M6A Benchmark Foundation，不接第二
+Provider、不大规模真实调用、不进 M6B/M6C/M6D。
+
+- 数据模型（migration 20260906060807_m6a_benchmark）：BenchmarkSuite（projectId+name+version
+  版本化唯一）/ BenchmarkQuery（自包含 queryText + category/intent/locale/weight/enabled/
+  sortOrder/sanity + projectQueryId 执行镜像）/ BenchmarkRun（suiteName/suiteVersion 版本快照 +
+  provider + 关联的 monitorTaskId；真实进度以 MonitorTask 为准实时计算）。
+- 执行复用而非重写：Benchmark Run 只创建一条 MonitorTask（启用查询镜像 × 1 engine），
+  Evidence/Analysis 由既有 Worker 写入 —— Evidence 仍是唯一事实源。
+- ProjectMentor GEO Benchmark v1：26 行 = 24 主查询（6 类 × 4：tool-discovery/comparison/
+  workflow/recommendation/pain-point/competition，全为非品牌自然提问）+ 2 branded sanity
+  （enabled=false 不派发不计主指标）。权威定义 packages/database/scripts/benchmark-queries.ts，
+  设计文档 docs/m6-benchmark-v1.md。
+- 指标：复用 geolens-v1 aggregateMetrics，overall/category/query 三级聚合；metricSource
+  demo/real/mixed（mixed 仅 real 子集为 Real Benchmark）；competitorScope=pending-m6b 诚实标记
+  SoV（M6B 前 A/B/C 占位不输出误导性结论）。
+- 成本保护：plannedRuns 预知（v1=24×1=24）；real 超过 REAL_PROVIDER_MAX_RUNS_PER_TASK 直接
+  400 拒绝；demo 只允许 mock 引擎。
+- API（auth/org ownership/DB isolation 全部经 TenantService，跨租户 404）：
+  GET|POST /projects/:projectId/benchmark-suites、GET /benchmark-suites/:id、
+  POST /benchmark-suites/:id/runs、GET /benchmark-runs/:id、GET /benchmark-runs/:id/metrics。
+  Swagger /docs 仅非 production 环境启用（@nestjs/swagger@12 为 ESM-only，只允许 main.ts 引入，
+  避免 jest CJS 链路被拖入）。
+- UI /app/benchmark（auth 由 middleware 保护）：Suite/Version/Query Count/Categories/Run Type/
+  Status、按 category 的 query 列表、Planned/Completed/Succeeded/Failed/Analyzed、overall+category
+  +query 结果、Real/Demo badge、competitorScope pending 提示、点击 Query 钻取 Evidence（复用
+  /runs/:id EvidenceDialog）。
+- 测试：api benchmark e2e 15/15（401/404 跨租户、suite 版本化重复 400、v1 seed exact 24+2、
+  6×4 分布、create run 202 + plannedRuns=24、重复派发独立 run、real guard 未配置 400 + cap 400、
+  evidence linkage、overall/category/byQuery 聚合、failed denominator、demo/real isolation、
+  competitorScope、DTO 400）；worker benchmark.integration 2/2（真实 processor 走完 SUCCEEDED →
+  Evidence → Analysis 断言 brandMentioned/mentions；Suite 改名不影响历史 Run 快照）。
+  回归：api e2e 全套 46/46（含 M3 monitor-tasks / M4 evidence / M5 deepseek）、worker 全套 24/24、
+  geo-core 49 / llm 21 / queue 15、api/worker/database tsc 全过。
+- 技术债记录（M6C TODO，本轮不做）：requestedModel（请求 deepseek-chat）与 responseModel
+  （响应上报 deepseek-v4-flash）的 schema 拆分——不做 schema migration、不回填历史 Evidence。
+- Control Center：M6 = IN_PROGRESS，checkpoints M6A DONE / M6B NEXT / M6C、M6D NOT_STARTED；
+  Overall Progress 维持 7/8（M6 未 DONE 不计）；nextUp=M6B Competitor Discovery。
