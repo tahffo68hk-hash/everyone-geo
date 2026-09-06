@@ -40,6 +40,7 @@ model Organization {
   members  OrganizationMember[]
   projects Project[]
   monitorTasks MonitorTask[]
+  benchmarkRuns BenchmarkRun[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -90,12 +91,14 @@ model Project {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  brands       Brand[]
-  competitors  Competitor[]
-  querySets    QuerySet[]
-  queries      Query[]
-  monitorTasks MonitorTask[]
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  brands         Brand[]
+  competitors    Competitor[]
+  querySets      QuerySet[]
+  queries        Query[]
+  monitorTasks   MonitorTask[]
+  benchmarkSuites BenchmarkSuite[]
+  benchmarkRuns  BenchmarkRun[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -163,6 +166,7 @@ model Query {
   project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   querySet QuerySet? @relation(fields: [querySetId], references: [id], onDelete: SetNull)
   runs Run[]
+  benchmarkQuery BenchmarkQuery?
 
   @@index([status])
   @@index([type])
@@ -207,6 +211,7 @@ model Engine {
   config   Json @default("{}")
   enabled  Boolean @default(true)
   runs     Run[]
+  benchmarkRuns BenchmarkRun[]
 }
 
 model MonitorTask {
@@ -224,6 +229,7 @@ model MonitorTask {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   project        Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   runs           Run[]
+  benchmarkRun   BenchmarkRun?
   @@index([organizationId, createdAt])
   @@index([status, createdAt])
 }
@@ -366,4 +372,103 @@ model Citation {
   position   Int
   analysis   Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
   @@unique([analysisId, url])
+}
+
+// ============================================================
+// M6A - GEO Benchmark（版本化套件 / 查询 / 运行）
+// ============================================================
+// 设计原则（M6A）：
+//   1) BenchmarkSuite 按项目隔离，name+version 版本化 —— 历史 BenchmarkRun
+//      记录 suiteName/suiteVersion 快照，未来编辑 Query 不改变历史结果含义。
+//   2) BenchmarkQuery 携带自包含 queryText（不依赖项目 Query 文本），执行时通过
+//      projectQueryId 镜像到项目 Query 行，复用既有 Run/Evidence/Analysis 管线；
+//      Evidence 仍是唯一事实源，不创建第二套 Evidence 系统。
+//   3) BenchmarkRun 只做“编排记录”：记录 suite 版本快照 + provider + 它创建的
+//      MonitorTask；真实进度/计数以关联 MonitorTask 为准，读取端点实时计算。
+//   4) sanity query 用于品牌词控制检查，enabled=false 默认不派发、不计入主指标。
+
+enum BenchmarkSuiteStatus {
+  ACTIVE
+  RETIRED
+}
+
+enum BenchmarkRunType {
+  DEMO
+  REAL
+}
+
+model BenchmarkSuite {
+  id          String              @id @default(uuid()) @db.Uuid
+  projectId   String              @db.Uuid
+  name        String
+  version     String
+  description String?
+  status      BenchmarkSuiteStatus @default(ACTIVE)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  queries BenchmarkQuery[]
+  runs    BenchmarkRun[]
+
+  // 同一项目内 suite 名称+版本唯一（可审计的版本化标识）
+  @@unique([projectId, name, version])
+  @@index([projectId, status])
+}
+
+model BenchmarkQuery {
+  id             String   @id @default(uuid()) @db.Uuid
+  suiteId        String   @db.Uuid
+  // 执行镜像：对应项目 Query 行（source=IMPORTED / status=PAUSED，避免污染手动监测 UI）
+  projectQueryId String?  @unique @db.Uuid
+  queryText      String
+  category       String   // kebab 意图类目：tool-discovery / comparison / workflow / recommendation / pain-point / competition
+  intent         String   // 人类可读意图说明
+  locale         String   @default("zh-CN")
+  weight         Float    @default(1)
+  enabled        Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  sanity         Boolean  @default(false) // branded sanity query：不计入主要 Visibility Benchmark
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  suite        BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  projectQuery Query?         @relation(fields: [projectQueryId], references: [id], onDelete: SetNull)
+
+  @@unique([suiteId, sortOrder])
+  @@index([suiteId, enabled])
+}
+
+model BenchmarkRun {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  projectId      String           @db.Uuid
+  suiteId        String           @db.Uuid
+  // 版本快照：suite 被编辑/更名不影响历史 Run 的解释
+  suiteName      String
+  suiteVersion   String
+  runType        BenchmarkRunType @default(DEMO)
+  provider       String           // engine.provider 快照（mock | deepseek）
+  engineId       String           @db.Uuid
+  monitorTaskId  String           @unique @db.Uuid
+  // 冗余进度镜像（创建时初始化；读取端点以关联 MonitorTask 实时计算为准）
+  status         TaskStatus       @default(PENDING)
+  plannedRuns    Int
+  completedRuns  Int              @default(0)
+  failedRuns     Int              @default(0)
+  createdAt      DateTime         @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  metadata       Json?
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  suite        BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Restrict)
+  engine       Engine         @relation(fields: [engineId], references: [id], onDelete: Restrict)
+  monitorTask  MonitorTask    @relation(fields: [monitorTaskId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@index([suiteId, createdAt])
+  @@index([organizationId, createdAt])
 }
