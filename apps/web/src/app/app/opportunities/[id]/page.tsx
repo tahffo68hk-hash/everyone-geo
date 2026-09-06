@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import {
   formatCategory, formatContentIntent, formatEffortLevel, formatExpectedSignal,
   formatOpportunityAsset, formatOpportunityPriority, formatOpportunityStatus,
-  friendlyError, OPPORTUNITY_NAV, OPPORTUNITY_VERSION_LABEL,
+  formatExperimentStatus, friendlyError, EXPERIMENT_NAV, OPPORTUNITY_NAV, OPPORTUNITY_VERSION_LABEL,
 } from "@/lib/labels";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
 
@@ -40,6 +40,10 @@ type SourceRec = {
   id: string; recommendationRunId: string; recommendationType: string; title: string; summary: string;
   rationale: string; priority: string; priorityScore: number; status: string;
 };
+type ExperimentBrief = {
+  id: string; contentOpportunityId: string; title: string; status: string;
+  metricSource: string; provider: string; plannedQueryCount: number; createdAt: string;
+};
 
 const PRIO_BADGE: Record<string, string> = {
   HIGH: "bg-red-100 text-red-800", MEDIUM: "bg-amber-100 text-amber-800", LOW: "bg-blue-100 text-blue-800",
@@ -63,6 +67,7 @@ export default function OpportunityDetailPage() {
   const [loading, setLoading] = useState(true);
   const [evidenceRunId, setEvidenceRunId] = useState<string | null>(null);
   const [operating, setOperating] = useState(false);
+  const [experiments, setExperiments] = useState<ExperimentBrief[]>([]);
 
   const load = useCallback(async () => {
     setError("");
@@ -71,14 +76,16 @@ export default function OpportunityDetailPage() {
       setOpp(detail);
       setBlocks(detail.blocks);
       setQueries(detail.queries);
-      const [runRes, evRes, srcRes] = await Promise.all([
+      const [runRes, evRes, srcRes, expRes] = await Promise.all([
         api<OppRun>(`/opportunity-runs/${detail.opportunityRunId}`),
         api<{ evidence: EvidenceLink[] }>(`/content-opportunities/${id}/evidence`),
         api<{ recommendations: SourceRec[] }>(`/content-opportunities/${id}/recommendations`),
+        api<ExperimentBrief[]>(`/content-opportunities/${id}/experiments`),
       ]);
       setRun(runRes);
       setEvidence(evRes.evidence);
       setSources(srcRes.recommendations);
+      setExperiments(expRes);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -101,6 +108,15 @@ export default function OpportunityDetailPage() {
   function openQueryEvidence(q: QueryRow) {
     const link = evidence.find(e => e.queryText === q.queryText);
     if (link) setEvidenceRunId(link.runId);
+  }
+
+  async function createExperiment() {
+    setOperating(true);
+    try {
+      await api(`/content-opportunities/${id}/experiments`, { method: "POST" });
+      await load();
+    } catch (err) { setError(friendlyError(err)); }
+    finally { setOperating(false); }
   }
 
   const metricSource = run?.metadata?.metricSource ?? null;
@@ -187,6 +203,31 @@ export default function OpportunityDetailPage() {
                   <button type="button" disabled={operating} onClick={() => void setStatus("PROPOSED")} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50">撤回为待评估</button>
                 </div>
               )}
+            </section>
+
+            {/* M7D：优化实验集成 */}
+            <section className="rounded-2xl border border-cyan-200 bg-cyan-50/40 p-5">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-sm font-semibold text-slate-700">优化实验（Before → 执行 → Frozen Re-test → After）</span>
+                {experiments.length === 0 ? (
+                  <>
+                    <button type="button" disabled={operating} onClick={() => void createExperiment()} className="rounded-lg bg-cyan-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-800 disabled:opacity-50">
+                      {operating ? "创建中…" : EXPERIMENT_NAV.generate}
+                    </button>
+                    <span className="text-xs text-slate-500">{EXPERIMENT_NAV.noneHint} 创建后自动绑定本机会来源报告作为基线。</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="rounded bg-cyan-100 px-2 py-0.5 text-xs text-cyan-800">已建 {experiments.length} 个实验</span>
+                    {experiments.map(e => (
+                      <Link key={e.id} href={`/app/experiments/${e.id}`} className="rounded-lg border border-cyan-300 bg-white px-2 py-1 text-xs text-cyan-800 hover:bg-cyan-50">
+                        {e.title} · {formatExperimentStatus(e.status)}
+                      </Link>
+                    ))}
+                    <Link href={`/app/experiments?opp=${id}`} className="text-xs text-blue-700 hover:underline">{EXPERIMENT_NAV.view} →</Link>
+                  </>
+                )}
+              </div>
             </section>
 
             {/* Why */}

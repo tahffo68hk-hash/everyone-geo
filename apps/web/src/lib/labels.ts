@@ -610,3 +610,167 @@ export const OPPORTUNITY_NAV = {
   generateFirst: "生成内容机会",
   noneHint: "该优化建议还没有内容机会。",
 } as const;
+
+/* ---------------------------------------------------------------
+ * M7D — 优化实验与复测（Experiment / Retest / Evaluation）
+ * ---------------------------------------------------------------- */
+export const EXPERIMENT_VERSION_LABEL = "geolens-experiment-v1";
+export const EVALUATION_VERSION_LABEL = "geolens-experiment-evaluation-v1";
+
+export const EXPERIMENT_STATUS: Dict = {
+  PLANNED: "已规划",
+  EXECUTION_RECORDED: "已记录执行",
+  RETEST_READY: "待复测",
+  RETEST_RUNNING: "复测中",
+  READY_FOR_EVALUATION: "待评估",
+  EVALUATED: "已评估",
+  CANCELLED: "已取消",
+};
+export const formatExperimentStatus = (value: string | null | undefined): string =>
+  fallback(lookup(EXPERIMENT_STATUS, value), value);
+
+export const EXECUTION_TYPE: Dict = {
+  MANUAL_CONTENT_UPDATE: "内容更新",
+  MANUAL_PAGE_CREATE: "新建页面",
+  MANUAL_FAQ_UPDATE: "FAQ 更新",
+  MANUAL_DOCUMENTATION_UPDATE: "文档更新",
+  MANUAL_OTHER: "其他",
+};
+export const formatExecutionType = (value: string | null | undefined): string =>
+  fallback(lookup(EXECUTION_TYPE, value), value);
+
+export const OUTCOME: Dict = {
+  IMPROVED_SIGNALS: "观察到改善",
+  MIXED_SIGNALS: "结果混合",
+  NO_CLEAR_CHANGE: "未观察到明确变化",
+  REGRESSED_SIGNALS: "观察到下降",
+  INCONCLUSIVE: "暂无法判断",
+};
+export const formatOutcome = (value: string | null | undefined): string =>
+  fallback(lookup(OUTCOME, value), value);
+
+export const EXPERIMENT_VERDICT: Dict = {
+  CONTROLLED_COMPARABLE: "可比（受控）",
+  PARTIALLY_COMPARABLE: "部分可比",
+  NOT_COMPARABLE: "不可比",
+};
+export const formatExperimentVerdict = (value: string | null | undefined): string =>
+  fallback(lookup(EXPERIMENT_VERDICT, value), value);
+
+export const QUERY_TRANSITION: Dict = {
+  GAINED_VISIBILITY: "新增可见",
+  LOST_VISIBILITY: "失去可见",
+  GAINED_RECOMMENDATION: "新增推荐",
+  LOST_RECOMMENDATION: "失去推荐",
+  POSITION_IMPROVED: "位置改善",
+  POSITION_DECLINED: "位置下降",
+  CITATION_GAINED: "引用增加",
+  CITATION_LOST: "引用减少",
+  UNCHANGED: "无变化",
+  MULTIPLE_CHANGES: "多重变化",
+  NOT_EVALUABLE: "不可评估",
+};
+export const formatQueryTransition = (value: string | null | undefined): string =>
+  fallback(lookup(QUERY_TRANSITION, value), value);
+
+export const DELTA_DIRECTION: Dict = { IMPROVED: "改善", DECLINED: "下降", NEUTRAL: "无变化" };
+export const formatDeltaDirection = (value: string | null | undefined): string =>
+  fallback(lookup(DELTA_DIRECTION, value), value);
+
+export const MEANINGFUL: Dict = { MEANINGFUL: "明显", SMALL: "轻微", NEUTRAL: "无" };
+export const formatMeaningful = (value: string | null | undefined): string =>
+  fallback(lookup(MEANINGFUL, value), value);
+
+/** Evaluation 警告码 → 中文（保留 code 并列便于溯源） */
+export const COMPATIBILITY_WARNING: Dict = {
+  QUERY_SET_CHANGED: "测试集已变化",
+  PROVIDER_CHANGED: "Provider 已变化",
+  REQUESTED_MODEL_CHANGED: "请求模型已变化",
+  MODEL_DRIFT_WARNING: "模型响应身份变化",
+  ANALYSIS_VERSION_CHANGED: "分析规则版本变化",
+  COMPETITOR_SET_CHANGED: "竞品集版本变化",
+  METRIC_SOURCE_CHANGED: "数据类型变化",
+  SUCCESS_COVERAGE_CHANGED: "样本完整性变化",
+  EXECUTION_TIME_INVALID: "执行时序无效",
+  EXECUTION_MISSING: "执行未记录",
+  PARTIAL_RUN: "部分完成",
+  UNKNOWN_MODEL_IDENTITY: "模型身份未知",
+};
+export const formatWarningCode = (code: string | null | undefined, rawMessage?: string | null): string => {
+  const zh = fallback(lookup(COMPATIBILITY_WARNING, code), null);
+  return zh ? `${zh}${rawMessage ? `：${rawMessage}` : ""}` : rawMessage || code || "未知";
+};
+
+/* 指标值/Δ 展示辅助（pp / 位 / count；严禁相对 %） */
+export const formatMetricPercent = (value: number | null | undefined): string =>
+  value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+export const formatMetricPosition = (value: number | null | undefined): string =>
+  value == null ? "—" : `${value} 位`;
+export const formatMetricCount = (value: number | null | undefined): string =>
+  value == null ? "—" : String(value);
+
+export function formatMetricValue(metricName: string, value: number | null | undefined): string {
+  if (metricName === "averageMentionPosition") return formatMetricPosition(value);
+  if (metricName === "citationCount" || metricName === "citationDomainCount") return formatMetricCount(value);
+  return formatMetricPercent(value);
+}
+
+export function formatDeltaText(metricName: string, delta: number | null | undefined, unit: string | null | undefined): string {
+  if (delta == null) return "无数据";
+  const signed = delta > 0 ? `+${Math.round(delta * 100) / 100}` : `${Math.round(delta * 100) / 100}`;
+  if (metricName === "averageMentionPosition") {
+    const abs = Math.round(Math.abs(delta) * 10) / 10;
+    return delta < 0 ? `提升 ${abs} 位` : delta > 0 ? `后移 ${abs} 位` : "无变化";
+  }
+  if (unit === "pp") return `${signed}pp`;
+  return `${signed}${unit ?? ""}`;
+}
+
+export const EXPERIMENT_NAV = {
+  list: "优化实验",
+  detail: "优化实验详情",
+  generate: "创建优化实验",
+  view: "查看实验",
+  noneHint: "该内容机会还没有优化实验。",
+  backToOpportunities: "← 返回内容机会",
+  hypothesis: "实验假设",
+  baseline: "基线（Before）",
+  execution: "执行记录",
+  retestPlan: "复测计划",
+  observedOutcome: "观察结果",
+  beforeAfterKpi: "复测前后关键指标",
+  queryDeltaTable: "Query 变化",
+  evidenceAB: "证据对照（A/B）",
+  attribution: "归因说明",
+  attributionDisclaimer:
+    "GeoLens 展示的是执行前后复测观察到的变化。生成式 AI 模型、Provider、互联网内容及其他外部因素可能同时发生变化。除非有更严格的控制实验设计，否则这些变化不应被解释为单一优化动作的严格因果证明。",
+  observedNotProven: "Observed change ≠ proven causal effect",
+  planTitle: "准备复测",
+  executionHint: "GeoLens 当前仅记录该执行信息，不会自动修改或验证外部页面。",
+  assetReferenceLabel: "执行对象（用户记录）",
+  userConfirmed: "执行记录由用户确认。",
+  recordExecution: "记录已执行",
+  startRetest: "开始复测",
+  startDemoRetest: "开始演示复测",
+  confirmRealRetest: "确认并开始真实复测",
+  noExecutionFirst: "请先记录已完成的优化动作，再开始复测。",
+  demoLabel: "演示实验 —— 不伪装真实优化提升",
+  realLabel: "真实数据实验",
+  demoTip: "演示数据（Mock）—— 结果仅验证闭环，不代表真实 GEO 提升。",
+  emptyExperiments: "暂无优化实验",
+  emptyHint: "从一个内容机会创建优化实验：先绑定基线报告，再记录执行，最后做同口径 Frozen 复测与评估。",
+  evaluationNote: "以下评估为 deterministic rules 生成的观察结果（Observed Outcome），不构成严格因果证明；效果应结合多次 Re-test 与正式验收判断。",
+  kpi: {
+    visibilityRate: "品牌可见率",
+    recommendationRate: "推荐率",
+    averageMentionPosition: "平均提及位置",
+    shareOfVoice: "AI 声量份额",
+    citationCount: "引用次数",
+    citationDomainCount: "引用域名数",
+  },
+  warningsLabel: "口径告警",
+  primaryLabel: "主信号",
+  secondaryLabel: "次信号",
+  notEvaluableLabel: "数据不可用（不等于品牌缺席）",
+  latestFirst: "最新在前",
+} as const;
