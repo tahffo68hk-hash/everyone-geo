@@ -243,3 +243,23 @@ ExitCode=0（如 `docker compose up -d` 正常把 progress/status 写到 stderr�
 - 真机验证仍待用户执行（START 8/8 → 幂等 START → STATUS → STOP → 再 START）；沙箱内已做
   help/status 语法回归 + 健康函数 StrictMode harness 冒烟（逻辑无崩溃；native 不真正执行故
   status=unknown/exit=-1 属沙箱宿主限制，非脚本缺陷）。未产生任何真实 API 费用。
+
+## 2026-09-06 — DX1 Launcher Fix #4：PowerShell PID automatic variable 冲突（fix 独立 commit）
+
+真机 [4/8] Redis HEALTHY (PONG) 后 launcher 报
+`无法覆盖变量 Pid，因为该变量为只读变量或常量。` 并 exit 1。
+根因：`$PID` 是 PS 内置只读 automatic variable，变量名大小写不敏感（`$pid/$Pid/$PID` 同一变量）；
+dev-control.ps1 中 4 个函数以 `[int]$Pid` 命名参数，PS 5.1 调用时参数绑定赋值命中只读变量即终止。
+
+- 审计（词边界 grep 全 repo *.ps1/*.cmd）：冲突仅 4 个函数参数——Test-Alive、
+  Write-PidFile、Get-ProcessCmdline、Test-GeoLensProcess。
+  未误判项（保持不动）：`$pidPath`/`$pidVal`（不同标识符，非 automatic variable）、
+  hashtable key `pid`、`.runtime/*.pid` 文件名与内容格式。三个 .cmd 无 $pid 用法。
+- 统一重命名：4 个函数参数 `$Pid` → `$ProcessId`（含函数体内 5 处引用）；
+  调用点均为位置传参，无需改。git diff 9+/9- 仅此 18 行，无行为变化。
+- 沙箱验证：全 repo 词边界 grep 无 `$PID/$Pid/$pid` 残留；PS Parser 语法回归通过；
+  StrictMode AST harness（抽取 4 函数 dot-source）冒烟全过——Test-Alive(0)=False、
+  Test-Alive($PID)=True、Write-PidFile 写读回一致（ASCII 无换行格式不变）、
+  Get-ProcessCmdline 非空、Test-GeoLensProcess 对非 node 进程=False；
+  修复后参数绑定不再抛只读冲突。
+- 真机验收仍待用户执行：START 8/8 → 幂等 START → STATUS → STOP → restart。

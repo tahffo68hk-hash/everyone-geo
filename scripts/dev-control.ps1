@@ -69,9 +69,9 @@ function Invoke-OpenControlCenter() {
   try { Start-Process $CtrlUrl } catch { Write-Warn "无法自动打开浏览器，请手动访问 $CtrlUrl" }
 }
 
-function Test-Alive([int]$Pid) {
-  if ($Pid -le 0) { return $false }
-  return (Get-Process -Id $Pid -ErrorAction SilentlyContinue) -ne $null
+function Test-Alive([int]$ProcessId) {
+  if ($ProcessId -le 0) { return $false }
+  return (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) -ne $null
 }
 
 function Read-PidFile([string]$Path) {
@@ -79,8 +79,8 @@ function Read-PidFile([string]$Path) {
   try { $v = (Get-Content -LiteralPath $Path -Raw -ErrorAction Stop).Trim(); return [int]$v } catch { return 0 }
 }
 
-function Write-PidFile([string]$Path, [int]$Pid) {
-  Set-Content -LiteralPath $Path -Value ([string]$Pid) -Encoding ASCII -NoNewline
+function Write-PidFile([string]$Path, [int]$ProcessId) {
+  Set-Content -LiteralPath $Path -Value ([string]$ProcessId) -Encoding ASCII -NoNewline
 }
 
 function Remove-IfExists([string]$Path) {
@@ -108,9 +108,9 @@ function Get-DotEnvValue([string]$Path, [string]$Key) {
   return $null
 }
 
-function Get-ProcessCmdline([int]$Pid) {
+function Get-ProcessCmdline([int]$ProcessId) {
   try {
-    $p = Get-CimInstance Win32_Process -Filter "ProcessId = $Pid" -ErrorAction Stop
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
     if ($p) { return [string]$p.CommandLine }
   } catch {}
   return ''
@@ -303,9 +303,9 @@ function Find-ForeignWorkers([int]$ApiListenerPid, [int]$RecordedApiPid, [int]$R
   return $result
 }
 
-function Test-GeoLensProcess([int]$Pid, [string]$Marker) {
+function Test-GeoLensProcess([int]$ProcessId, [string]$Marker) {
   try {
-    $p = Get-CimInstance Win32_Process -Filter "ProcessId = $Pid" -ErrorAction Stop
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
     if (-not $p) { return $false }
     if ($p.Name -ne 'node.exe') { return $false }
     $cmd = [string]$p.CommandLine
