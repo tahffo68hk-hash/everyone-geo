@@ -5,13 +5,13 @@
   "currentMilestone": "M7",
   "overallStatus": "IN_PROGRESS",
   "nextUp": {
-    "id": "M7D",
-    "name": "Experiment & Re-test",
-    "status": "NOT_STARTED"
+    "id": "M7",
+    "name": "Awaiting M7 Acceptance (M7D IMPLEMENTATION_DONE; 用户验收后 M7 DONE / 9-9 100%)",
+    "status": "AWAITING_ACCEPTANCE"
   },
-  "updatedAt": "2026-09-06T15:40:00.000Z",
+  "updatedAt": "2026-09-06T16:10:00.000Z",
   "updatedBy": "agent",
-  "updatedNote": "M7C Content Opportunities DONE（M7A/B/C DONE）；M7D=NEXT（不自动开始）。M7 仍 IN_PROGRESS —— Overall 8/9 DONE · ≈89%（M7D 完成并正式验收后才 M7 DONE）",
+  "updatedNote": "M7D Experiment & Re-test IMPLEMENTATION_DONE（M7A/B/C/D 均实现完成；0 real AI calls；REAL_EXPERIMENT=NOT_RUN）。M7 仍 IN_PROGRESS · AWAITING USER ACCEPTANCE —— Overall 8/9 DONE · ≈89%（用户正式验收 M7 后才改 M7=DONE / 9/9=100%）",
   "git": {
     "branch": "master",
     "head": "6ca91c1",
@@ -597,23 +597,24 @@
       "dataType": "n/a",
       "demoRoute": null,
       "summary": [
-        "M7A GEO Diagnosis Foundation —— DONE/FROZEN（同上）",
-        "M7B Optimization Recommendations —— DONE/FROZEN（同上）",
-        "M7C Content Opportunities —— DONE：ContentOpportunityRun/ContentOpportunity/Recommendation·Query·Evidence 链接/ContentBlock 模型+迁移 m7c_content_opportunities（dev+geo_test+generate）；geolens-content-opportunity-v1 纯函数引擎（geo-core content-opportunities.ts）：Recommendation→Opportunity 映射+Query clustering/dedup（无 embedding）+priority 0-100+DQ guard（DOCUMENTATION 高成本≤49）+DATA_COLLECTION 不生成普通机会；API（生成幂等/列表/详情/blocks/queries/evidence/rec 来源/status 人工流转）；中文 UI /app/opportunities 高密度 Table+详情（Why/目标 Query 表/建议结构块/Evidence 下钻/免责声明）+Recommendation 集成+工作台入口；全部 0 real AI calls",
-        "M7D Experiment & Re-test —— NEXT（未实现：不建 Experiment/不跑复测）"
+        "M7A GEO Diagnosis Foundation —— DONE/FROZEN（同前）",
+        "M7B Optimization Recommendations —— DONE/FROZEN（同前）",
+        "M7C Content Opportunities —— DONE/FROZEN（同前）",
+        "M7D Experiment & Re-test —— IMPLEMENTATION_DONE：OptimizationExperiment/Execution/Retest(多轮)/Evaluation(immutable v1) 模型+migration；geo-core 纯函数 evaluation engine（37 单测）；frozen snapshot re-run（startRunFromSnapshot 复用既有 pipeline，杜绝 Query Drift + SHA-256 query fingerprint）；compat/metric(pp·位·count)/query delta(outcome + failed≠absent)/coverage/timing guard；API+e2e(16)；中文 UI /app/experiments(+详情 10 段)+Opportunity 集成；Demo 闭环 0 real calls。真实 ProjectMentor 实验 NOT_RUN（待用户批准）。",
+        "M7 —— 待用户正式验收（M7D 用 Demo/Mock 证明技术闭环，不证明真实 GEO 提升）。"
       ],
       "gates": {
         "implementation": {
           "status": "DONE",
-          "detail": "feat(m7)：content opportunity 数据模型+迁移 / geo-core deterministic engine（39 单测） / opportunities api+evidence links（18 e2e） / 中文内容机会 workspace"
+          "detail": "feat(m7)：experiment data model+migration / geo-core evaluation engine(37) / frozen benchmark retest orchestration / experiment api+evidence comparison / 中文 experiment workspace"
         },
         "testing": {
           "status": "DONE",
-          "detail": "geo-core 155（M7C 39）+ api e2e 133（11 suites，M7C 18）+ worker 31 + queue 15 + llm 35 + database guard 15 + web tsc/build(.next-m7c) + check-ui-zh(23 文件) PASS；M3–M7B 无回归"
+          "detail": "geo-core 192（M7D 37）+ api e2e 149（12 suites，M7D 16）+ worker 31 + queue 15 + llm 35 + database 15 + web tsc/build(.next-m7d)+check-ui-zh(25) PASS；M3–M7C 无回归"
         },
         "demo": {
           "status": "DONE",
-          "detail": "geo_dev 真机 Demo（0 real calls，engine 411ms）：M7B Demo RecommendationRun(5 建议) → ContentOpportunityRun（4 机会：PRODUCT_PAGE/DATA_REFERENCE/USE_CASE_PAGE×2，9 query links，9 evidence links）→ 列表/详情/目标 Query/来源建议/Evidence 下钻 rawResponse → 状态 APPROVED→撤回；幂等复用验证"
+          "detail": "geo_dev Demo（0 real calls）：Opportunity→Experiment→Execution→Frozen Retest→Evaluation 闭环（demo INCONCLUSIVE 因本地队列竞争致 1 run FAILED → coverage guard；同逻辑 geo_test e2e 确定性验证 IMPROVED_SIGNALS 3 gained visibility）。REAL_EXPERIMENT=NOT_RUN"
         }
       },
       "checkpoints": [
@@ -631,7 +632,7 @@
         },
         {
           "name": "M7D Experiment & Re-test",
-          "status": "NOT_STARTED"
+          "status": "IMPLEMENTATION_DONE"
         }
       ],
       "verification": {

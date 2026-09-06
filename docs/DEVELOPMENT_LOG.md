@@ -694,3 +694,55 @@ M7C 完成：把 M7A/M7B 转成「少量、去重、可解释、可执行的内�
   title direction/结构块非最终稿、priority/effort 为 internal heuristic、无 website
   inventory（建议资产 ≠ 确认缺失）、无 causal guarantee；真正效果必须 M7D 相同 Benchmark
   复测。M7D TODO：Opportunity → Execution → Before/After Benchmark → Delta（不实现）。
+
+
+## 2026-09-06 — M7D Optimization Experiment & Re-test（feat(m7)/docs(m7)，未 push）
+
+M7D 实现完成：Before→执行记录→Frozen Re-test→After→评估 的可信复测闭环。0 次真实 AI 调用、
+未发布、未 push、未进入 M8；M7 仍 IN_PROGRESS（AWAITING USER ACCEPTANCE，Overall 8/9 ≈89%）。
+
+- Frozen retest architecture：现有 BenchmarkService.startRun 读取**当前** BenchmarkSuite/
+  BenchmarkQuery —— 直接用其复测会产生 Re-test Query Drift。新增 startRunFromSnapshot：
+  输入为基线 BenchmarkRun 的 BenchmarkRunQuery 冻结快照，为每个快照语义新建镜像 Query 行，
+  仍走既有 BenchmarkRun→MonitorTask→Run→Queue→Worker→Evidence→Analysis→Report 管线
+  （不建第二套 Worker/Evidence/Metrics）；复测前重算 querySetFingerprint 与基线一致否则 400。
+- query fingerprint：SHA-256 of ordered semantic rows（queryText/category/intent/locale/weight/
+  sanity/sortOrder，不含 DB id/createdAt），geo-core 纯函数。
+- 数据模型（migration m7d_experiments，dev+geo_test+generate，additive）：OptimizationExperiment
+  （绑 ContentOpportunity+Baseline Report，status PLANNED→EXECUTION_RECORDED→RETEST_RUNNING→
+  EVALUATED/CANCELLED；provenance 全快照）、ExperimentExecution（用户确认；时序 guard；
+  assetReference 只记录不 fetch）、ExperimentRetest（#1/#2/#3… 不覆盖旧 After）、
+  ExperimentEvaluation（immutable，geolens-experiment-evaluation-v1）、
+  ExperimentMetricDelta（pp/位/count 语义）、ExperimentQueryDelta（transition + NOT_EVALUABLE）。
+- evaluation engine（geo-core experiments.ts，37 单测全绿）：compatibility（hard：fingerprint/
+  metricSource/provider/requestedModel/analysisVersion/competitorSetVersion；soft：responseModel
+  drift→PARTIALLY+MODEL_DRIFT_WARNING）；metric delta pp（25%→40%=+15pp 非 +60%）、位置方向
+  （数字越小越好）、citation count；meaningful thresholds（internal heuristic：率 3/5pp、
+  位置 0.5/1.0 位、引用 1/3）；query delta（failed run≠brand missing→NOT_EVALUABLE）；
+  outcome（IMPROVED_SIGNALS/MIXED/NO_CLEAR_CHANGE/REGRESSED/INCONCLUSIVE，无 causal 措辞）；
+  coverage guard（after 成功样本 <before 的 90% → INCONCLUSIVE）。
+- API（apps/api/src/experiments，Auth/Tenant/幂等/Swagger 链路）：POST content-opportunities/:id/
+  experiments（幂等）、GET /experiments/:id(/executions|/retests|/evaluations)、POST
+  /experiments/:id/executions（时序 400）、POST retest-plan、POST retests（Frozen re-run +
+  cost guard）、POST experiment-retests/:id/evaluate（自动 After Report；evaluationVersion 幂等）、
+  GET metric-deltas/query-deltas/query-delta evidence A/B、PATCH experiments/:id/status（仅
+  CANCELLED，无效流转 400）。e2e 16/16（含 retest-before-execution 400、时序 guard、
+  多复测、幂等、INCONCLUSIVE coverage、Evidence immutable、tenant/401、模型身份 preserved）。
+- UI（中文，web tsc + build(.next-m7d) + check-ui-zh 25 文件 PASS）：/app/experiments 高密度
+  Table（实验/机会/基线/状态/Outcome/Provider + 免责声明）+ /app/experiments/:id 详情
+  （Header/Hypothesis/Baseline/执行记录表单/复测计划(Real 危险确认/Demo 0-cost)/结果/Before-
+  After KPI(pp·位·count)/Query Delta 表(过滤+NOT_EVALUABLE)/Evidence A-B Drawer/归因声明）；
+  /app/opportunities/:id 集成「创建优化实验/查看实验」；工作台入口。
+- 回归：geo-core 192（M7D 37）/ llm 35 / queue 15 / worker 31 / database guard 15 / api e2e 149
+  （12 suites，M7D 16）/ web tsc + next build（.next-m7d）+ check-ui-zh 全绿；M3–M7C 无回归。
+- Demo（geo_dev，0 real calls）：Opportunity→Experiment→Execution→Frozen Retest→Evaluation 闭环
+  跑通（metricSource=demo、evaluationVersion、metric deltas pp=+100、2 gained visibility +
+  1 NOT_EVALUABLE、Evidence A/B、fingerprint 一致、幂等）。注：geo_dev 本地复测 run 之一受
+  队列/外部进程竞争置 FAILED → coverage guard 触发 INCONCLUSIVE —— 恰好展示“失败 ≠ 品牌
+  缺席”与样本完整性语义；同逻辑在 geo_test e2e 确定性路径验证为 IMPROVED_SIGNALS（3 gained
+  visibility）。demo 用户/项目数据保留（m7d-demo-*@geolens.local）。
+- secret 扫描 PASS；无外部网站/CMS/发布修改；Real Experiment：NOT_RUN（PENDING_USER_APPROVAL）。
+- project-status：M7D=IMPLEMENTATION_DONE（正式验收待用户）；M7=IN_PROGRESS·AWAITING_ACCEPTANCE；
+  Overall 8/9 ≈89%（不自动写 9/9）。
+- REAL_EXPERIMENT：NOT_RUN —— 真实 ProjectMentor 内容优化实验须用户批准后再跑。
+- M8/Preference：本轮不训练模型、不导出数据集。
