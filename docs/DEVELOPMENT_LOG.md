@@ -593,3 +593,50 @@ M7A DONE、M7B NEXT。M7A 全程 0 次真实 AI 调用、未进入 M7B。
   无 .env 入库（tracked 仅 .env.example）→ PASS。
 - M7B TODO（下一里程碑，未开始）：Optimization Recommendations —— 基于诊断生成建议；
   届时可能引入 diagnosis v2 扩展类型；M7A 阈值 internal heuristic disclaimer 延续。
+
+## 2026-09-06 — M7B Optimization Recommendations（feat(m7)/docs(m7)，未 push）
+
+M7B 完成：把 M7A 诊断转成少量、去重、可执行、有依据、可验证的优化行动。0 次真实 AI
+调用、未进入 M7C/M7D、未 push。
+
+- 语义边界：Recommendation = hypothesis-backed action（非事实/非因果证明/非效果承诺），
+  UI 恒带免责声明；必须 Diagnosis-backed（Recommendation→RecommendationFinding→
+  DiagnosisFinding→FindingEvidence→Evidence 全链回查）；无对应 Finding 绝不凭空生成。
+- 架构/数据模型：RecommendationRun（绑定 DiagnosisRun，version=geolens-recommendation-v1）、
+  Recommendation、RecommendationFinding（findingId 归档引用，不复制 Finding）、ActionItem；
+  type/status/priority/effort 用 String（版本演进友好），migration m7b_recommendations
+  （dev+test+generate，无 destructive）。幂等：同 (diagnosisRunId, version) 返回既有 Run；
+  Snapshot 生成即冻结。
+- 引擎（geo-core src/recommendations.ts 纯函数，不 import DB/HTTP/env）：Finding→Strategy
+  确定性映射（11 类 Finding 全覆盖）；deterministic clustering（type|category|competitor），
+  QUERY_GAP 同 category 聚合、跨 category/竞品不错误合并、LOW_VIS+CATEGORY_GAP 不产生
+  重复实体建议；priorityScore = typeWeight×0.35 + avg(findingPriority)×0.35 +
+  coverage×0.8 + HIGH bonus，clamp 0–100；DataQualityGuard：含 HIGH/MEDIUM DQ 时高成本
+  建议自动压 ≤49（小样本不驱动大改造），DATA_COLLECTION 恒出；effort(LOW/MED/HIGH 粗粒度)、
+  expectedSignal（≠expectedDelta，不承诺提升）、impactArea、targetAssetType、verificationMethod
+  （M7D 复测文案）均由集中配置（RECOMMENDATION_TYPE_RULES / ACTION_TEMPLATES）生成。
+- 测试：geo-core recommendations 23/23（mapping 11 类/dedup/priority/DataQualityGuard/
+  same-input-same-output/input 不突变/action 排序/空 finding 不生成）；geo-core 合计 116/116。
+  API e2e recommendations 13/13（创建/幂等/summary 计数/排序/finding 链接/evidence 不复制/
+  accept·dismiss/action status/demo 标注/tenant 404/401/坏 ID）；全量 API e2e 115/115（10 suites）。
+- API（apps/api/src/recommendations，Auth/Tenant/Swagger 链路同既有）：POST
+  /diagnoses/:diagnosisId/recommendations、GET /diagnoses/:id/recommendations、
+  GET /recommendation-runs/:id(/recommendations)、GET /recommendations/:id(/findings/evidence)、
+  PATCH /recommendations/:id/status、PATCH /action-items/:id/status。
+- UI（中文，check-ui-zh PASS 21 文件）：/app/recommendations 列表（建议版本/数据类型/计数/
+  方向标签）+ /app/recommendations/:id 详情（免责声明横幅/优先级分布/建议卡：优先级徽标、
+  类型中文、为什么、来源诊断数/证据数/影响方向/优化对象/预期影响指标/工作量/状态 +
+  采纳/忽略按钮 + 行动项 checklist（状态 select）+ 「查看依据」→ Finding → 查看原始回答
+  Evidence 下钻）；/app/diagnosis/[id] 增加「生成优化建议 / 查看优化建议」；工作台入口；
+  labels.ts 增 RECOMMENDATION_TYPE/PRIORITY/STATUS/ACTION_TYPE/EXPECTED_SIGNAL/TARGET_ASSET/
+  IMPACT_AREA/EFFORT + RECOMMENDATION_NAV。
+- 真机 Demo（geo_dev，0 real calls，engine 2ms）：6 条 mock Evidence → Report → Diagnosis
+  → Recommendations（5 条建议/13 行动项：场景覆盖/数据补充/可推荐性/定位/引用，均 LOW；
+  影响方向·资产·工作量齐全）→ 建议详情行动项 → 依据 Finding → Evidence 下钻 rawResponse。
+  demo 用户 m7b-demo-*@geolens.local 保留可登录查看；临时脚本/API 已清理。
+- 回归：core 116 / llm 35 / queue 15 / worker 31 / api e2e 115（含 M7A diagnosis 14、M7B rec 13）/
+  web tsc + next build（隔离 .next-m7b）+ check-ui-zh / database tsc 全绿；M3–M7A 无回归。
+- secret 扫描 PASS（仅 .env.example 空占位与测试 fake key；无真实 Key/DB URL 入 git）。
+- project-status：M7B DONE、M7C=NEXT；M7 仍 IN_PROGRESS，Overall 8/9 DONE · ≈89%。
+- M7C TODO（下一里程碑，未开始）：Content Opportunities —— 具体内容机会/brief；
+  届时可能引入 M7C 专用端点与内容 workspace，M7B 的 verificationMethod 供 M7D 复测使用。

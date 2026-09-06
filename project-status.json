@@ -5,13 +5,13 @@
   "currentMilestone": "M7",
   "overallStatus": "IN_PROGRESS",
   "nextUp": {
-    "id": "M7B",
-    "name": "Optimization Recommendations",
+    "id": "M7C",
+    "name": "Content Opportunities",
     "status": "NOT_STARTED"
   },
-  "updatedAt": "2026-09-06T14:15:58.000Z",
+  "updatedAt": "2026-09-06T14:50:24.000Z",
   "updatedBy": "agent",
-  "updatedNote": "M6（含 M6D 真实 Qwen Smoke #1）用户正式验收 → DONE。M7 正式启动：M7A GEO Diagnosis Foundation DONE（8/9 DONE · ≈89% —— M7 尚未完成，M7A/M7B/C/D 见 checkpoints）；M7B=NEXT（不自动开始）。Overall 8/9 DONE · 约 89%",
+  "updatedNote": "M7B Optimization Recommendations DONE（M7A/B DONE）；M7C=NEXT（不自动开始）。M7 仍 IN_PROGRESS —— Overall 8/9 DONE · ≈89%",
   "git": {
     "branch": "master",
     "head": "1ef30db",
@@ -597,23 +597,23 @@
       "dataType": "n/a",
       "demoRoute": null,
       "summary": [
-        "M7A GEO Diagnosis Foundation —— 完成：绑定 BenchmarkReport 的确定性问题诊断（DiagnosisRun/DiagnosisFinding/FindingEvidence 数据模型 + 迁移；geolens-diagnosis-v1 规则引擎于 geo-core 纯函数；11 类 Finding + Severity/优先级确定性公式；DATA_QUALITY_WARNING 恒先出；FindingEvidence 只归档链接不复制 Evidence；快照不漂移 + 幂等；Provider Gap 复用 Reports compare 兼容性；中文 UI /app/diagnosis 列表+详情+Evidence 下钻 + Reports 页生成入口；geolens-diagnosis-v1 阈值属 internal heuristic，M7B 边界清晰）",
-        "M7B Optimization Recommendations —— NEXT：基于 M7A 诊断生成优化建议（本轮不做）",
-        "M7C Content Opportunities —— NOT_STARTED",
+        "M7A GEO Diagnosis Foundation —— 完成：绑定 BenchmarkReport 的确定性问题诊断（数据模型+迁移；geolens-diagnosis-v1 规则引擎于 geo-core 纯函数；11 类 Finding+Severity/优先级确定性；DQ 恒先；FindingEvidence 只归档链接不复制 Evidence；快照不漂移+幂等；Provider Gap 复用 compare；中文 UI+Evidence 下钻）",
+        "M7B Optimization Recommendations —— 完成：Deterministic recommendation engine（geolens-recommendation-v1，geo-core 纯函数）：Finding→Strategy 映射+clustering/dedup+priority(0-100)+effort/expectedSignal/targetAsset/verificationMethod+DataQualityGuard（小样本不高成本改造）；RecommendationRun/Recommendation/RecommendationFinding/ActionItem 模型+迁移；API（创建幂等/回链/accept·dismiss/action 状态）；中文 UI /app/recommendations + Diagnosis 集成 + 行动项 checklist + Evidence 下钻；hypothesis disclaimer 恒显",
+        "M7C Content Opportunities —— NEXT：具体内容机会/brief（本轮不做）",
         "M7D Experiment & Re-test —— NOT_STARTED"
       ],
       "gates": {
         "implementation": {
           "status": "DONE",
-          "detail": "feat(m7)：schema+migration / geo-core deterministic engine / api (reports/:id/diagnoses + findings + evidence) / 中文 UI"
+          "detail": "feat(m7)：rec 数据模型+migration / geo-core deterministic engine / recommendations api+action items / 中文 UI"
         },
         "testing": {
           "status": "DONE",
-          "detail": "geo-core 93（diagnosis 29）+ api e2e 102（9 suites，diagnosis 14）+ worker 31 + queue 15 + llm 35 + web tsc + next build（隔离 dist）+ check-ui-zh PASS；M3–M6D 无回归"
+          "detail": "geo-core 116（rec 23）+ api e2e 115（10 suites，rec 13）+ worker 31 + queue 15 + llm 35 + web tsc/build + check-ui-zh PASS；M3–M7A 无回归"
         },
         "demo": {
           "status": "DONE",
-          "detail": "geo_dev 真机 Demo（0 真实调用）：Report → Diagnosis（6 findings：样本量提示/演示数据/低推荐/位置偏后/场景缺口/引用说明）→ Finding → Evidence 下钻 rawResponse"
+          "detail": "geo_dev 真机 Demo（0 real calls，engine 2ms）：Report→Diagnosis→Recommendations(5/13 actions)→建议详情行动项→依据 Finding→Evidence 下钻"
         }
       },
       "checkpoints": [
@@ -623,7 +623,7 @@
         },
         {
           "name": "M7B Optimization Recommendations",
-          "status": "NOT_STARTED"
+          "status": "DONE"
         },
         {
           "name": "M7C Content Opportunities",
