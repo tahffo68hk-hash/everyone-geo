@@ -14,8 +14,8 @@
   "updatedNote": "M7D Experiment & Re-test IMPLEMENTATION_DONE（M7A/B/C/D 均实现完成；0 real AI calls；REAL_EXPERIMENT=NOT_RUN）。M7 仍 IN_PROGRESS · AWAITING USER ACCEPTANCE —— Overall 8/9 DONE · ≈89%（用户正式验收 M7 后才改 M7=DONE / 9/9=100%）",
   "git": {
     "branch": "master",
-    "head": "6ca91c1",
-    "headLabel": "docs(m7): document content opportunity foundation",
+    "head": "f4e02d9",
+    "headLabel": "docs(m7): document experiment and retest loop",
     "baselineBeforeDX1": "1137d23"
   },
   "realRunEvidence": {
