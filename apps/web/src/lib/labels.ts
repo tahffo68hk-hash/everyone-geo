@@ -315,3 +315,66 @@ export const NAV_LABELS = {
   settings: "设置",
   backToDashboard: "← 返回工作台",
 } as const;
+
+/* ---------------------------------------------------------------
+ * M7A — GEO 问题诊断（Diagnosis / Finding / Severity 中文映射）
+ * ---------------------------------------------------------------- */
+export const DIAGNOSIS_VERSION_LABEL = "geolens-diagnosis-v1";
+
+export const FINDING_TYPE: Dict = {
+  LOW_VISIBILITY: "品牌整体可见度偏低",
+  LOW_RECOMMENDATION: "品牌推荐表现偏弱",
+  CATEGORY_GAP: "场景缺口",
+  QUERY_GAP: "问题缺口",
+  PROVIDER_GAP: "模型表现差异",
+  COMPETITOR_DOMINANCE: "竞品曝光优势明显",
+  COMPETITOR_RECOMMENDED_TARGET_ABSENT: "竞品被推荐但品牌缺席",
+  POOR_MENTION_POSITION: "品牌提及位置偏后",
+  CITATION_GAP: "引用信号不足",
+  SENTIMENT_RISK: "情感风险",
+  DATA_QUALITY_WARNING: "数据质量提示",
+};
+export const formatFindingType = (value: string | null | undefined): string =>
+  fallback(lookup(FINDING_TYPE, value), value);
+
+export const SEVERITY_LABEL: Dict = {
+  HIGH: "高优先级",
+  MEDIUM: "中优先级",
+  LOW: "低优先级",
+  INFO: "提示",
+};
+export const formatSeverity = (value: string | null | undefined): string =>
+  fallback(lookup(SEVERITY_LABEL, value), value);
+
+export const SEVERITY_BADGE: Record<string, string> = {
+  HIGH: "bg-red-100 text-red-800",
+  MEDIUM: "bg-amber-100 text-amber-800",
+  LOW: "bg-blue-100 text-blue-800",
+  INFO: "bg-slate-100 text-slate-600",
+};
+
+export const DIAGNOSIS_NAV = {
+  reports: "GEO 基准测试报告",
+  diagnosis: "问题诊断",
+  generate: "生成 GEO 问题诊断",
+  view: "查看问题诊断",
+  list: "GEO 问题诊断",
+  detail: "GEO 问题诊断详情",
+  project: "项目",
+  sourceReport: "来源报告",
+  diagnosisVersion: "诊断版本",
+  dataType: "数据类型",
+  generatedAt: "生成时间",
+  prioritySummary: "问题优先级分布",
+  high: "高优先级",
+  medium: "中优先级",
+  low: "低优先级",
+  info: "提示",
+  findingCount: "诊断项",
+  noDiagnosis: "暂无问题诊断",
+  emptyHint: "选择一个已完成报告并点击「生成 GEO 问题诊断」。",
+  internalPriority: "GeoLens 内部优先级评分（0–100，确定性规则）",
+  demoDiagnosis: "演示诊断",
+  viewEvidence: "查看证据",
+  internalHeuristic: "阈值属 GeoLens internal heuristic，非行业标准、非 LLM 因果推断。",
+} as const;

@@ -113,6 +113,9 @@ export default function AppPage() {
         <Link href="/app/reports" className="inline-block rounded-lg border border-teal-700 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50">
           GEO 基准测试报告
         </Link>
+        <Link href="/app/diagnosis" className="inline-block rounded-lg border border-fuchsia-700 px-4 py-2 text-sm font-medium text-fuchsia-700 hover:bg-fuchsia-50">
+          GEO 问题诊断
+        </Link>
       </div>
 
       {me && me.organizations.length === 0 ? (
