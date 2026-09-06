@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:zh": "node scripts/check-ui-zh.mjs",
+    "smoke:pages": "node scripts/smoke-pages.mjs"
   },
   "dependencies": {
     "next": "15.5.25",

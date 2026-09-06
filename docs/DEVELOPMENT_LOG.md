@@ -426,3 +426,26 @@ M6C、不引入第二 Provider。
 - 提交序列：b52d4e8（candidates，schema/迁移/core）+ feat(m6) api 模块 + feat(m6) review
   UI + test(m6) e2e + docs(m6)（本日志 + docs/m6-competitors.md + project-status.json：
   M6B DONE、M6C=NEXT、Overall 7/8 DONE · 88%）。未 push；M6C 待用户指令后启动。
+
+## 2026-09-06 — UX-CN 全站中文化（feat(ui)/feat(dx)/test(ui)，未 push，非正式 milestone）
+
+产品体验清理阶段：GEO 核心算法 / API contract / DB enum / Evidence 原始数据一律未动，
+仅前端展示层中文优先。M6 完成度不变（M6A/B DONE、M6C NEXT、7/8 DONE · 88%）。
+
+- 统一字典 apps/web/src/lib/labels.ts（集中文案，Server/Client 均可引入）：run/analysis
+  状态、milestone/gate 状态、candidate/competitorType/set 状态、sourceType/retrievalMode/
+  runType/metricSource、场景分类、指标名、情感/实体类型、导航、空状态、友好错误映射
+  friendlyError（原始英文错误保留 console，UI 只显示中文）。withRaw() 支持「中文（raw）」。
+- 页面：/login、/register、/（根）、/app 工作台、/app/monitor（含 Evidence dialog 与指标卡）、
+  /app/benchmark、/app/competitors、/dev/status Control Center 全部改中文主界面；状态类展示
+  走 formatter（formatStatus/formatAnalysisStatus/formatSourceType/formatCompetitorType/
+  formatProgressStatus 等），不再各页自建英文映射；metricSource=demo/real/mixed → 演示/真实/混合。
+- 保留英文（有意）：GeoLens/ProjectMentor/DeepSeek 等品牌与模型名、DeepSeek API 技术标识、
+  canonicalName/aliases/sourceType/rawPrompt/rawResponse 等字段并列展示、commit hash、Run ID/
+  PID/HTTP 状态码、m4-rule-v1 等分析版本；技术字段用「中文（raw）」并列保留原始事实。
+- 竞品/SoV 页恒定提示「样本量较小，仅作为竞品发现信号，不代表稳定行业结论」。
+- 测试：web tsc PASS；next build PASS（隔离 NEXT_DIST_DIR=.next-zh 验证，因本地 dev 占用默认
+  .next 且 safe-delete 守卫拦截构建产物清理，已验证 compile+typecheck+静态页 10/10+路由表）；
+  新增 scripts/check-ui-zh.mjs（纯英文 UI 节点回归守卫）与 scripts/smoke-pages.mjs（核心 6 页
+  200/307 冒烟），web package.json 增 check:zh / smoke:pages；真机抽查 /dev/status、/login 中文
+  渲染确认，无 System Status/Quick Actions 等残留。
