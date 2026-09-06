@@ -510,3 +510,103 @@ export const RECOMMENDATION_NAV = {
   internalScore: "GeoLens 内部优先级评分（0–100，确定性规则）",
   verification: "验证方式",
 } as const;
+
+/* ---------------------------------------------------------------
+ * M7C — 内容机会（Content Opportunity / 标题方向 / 结构块 / Intent）
+ * ---------------------------------------------------------------- */
+export const OPPORTUNITY_VERSION_LABEL = "geolens-content-opportunity-v1";
+
+/** Opportunity Type（内容机会类型 ≈ 建议资产类型；中文映射归本字典） */
+export const OPPORTUNITY_TYPE: Dict = {
+  ENTITY_OVERVIEW: "实体总览内容",
+  PRODUCT_PAGE: "产品页内容",
+  FEATURE_PAGE: "功能页内容",
+  USE_CASE_PAGE: "用例页内容",
+  COMPARISON_PAGE: "对比页内容",
+  FAQ_PAGE: "FAQ 内容",
+  GUIDE: "指南内容",
+  CASE_STUDY: "案例内容",
+  DATA_REFERENCE: "数据参考内容",
+  DOCUMENTATION: "文档内容",
+  CLARIFICATION_CONTENT: "澄清说明内容",
+  CONTENT_REFRESH: "内容更新",
+  OTHER: "其他内容",
+};
+export const formatOpportunityType = (value: string | null | undefined): string =>
+  fallback(lookup(OPPORTUNITY_TYPE, value), value);
+
+/** 建议资产类型（opportunityType 也视为 assetType；覆盖 TARGET_ASSET 未含值） */
+export const OPPORTUNITY_ASSET: Dict = {
+  ...OPPORTUNITY_TYPE,
+  HOMEPAGE: "首页",
+  ABOUT_PAGE: "关于页",
+  STRUCTURED_DATA: "结构化信息",
+};
+export const formatOpportunityAsset = (value: string | null | undefined): string =>
+  fallback(lookup(OPPORTUNITY_ASSET, value), value);
+
+/** Content Intent（内容意图；DB 英文原值，UI 中文） */
+export const CONTENT_INTENT: Dict = {
+  DISCOVERY: "工具发现",
+  RECOMMENDATION: "推荐选择",
+  COMPARISON: "横向对比",
+  EVALUATION: "决策评估",
+  HOW_TO: "使用方法",
+  PROBLEM_SOLVING: "问题解决",
+  AUTHORITY: "权威信息",
+  CLARIFICATION: "事实澄清",
+  INFORMATIONAL: "信息说明",
+};
+export const formatContentIntent = (value: string | null | undefined): string =>
+  fallback(lookup(CONTENT_INTENT, value), value);
+
+export const OPPORTUNITY_STATUS: Dict = {
+  PROPOSED: "待评估",
+  APPROVED: "已规划",
+  DISMISSED: "已忽略",
+};
+export const formatOpportunityStatus = (value: string | null | undefined): string =>
+  fallback(lookup(OPPORTUNITY_STATUS, value), value);
+
+export const formatOpportunityPriority = (value: string | null | undefined): string =>
+  formatRecommendationPriority(value);
+
+export const OPPORTUNITY_NAV = {
+  list: "内容机会",
+  detail: "内容机会详情",
+  generate: "生成内容机会",
+  view: "查看内容机会",
+  titleDirectionHint: "标题方向（非最终发布标题）",
+  empty: "还没有内容机会",
+  emptyHint: "请先从 GEO 优化建议生成内容机会，系统会根据 Query 缺口、竞品信号和 Evidence 整理可执行的内容方向。",
+  emptyDataLimited: "当前诊断数据不足，建议先补充真实检测样本，再决定高成本内容建设。",
+  backToRecommendations: "← 返回优化建议",
+  sourceRecommendations: "来源优化建议",
+  sourceFindings: "来源诊断",
+  why: "为什么这是一个机会？",
+  whyHint: "以下内容机会由 GeoLens 根据当前诊断与优化建议确定性生成，用于指导后续内容建设。它并不保证 GEO 指标提升，实际效果需要在 M7D 使用相同 Benchmark 复测验证。",
+  targetQueries: "目标 Query",
+  suggestedStructure: "建议内容结构",
+  suggestedStructureHint: "仅为建议结构块（标题 + 用途），不是正文。",
+  evidenceSection: "证据",
+  viewRawEvidence: "查看原始证据",
+  viewSourceRecommendation: "查看来源建议",
+  demoLabel: "演示内容机会 —— 不伪装真实客户策略",
+  realLabel: "真实数据内容机会",
+  internalScore: "GeoLens 内部优先级评分（0–100，确定性规则）",
+  blockPurpose: "用途",
+  queryColumns: {
+    question: "监测问题",
+    category: "场景",
+    intent: "Intent",
+    engines: "涉及模型",
+    brandAbsent: "品牌是否缺席",
+    competitorSignal: "竞品信号",
+    evidenceCount: "证据数",
+  },
+  noCompetitor: "无已审核竞品关联",
+  noCitation: "当前证据未观察到引用",
+  experimentHint: "实验与复测将在下一阶段（M7D）开放",
+  generateFirst: "生成内容机会",
+  noneHint: "该优化建议还没有内容机会。",
+} as const;

@@ -8,7 +8,7 @@ import {
   ACTION_STATUS, formatActionStatus, formatActionType, formatEffortLevel,
   formatExpectedSignal, formatImpactArea, formatMetricSource,
   formatRecommendationPriority, formatRecommendationStatus, formatRecommendationType,
-  formatTargetAsset, friendlyError, RECOMMENDATION_NAV, RECOMMENDATION_VERSION_LABEL,
+  formatTargetAsset, friendlyError, OPPORTUNITY_NAV, RECOMMENDATION_NAV, RECOMMENDATION_VERSION_LABEL,
   SEVERITY_BADGE,
 } from "@/lib/labels";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
@@ -41,6 +41,12 @@ type Finding = {
   id: string; findingType: string; severity: string; title: string; summary: string;
   explanation: string; evidence: Array<{ id: string; runId: string; evidenceId: string; queryText: string; reason: string }>;
 };
+type OppRunRow = {
+  id: string; opportunityVersion: string; status: string; generatedAt: string;
+  metadata: { metricSource?: string | null; suiteName?: string; suiteVersion?: string };
+  summary: { opportunityCount: number; blockedByDataQuality: boolean; dataQualityLimited: boolean } | null;
+  opportunityCount?: number | null;
+};
 
 const PRIO_BADGE: Record<string, string> = {
   HIGH: "bg-red-100 text-red-800", MEDIUM: "bg-amber-100 text-amber-800", LOW: "bg-blue-100 text-blue-800",
@@ -60,6 +66,8 @@ export default function RecommendationDetailPage() {
   const [basis, setBasis] = useState<Record<string, Finding[]>>({});
   const [loadingBasis, setLoadingBasis] = useState<Record<string, boolean>>({});
   const [evidenceRunId, setEvidenceRunId] = useState<string | null>(null);
+  const [oppRuns, setOppRuns] = useState<OppRunRow[]>([]);
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
     setError("");
@@ -78,6 +86,10 @@ export default function RecommendationDetailPage() {
         const rep = await api<{ suiteName: string; suiteVersion: string }>(`/reports/${d.reportId}`);
         setReportLabel(`${rep.suiteName} v${rep.suiteVersion}`);
       } catch { setReportLabel("—"); }
+      try {
+        const opp = await api<OppRunRow[]>(`/recommendation-runs/${id}/opportunities`);
+        setOppRuns(opp);
+      } catch { setOppRuns([]); }
     } catch (err) {
       setError(friendlyError(err));
     }
@@ -85,6 +97,16 @@ export default function RecommendationDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function generateOpportunities() {
+    setGenerating(true);
+    setError("");
+    try {
+      await api(`/recommendation-runs/${id}/opportunities`, { method: "POST" });
+      const opp = await api<OppRunRow[]>(`/recommendation-runs/${id}/opportunities`);
+      setOppRuns(opp);
+    } catch (err) { setError(friendlyError(err)); }
+    finally { setGenerating(false); }
+  }
   async function setStatus(rec: Recommendation, status: string) {
     try {
       await api(`/recommendations/${rec.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
@@ -151,6 +173,37 @@ export default function RecommendationDetailPage() {
               {metricSource && metricSource !== "real" ? "演示数据优化建议 —— 不伪装真实策略报告" : "真实数据优化建议"}
               {run.metadata?.engineDurationMs != null ? ` · 生成耗时 ${run.metadata.engineDurationMs}ms` : ""}
             </p>
+          </section>
+        )}
+
+        {/* M7C：内容机会集成（生成 / 查看；不重复生成） */}
+        {run && (
+          <section className="rounded-2xl border border-teal-200 bg-teal-50/50 p-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-semibold text-slate-700">内容机会</span>
+              {oppRuns.length === 0 ? (
+                <>
+                  <button type="button" disabled={generating} onClick={() => void generateOpportunities()} className="inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800 disabled:opacity-50">
+                    {generating && <span aria-hidden="true" className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
+                    {generating ? "正在生成…" : OPPORTUNITY_NAV.generateFirst}
+                  </button>
+                  <span className="text-xs text-slate-500">{OPPORTUNITY_NAV.noneHint}{OPPORTUNITY_NAV.emptyHint}</span>
+                </>
+              ) : (
+                oppRuns.map(oppRun => (
+                  <div key={oppRun.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-teal-200 bg-white px-3 py-2">
+                    <span className="font-mono text-xs text-slate-500">{oppRun.opportunityVersion}</span>
+                    <span className="text-xs text-slate-600">内容机会 {oppRun.opportunityCount ?? oppRun.summary?.opportunityCount ?? 0} 条</span>
+                    {(oppRun.summary?.blockedByDataQuality) && (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">{OPPORTUNITY_NAV.emptyDataLimited}</span>
+                    )}
+                    <Link href={`/app/opportunities?run=${oppRun.id}`} className="rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800">
+                      {OPPORTUNITY_NAV.view} →
+                    </Link>
+                  </div>
+                ))
+              )}
+            </div>
           </section>
         )}
 

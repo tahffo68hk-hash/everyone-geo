@@ -119,6 +119,9 @@ export default function AppPage() {
         <Link href="/app/recommendations" className="inline-block rounded-lg border border-orange-700 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50">
           GEO 优化建议
         </Link>
+        <Link href="/app/opportunities" className="inline-block rounded-lg border border-teal-700 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50">
+          内容机会
+        </Link>
       </div>
 
       {me && me.organizations.length === 0 ? (
