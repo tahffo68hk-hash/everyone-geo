@@ -491,3 +491,4 @@ export function judgeRecommendationSignal(rawResponse: string, entityId: string,
 }
 
 export * from './diagnosis';
+export * from './recommendations';
