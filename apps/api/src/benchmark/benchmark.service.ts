@@ -158,11 +158,18 @@ export class BenchmarkService implements OnModuleDestroy {
     if (!engine) throw new BadRequestException("Engine 不存在或已停用");
 
     const real = dto.runType === "real";
+    // M6D：第二 Provider（qwen）与 deepseek 同走 Real Run；配置未就绪直接拒绝（不产生调用）。
+    const REAL_PROVIDERS = new Set(["deepseek", "qwen"]);
     if (real) {
-      if (engine.provider !== "deepseek") throw new BadRequestException("Real Run 只能使用 DeepSeek Provider 引擎");
+      if (!REAL_PROVIDERS.has(engine.provider)) {
+        throw new BadRequestException("Real Run 只能使用 DeepSeek / Qwen（通义千问）Provider 引擎");
+      }
       const presentation = enginePresentation(engine.provider, engine.config, process.env);
       if (!presentation.configured) {
-        throw new BadRequestException("DeepSeek Provider 未配置或未启用（需 ENABLE_REAL_PROVIDERS=true 且配置 DEEPSEEK_API_KEY）。");
+        const providerLabel = engine.provider === "qwen" ? "Qwen（通义千问）" : "DeepSeek";
+        throw new BadRequestException(
+          `${providerLabel} Provider 未配置或未启用（需 ENABLE_REAL_PROVIDERS=true 且配置对应 API Key）。`,
+        );
       }
     } else if (engine.provider !== "mock") {
       throw new BadRequestException("Demo Run 只能使用 Mock 引擎（模拟数据，不产生真实调用）");
