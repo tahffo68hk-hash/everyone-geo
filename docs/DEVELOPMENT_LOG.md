@@ -526,3 +526,31 @@ Provider、未进入 M6D。M6A/M6B/UX-CN 全部回归通过。
 - project-status：M6D checkpoint=IN_PROGRESS（IMPLEMENTATION_DONE / REAL_SMOKE_PENDING）；
   Overall 仍 7/8 DONE · 88%。真实 Qwen smoke：PENDING USER APPROVAL —— 授权后先 1 Query
   （HTTP 200/Evidence/identity）→ ≤3 Query → 24 Query 正式 Benchmark 需再次单独确认。
+
+## 2026-09-06 — M6D 真实 Qwen Real Smoke #1 PASS（REAL_SMOKE_PENDING → REAL_SMOKE_1Q_PASS）
+
+用户明确授权 1 Query × Qwen = 1 次真实模型调用；全程恰 1 次真实 HTTP，未跑 DeepSeek、
+未跑 3Q/24Q、未进入下一里程碑。QWEN_API_KEY 由用户本机配置（不落库/不落日志/不入 git）。
+
+- Pre-flight：HEAD=8a660e7、workspace clean、ENABLE_REAL_PROVIDERS=true、
+  REAL_PROVIDER_MAX_RUNS_PER_TASK=3、QWEN configured=YES、Postgres/Redis healthy。
+- 环境修正（非代码）：geo_dev 补 seed qwen-api Engine（seed-engine-qwen.ts，幂等）；
+  运行中的旧 worker 为 M6D 前 dist（无 qwen 注册）且早于 Key 配置启动 → 停旧进程并以
+  M6D 新 dist 重启（读 root .env 含 QWEN_API_KEY）。
+- 单次调用守卫：默认 MAX_RUN_ATTEMPTS=3 会因 retryable 失败产生多次真实调用 → 在
+  startRun 创建 run 后、worker 消费前，将该 run attempt 预置为 2；claimRun 唯一一次
+  递增到 3（=MAX），retryable 失败也直接 FAILED 不再重排 → 真实调用恰 1 次（worker
+  日志仅一条 RUNNING→SUCCEEDED→ANALYZED，attempt=3）。
+- Query：大学生参加创新创业比赛可以使用哪些 AI 工具？（中性非 branded）
+- 结果：Run SUCCEEDED；Evidence provider=qwen / sourceType=official_api /
+  retrievalMode=api_plain / requestedModel=qwen-plus / responseModel=qwen-plus
+  （API 回显）/ rawPrompt+rawResponse 已存 / usage{20,1355,1375} / durationMs=30241 /
+  requestId / finishReason=stop；Analysis m4-rule-v1 SUCCEEDED（brandMentioned=false，
+  0 mention 属有效结果）。secret leakage = PASS（Evidence/metadata/rawProviderPayload/
+  日志均无 Key/Authorization；payload 键仅 id/model/usage/object/choices/created）。
+- 环境备注：smoke 数据保留在 geo_dev（smoke 组织 + 1 project + 1 suite + benchmarkRun
+  52a5445d... + Evidence e57f9e44...）；失败尝试遗留的 2 个空组织已清理；临时 API 已停、
+  脚本已删。新 worker 以 M6D dist 后台运行中（用户栈如需持久化请重启 START_GEOLENS.cmd，
+  届时 API/Web 也会一并升级到 M6D）。
+- project-status：M6D IMPLEMENTATION_DONE + REAL_SMOKE_1Q_PASS；Overall 仍 7/8 DONE ·
+  88%。3 Query smoke 与 24 Query 正式 Qwen Benchmark 由用户决定后再执行。
