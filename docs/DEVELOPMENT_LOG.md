@@ -263,3 +263,27 @@ dev-control.ps1 中 4 个函数以 `[int]$Pid` 命名参数，PS 5.1 调用时�
   Get-ProcessCmdline 非空、Test-GeoLensProcess 对非 node 进程=False；
   修复后参数绑定不再抛只读冲突。
 - 真机验收仍待用户执行：START 8/8 → 幂等 START → STATUS → STOP → restart。
+
+## 2026-09-06 — DX1 Control Center Data Fix：repo root 解析 + 双 JSON 读取修复（fix 独立 commit）
+
+DX1 launcher 主链真机打通（8/8 全绿 + 自动打开 /dev/status），但 Control Center 数据全空
+（0/1 DONE、milestones 只有空列表、Current/Next=?、#ms-、DeepSeek/RealProviders Unknown）。
+实测真机根因是两个独立缺陷叠加：
+
+- 根因 A（数据文件）—— project-status.json 第 284 行 summary 字符串跨物理行（JSON 字符串内裸
+  换行，非法 JSON）→ JSON.parse 直接抛错 → 页面 project=null（milestones/current/nextUp 全空、
+  Overall Progress 0/1、锚点 #ms-）。词法扫描仅此 1 处跨行；程序化修复为单行（换行→空格、
+  吃掉续行缩进），JSON.parse 复验 8 milestones / 7 DONE / 88%。
+- 根因 B（页面读取）—— .runtime/status.json 由 ps1 写入带 UTF-8 BOM（PS 5.1
+  Set-Content -Encoding UTF8），readJson 裸 JSON.parse 遇 BOM 失败 → snapshot=null →
+  config（DeepSeek/RealProviders）Unknown、infra 无快照回退。页面 readJson 增加 BOM 剥离。
+- 根因 C（路径健壮性）—— 原 REPO_ROOT=resolve(cwd,'../../') 依赖“从 apps/web 执行 next dev”
+  的偶然 cwd（cwd 在 repo root 时 ../../ 会指到 D:\）。新增 resolveRepoRoot()：
+  GEOLENS_REPO_ROOT env → 从 cwd 向上逐级找 workspace marker（project-status.json 且存在
+  pnpm-workspace.yaml / package.json）→ 最后回退 ../../。
+- 安全：Web 仍永不读 .env；快照只展示布尔。泄漏自动测试 GET /dev/status 扫
+  DEEPSEEK_API_KEY|sk-|Authorization|DATABASE_URL|REDIS_URL|JWT_SECRET|POSTGRES_PASSWORD = 0 命中。
+- 真机 curl 验证（next dev 热更新后）：System Status 全绿（Web Running / API Healthy / Worker
+  Ready / PostgreSQL Healthy / Redis Healthy / DB Pass / DeepSeek Configured (YES) / Real Providers
+  Enabled）；Overall Progress 7/8 DONE 88%；milestones M0~M6（含 M2.5→#ms-M25）；Current M5 →
+  Next M6（不自动开始）；View Latest Milestone → #ms-M5；project-status.json 更新时间正常显示。

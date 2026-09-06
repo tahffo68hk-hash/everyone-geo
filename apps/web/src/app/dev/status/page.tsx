@@ -69,7 +69,35 @@ interface ProjectStatus {
   milestones?: Milestone[];
 }
 
-const REPO_ROOT = path.resolve(process.cwd(), "../../");
+/* ================================================================== */
+/*  仓库根目录解析                                                       */
+/*  不依赖“从哪里执行 next dev”的偶然 cwd（实测 next dev cwd 变化会直接   */
+/*  让 path.resolve(cwd,'../../') 指错目录）。策略依次：                  */
+/*   1) GEOLENS_REPO_ROOT 环境变量（启动器可显式传入）                   */
+/*   2) 从 cwd 向上逐级查找 workspace marker：                          */
+/*      project-status.json 且存在 pnpm-workspace.yaml / package.json   */
+/*   3) 最后回退 apps/web 的 ../../（next dev 惯例 cwd）                 */
+/* ================================================================== */
+function resolveRepoRoot(): string {
+  const envRoot = process.env.GEOLENS_REPO_ROOT;
+  if (envRoot) {
+    const abs = path.resolve(envRoot);
+    if (existsSync(path.join(abs, "project-status.json"))) return abs;
+  }
+  let dir = path.resolve(process.cwd());
+  for (;;) {
+    const hasProject = existsSync(path.join(dir, "project-status.json"));
+    const hasMarker =
+      existsSync(path.join(dir, "pnpm-workspace.yaml")) || existsSync(path.join(dir, "package.json"));
+    if (hasProject && hasMarker) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(process.cwd(), "../../");
+}
+
+const REPO_ROOT = resolveRepoRoot();
 const PROJECT_JSON = path.join(REPO_ROOT, "project-status.json");
 const RUNTIME_DIR = path.join(REPO_ROOT, ".runtime");
 
@@ -83,7 +111,9 @@ const CONTROL_URL = `http://localhost:${WEB_PORT}/dev/status`;
 async function readJson<T>(p: string): Promise<T | null> {
   try {
     const raw = await readFile(p, "utf8");
-    return JSON.parse(raw) as T;
+    // 兼容 Windows 写盘工具常见的 UTF-8 BOM（dev-control.ps1 的 Set-Content -Encoding UTF8
+    // 在 PS 5.1 会写 BOM），裸 JSON.parse 遇 BOM 直接失败 → 页面进 fallback。
+    return JSON.parse(raw.replace(/^\uFEFF/, "")) as T;
   } catch {
     return null;
   }

@@ -281,8 +281,7 @@
       "dataType": "mixed",
       "demoRoute": null,
       "summary": [
-        "规划中：多 Provider 横向对比（Qwen / OpenAI-compatible / Kimi 等按批准推进），
-真实 GEO Benchmark 基线，跨模型 Visibility/推荐一致性研究",
+        "规划中：多 Provider 横向对比（Qwen / OpenAI-compatible / Kimi 等按批准推进）， 真实 GEO Benchmark 基线，跨模型 Visibility/推荐一致性研究",
         "禁止自动开始：M6 需要单独授权，DX1 不触碰"
       ],
       "gates": {
