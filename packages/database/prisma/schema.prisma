@@ -104,6 +104,7 @@ model Project {
   reports        BenchmarkReport[]
   diagnosisRuns  DiagnosisRun[]
   recommendationRuns RecommendationRun[]
+  contentOpportunityRuns ContentOpportunityRun[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -827,6 +828,7 @@ model RecommendationRun {
   project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   diagnosisRun   DiagnosisRun       @relation(fields: [diagnosisRunId], references: [id], onDelete: Cascade)
   recommendations Recommendation[]
+  contentOpportunityRuns ContentOpportunityRun[]
 
   @@index([projectId, generatedAt])
   @@index([diagnosisRunId, generatedAt])
@@ -858,6 +860,7 @@ model Recommendation {
   recommendationRun RecommendationRun   @relation(fields: [recommendationRunId], references: [id], onDelete: Cascade)
   findings           RecommendationFinding[]
   actionItems        ActionItem[]
+  opportunityLinks   ContentOpportunityRecommendation[]
 
   @@index([recommendationRunId, priorityScore])
   @@index([recommendationRunId, status])
@@ -891,4 +894,160 @@ model ActionItem {
   recommendation Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
 
   @@index([recommendationId, sortOrder])
+}
+
+// ============================================================
+// M7C - Content Opportunities（内容机会 / 内容任务 brief foundation）
+// ============================================================
+// 设计原则（M7C）：
+//   1) ContentOpportunityRun 绑定 RecommendationRun（快照 provenance 最清晰）：
+//      一个 Run 冻结一批内容机会；Opportunity 通过
+//      ContentOpportunityRecommendation 关联一个或多个来源 Recommendation。
+//   2) ContentOpportunity = 内容机会 / 任务 brief，不是最终稿：titleDirection（标题方向）、
+//      suggested blocks（建议结构块 title+purpose）绝不携带完整正文/营销标题。
+//   3) Query 来源 = Recommendation→RecommendationFinding→DiagnosisFinding→
+//      DiagnosisFindingEvidence.queryTextSnapshot（归档快照），不实时 join 当前
+//      Project Query —— 历史语义不漂移。category/intent/locale 在生成时从来源
+//      BenchmarkRunQuery 快照对齐补全，取不到则为 null（不猜测）。
+//   4) Target Engines / Competitors 冻结在 Opportunity 的 Json snapshot：
+//      engines 来自真实 Evidence provenance（provider/engineKey/engineName/
+//      requestedModel/responseModel），competitors 只允许「已审核竞品语义」
+//      （来自来源报告 Competitor Set 的 approved canonicalName）——绝不把
+//      DISCOVERED 未审核 Candidate 当作正式目标竞品。
+//   5) Status 只做人工作业状态（PROPOSED/APPROVED/DISMISSED），无 EXECUTING/
+//      COMPLETED —— 执行与复测属 M7D。expectedSignals 只是「后续重点观察的信号」，
+//      不是 expectedDelta（不承诺提升）。
+//   6) opportunityType / contentIntent / priority / effort / status 用 String
+//      （版本演进友好，同 M7B），版本集中常量 geolens-content-opportunity-v1。
+//      幂等：同 (recommendationRunId, opportunityVersion) 重复生成返回既有 Run。
+//   7) Evidence 只做指向性引用（evidenceId/runId/queryTextSnapshot 快照），
+//      绝不复制 Evidence.rawResponse —— Evidence 仍是唯一事实源且不可变。
+model ContentOpportunityRun {
+  id                    String   @id @default(uuid()) @db.Uuid
+  projectId             String   @db.Uuid
+  recommendationRunId   String   @db.Uuid
+  opportunityVersion    String   // geolens-content-opportunity-v1
+  status                String   @default("READY")
+  summarySnapshot       Json?    // 内容机会计数 + 数据质量标记等（随 Run 冻结）
+  metadata              Json     @default("{}")
+  generatedAt           DateTime @default(now())
+  createdAt             DateTime @default(now())
+
+  project             Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recommendationRun   RecommendationRun   @relation(fields: [recommendationRunId], references: [id], onDelete: Cascade)
+  opportunities       ContentOpportunity[]
+
+  @@index([projectId, generatedAt])
+  @@index([recommendationRunId, generatedAt])
+  @@index([recommendationRunId, opportunityVersion])
+}
+
+model ContentOpportunity {
+  id                    String   @id @default(uuid()) @db.Uuid
+  opportunityRunId      String   @db.Uuid
+  opportunityType       String   // ENTITY_OVERVIEW / PRODUCT_PAGE / USE_CASE_PAGE / COMPARISON_PAGE / …
+  titleDirection        String   // 标题方向（非最终发布标题）
+  summary               String
+  rationale             String   // 为什么生成（来源建议/诊断/Query/竞品信号事实）
+  priority              String   // HIGH / MEDIUM / LOW（人工 review）
+  priorityScore         Int      // 0–100 确定性内部评分
+  category              String?  // 关联场景 canonical（clustering key 之一）
+  assetType             String?  // 建议资产类型（= opportunityType；备选存 metadata）
+  contentIntent         String   // DISCOVERY / RECOMMENDATION / COMPARISON / HOW_TO / …
+  effortLevel           String   // LOW / MEDIUM / HIGH（粗粒度 internal heuristic）
+  expectedSignals       String[] // 建议后续观察的信号（≠ expectedDelta，不承诺提升）
+  representativeQuery   String?  // 用于 UI 摘要的代表性问题（确定性选择，非随机）
+  targetQueryCount      Int      @default(0)
+  targetEngineCount     Int      @default(0)
+  targetCompetitorCount Int      @default(0)
+  evidenceCount         Int      @default(0)
+  recommendationCount   Int      @default(0)
+  status                String   @default("PROPOSED") // PROPOSED / APPROVED / DISMISSED（仅人工）
+  dataQualityLimited    Boolean  @default(false) // 该机会是否被数据质量 guard 降级
+  // ---- 冻结的目标引擎 / 竞品快照（Json，来源可审计；引擎见 Evidence provenance，
+  //      竞品仅 approved semantics）----
+  targetEngines         Json     @default("{}")     // { items: [{provider, engineKey, engineName, requestedModel, responseModel}] }
+  targetCompetitors     Json     @default("{}")     // { items: [{canonicalName, competitorType}] }
+  metadata              Json     @default("{}")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  opportunityRun ContentOpportunityRun @relation(fields: [opportunityRunId], references: [id], onDelete: Cascade)
+  recommendations ContentOpportunityRecommendation[]
+  queries          ContentOpportunityQuery[]
+  evidenceLinks    ContentOpportunityEvidence[]
+  blocks           ContentOpportunityBlock[]
+
+  @@index([opportunityRunId, priorityScore])
+  @@index([opportunityRunId, status])
+  @@index([opportunityRunId, opportunityType])
+}
+
+// Opportunity → 来源 Recommendation 关联（必须可回溯；保留全部 source links）。
+model ContentOpportunityRecommendation {
+  id               String @id @default(uuid()) @db.Uuid
+  opportunityId    String @db.Uuid
+  recommendationId String @db.Uuid
+  createdAt        DateTime @default(now())
+
+  opportunity     ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  recommendation  Recommendation     @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, recommendationId])
+  @@index([recommendationId])
+}
+
+// 目标 Query 快照行（queryTextSnapshot 来自 DiagnosisFindingEvidence；category/intent/
+// locale 来自 BenchmarkRunQuery 快照对齐；brandAbsent/competitorPositive/engines 为
+// 生成时从 Evidence/Analysis 聚合的只读事实 —— UI「为什么」表格展示，全部非实时）。
+model ContentOpportunityQuery {
+  id                  String   @id @default(uuid()) @db.Uuid
+  opportunityId       String   @db.Uuid
+  queryTextSnapshot   String
+  category            String?
+  intent              String?
+  locale              String?
+  brandAbsent         Boolean? // 该问题回答中品牌是否缺席（true=缺席；null=无法判定）
+  competitorPositive  Boolean? // 该问题是否出现已审核竞品正面/推荐信号
+  sourceEvidenceCount Int      @default(0) // 该 Query 在机会内关联的证据链接数
+  sortOrder           Int
+  metadata            Json     @default("{}") // 含 engines:[…]（该 query 涉及的目标引擎快照）
+  createdAt           DateTime @default(now())
+
+  opportunity ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId, sortOrder])
+}
+
+// Opportunity → Evidence 指向性链接（evidenceId/runId 普通 UUID，非 FK —— 只引用不拥有；
+// Evidence 删除不影响历史机会的解释；点击后经 runId 打开现有 Evidence Dialog）。
+model ContentOpportunityEvidence {
+  id               String   @id @default(uuid()) @db.Uuid
+  opportunityId    String   @db.Uuid
+  evidenceId       String   @db.Uuid
+  runId            String   @db.Uuid
+  queryTextSnapshot String
+  reason           String   // 该 Evidence 为何支撑此机会（来自来源 Finding 的 reason）
+  createdAt        DateTime @default(now())
+
+  opportunity ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, evidenceId])
+  @@index([evidenceId])
+  @@index([runId])
+}
+
+// 建议内容结构块（仅 title + purpose，禁止存完整正文）。
+model ContentOpportunityBlock {
+  id            String   @id @default(uuid()) @db.Uuid
+  opportunityId String   @db.Uuid
+  blockType     String   // USER_SCENARIO / CORE_TASKS / COMPARISON_DIMENSIONS / FAQ / …
+  title         String
+  purpose       String
+  sortOrder     Int
+  createdAt     DateTime @default(now())
+
+  opportunity ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId, sortOrder])
 }
