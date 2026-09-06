@@ -217,11 +217,31 @@ export class ReportsService {
     const snapB = b.metricsSnapshot as Snapshot;
 
     const dims = this.compatibilityDimensions(a, b);
-    const verdict = dims.every(dim => dim.compatible)
-      ? "COMPARABLE"
-      : dims.some(dim => dim.severity === "hard")
-        ? "NOT_COMPARABLE"
-        : "PARTIALLY_COMPARABLE";
+    // M6D 跨 Provider 语义：provider 不同但其余 hard 维度一致 → PARTIALLY_COMPARABLE
+    // （跨模型比较正是 GEO 核心价值；绝不直接 NOT，也不冒充 COMPARABLE）。
+    const hardMismatch = dims.some(dim => dim.severity === "hard" && !dim.compatible);
+    const providerDiff = a.provider !== b.provider;
+    const softMismatch = dims.some(dim => dim.severity === "soft" && !dim.compatible);
+    const verdict: "COMPARABLE" | "PARTIALLY_COMPARABLE" | "NOT_COMPARABLE" =
+      hardMismatch ? "NOT_COMPARABLE"
+        : providerDiff ? "PARTIALLY_COMPARABLE"
+          : softMismatch ? "PARTIALLY_COMPARABLE"
+            : "COMPARABLE";
+
+    // 成功样本差异（denominator 完整性）提示
+    const warnings: string[] = [];
+    if (a.succeededRuns !== b.succeededRuns) {
+      warnings.push(
+        `成功样本：报告 A ${a.succeededRuns}/${a.completedRuns + a.failedRuns} · 报告 B ${b.succeededRuns}/${b.completedRuns + b.failedRuns}；样本完整性不同，比较需谨慎。`,
+      );
+    }
+    if (verdict === "PARTIALLY_COMPARABLE" && providerDiff) {
+      warnings.unshift(
+        "模型服务不同：测试问题、分析规则与竞品口径一致，但引擎不同，因此结果用于比较不同 AI 引擎的品牌表现；模型差异不应解读为单一口径的回归。",
+      );
+    } else if (verdict !== "COMPARABLE") {
+      warnings.unshift("比较口径不同，结果仅供参考 —— 请先核对上表中的差异维度，不要无警告解读 Δ。");
+    }
 
     // 数值对比（overall + byCategory），null 视为无数据（delta=null）。
     const overallKeys = ["visibilityRate", "recommendationRate", "averageMentionPosition", "shareOfVoice", "citationCount", "citationDomainCount"] as const;
@@ -259,9 +279,7 @@ export class ReportsService {
       },
       deltaOverall,
       byCategory,
-      warnings: verdict === "COMPARABLE"
-        ? []
-        : ["比较口径不同，结果仅供参考 —— 请先核对上表中的差异维度，不要无警告解读 Δ。"],
+      warnings,
     };
   }
 
@@ -427,10 +445,10 @@ export class ReportsService {
   }
 
   private compatibilityDimensions(a: ReportRow, b: ReportRow) {
-    const dims: Array<{ key: string; a: string | null; b: string | null; compatible: boolean; severity: "soft" | "hard" }> = [
+    const dims: Array<{ key: string; a: string | null; b: string | null; compatible: boolean; severity: "soft" | "hard" | "cross" }> = [
       { key: "suiteVersion", a: a.suiteVersion, b: b.suiteVersion, compatible: a.suiteVersion === b.suiteVersion, severity: "hard" },
       { key: "metricSource", a: a.metricSource, b: b.metricSource, compatible: a.metricSource === b.metricSource, severity: "hard" },
-      { key: "provider", a: a.provider, b: b.provider, compatible: a.provider === b.provider, severity: "hard" },
+      { key: "provider", a: a.provider, b: b.provider, compatible: a.provider === b.provider, severity: "cross" },
       { key: "analysisVersion", a: a.analysisVersion, b: b.analysisVersion, compatible: a.analysisVersion === b.analysisVersion, severity: "hard" },
       { key: "requestedModel", a: a.requestedModel ?? null, b: b.requestedModel ?? null, compatible: (a.requestedModel ?? null) === (b.requestedModel ?? null), severity: "soft" },
       { key: "responseModel", a: a.responseModel ?? null, b: b.responseModel ?? null, compatible: (a.responseModel ?? null) === (b.responseModel ?? null), severity: "soft" },
@@ -442,10 +460,12 @@ export class ReportsService {
         severity: "hard",
       },
     ];
-    // 模型身份「未知 vs 值」降为部分可比（soft），不直接判 NOT。
-    return dims.map(dim => dim.key.startsWith("requested") || dim.key.startsWith("response")
-      ? { ...dim, compatible: dim.a === dim.b || dim.a === null || dim.b === null, severity: "soft" as const }
-      : dim);
+    // 模型身份「未知 vs 值」降为 soft（不直接判 NOT）。
+    return dims.map(dim => dim.key === "provider"
+      ? dim
+      : dim.key.startsWith("requested") || dim.key.startsWith("response")
+        ? { ...dim, compatible: dim.compatible || dim.a === null || dim.b === null, severity: "soft" as const }
+        : dim);
   }
 
   private async reportForUser(userId: string, id: string): Promise<ReportRow> {
@@ -501,12 +521,14 @@ export class ReportsService {
     return {
       id: row.id,
       suite: `${row.suiteName} v${row.suiteVersion}`,
-      metricSource: row.metricSource,
       provider: row.provider,
+      engineName: row.engineName,
       requestedModel: row.requestedModel,
       responseModel: row.responseModel,
+      metricSource: row.metricSource,
       analysisVersion: row.analysisVersion,
       competitorSet: row.competitorSetId ? `${row.competitorSetName} v${row.competitorSetVersion}` : null,
+      completion: { succeededRuns: row.succeededRuns, completedRuns: row.completedRuns, failedRuns: row.failedRuns, partial: row.partial },
       generatedAt: row.generatedAt,
     };
   }
