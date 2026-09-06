@@ -102,6 +102,7 @@ model Project {
   competitorCandidates CompetitorCandidate[]
   competitorSets CompetitorSet[]
   reports        BenchmarkReport[]
+  diagnosisRuns  DiagnosisRun[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -697,4 +698,96 @@ model CompetitorSetEntry {
   @@unique([competitorSetId, sortOrder])
   @@unique([competitorSetId, candidateId])
   @@index([competitorSetId])
+}
+
+// ============================================================
+// M7A - GEO Diagnosis（可行动的问题诊断，绑定 Report 快照）
+// ============================================================
+// 设计原则（M7A）：
+//   1) Diagnosis 绑定 BenchmarkReport（而非项目实时数据）—— Report 已 snapshot
+//      suiteName/Version、provider、requested/responseModel、metricSource、
+//      analysisVersion、Competitor Set 版本与 metricsSnapshot；Diagnosis 基于该
+//      快照生成，历史语义永不因后续编辑（Query/Set/Analysis v2）漂移。
+//   2) 诊断规则为确定性启发式（geolens-diagnosis-v1），阈值属 GeoLens internal
+//      heuristic（docs/m7-diagnosis.md 有 disclaimer），绝非行业标准或 LLM 推断。
+//   3) DiagnosisFinding 只引用/归档证据链接（evidenceId/runId/queryText 快照），
+//      绝不复制 rawPrompt/rawResponse —— Evidence 仍是唯一事实源且不可变。
+//   4) findingType 用 String 而非枚举：便于未来 diagnosisVersion 演进扩展类型
+//      （与 analysisVersion String 同风格）；severity 用固定枚举（HIGH/MEDIUM/LOW/INFO）。
+//   5) 幂等：同一 (reportId, diagnosisVersion, secondaryReportId) 视为同一输入，
+//      重复生成返回既有 DiagnosisRun（不无限堆快照）。
+
+enum DiagnosisSeverity {
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+model DiagnosisRun {
+  id                String   @id @default(uuid()) @db.Uuid
+  projectId         String   @db.Uuid
+  reportId          String   @db.Uuid // 归档引用：Report 已冻结自身 provenance（不级联删除）
+  diagnosisVersion  String   // 规则版本：geolens-diagnosis-v1
+  secondaryReportId String?  @db.Uuid // Provider Gap 对比的第二份报告（归档引用，可空）
+  status            String   @default("READY") // READY = 生成完成（原子）；异常不落半成品
+  // 摘要快照：severity 计数 + 代表性问题/竞品/模型差异/数据质量（随 DiagnosisRun 冻结）
+  summarySnapshot   Json?
+  metadata          Json     @default("{}")
+  generatedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  project  Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  findings DiagnosisFinding[]
+
+  @@index([projectId, generatedAt])
+  @@index([reportId, generatedAt])
+  // 幂等键（service 层以 null 等价处理 secondaryReportId）
+  @@index([reportId, diagnosisVersion, secondaryReportId])
+}
+
+model DiagnosisFinding {
+  id              String           @id @default(uuid()) @db.Uuid
+  diagnosisRunId  String           @db.Uuid
+  findingType     String           // LOW_VISIBILITY / CATEGORY_GAP / …（版本演进可扩展）
+  severity        DiagnosisSeverity
+  category        String?          // canonical category（UI 显示中文）
+  title           String
+  summary         String           // 事实摘要（含数字）
+  explanation     String           // 规则解释 + internal heuristic 说明
+  metricName      String?
+  currentValue    Float?
+  referenceValue  Float?
+  queryCount      Int              @default(0) // 受影响测试问题数
+  evidenceCount   Int              @default(0)
+  provider        String?          // 涉及 Provider（PROVIDER_GAP 等）
+  requestedModel  String?
+  responseModel   String?
+  competitorName  String?          // 涉及竞品 canonicalName
+  priorityScore   Int              // 0–100 确定性内部优先级
+  metadata        Json             @default("{}")
+  createdAt       DateTime         @default(now())
+
+  diagnosisRun DiagnosisRun             @relation(fields: [diagnosisRunId], references: [id], onDelete: Cascade)
+  evidenceLinks DiagnosisFindingEvidence[]
+
+  @@index([diagnosisRunId, severity])
+  @@index([diagnosisRunId, findingType])
+}
+
+// Finding → Evidence 归档链接（evidenceId/runId 普通 UUID，非 FK —— 只引用不拥有；
+// Evidence 删除不影响历史诊断的解释，读取路径以快照 queryText 为准）。
+model DiagnosisFindingEvidence {
+  id               String @id @default(uuid()) @db.Uuid
+  findingId        String @db.Uuid
+  evidenceId       String @db.Uuid
+  runId            String @db.Uuid
+  queryTextSnapshot String // 生成时冻结的问题文本（溯源展示）
+  reason           String // 该 Evidence 为何支持此 Finding
+  createdAt        DateTime @default(now())
+
+  finding DiagnosisFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@index([findingId])
+  @@index([evidenceId])
 }
