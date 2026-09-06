@@ -14,8 +14,8 @@
   "updatedNote": "M7C Content Opportunities DONE（M7A/B/C DONE）；M7D=NEXT（不自动开始）。M7 仍 IN_PROGRESS —— Overall 8/9 DONE · ≈89%（M7D 完成并正式验收后才 M7 DONE）",
   "git": {
     "branch": "master",
-    "head": "82d7fb8",
-    "headLabel": "(will update at final commit)",
+    "head": "6ca91c1",
+    "headLabel": "docs(m7): document content opportunity foundation",
     "baselineBeforeDX1": "1137d23"
   },
   "realRunEvidence": {
