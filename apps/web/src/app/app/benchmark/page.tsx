@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import {
+  EMPTY_TEXT, formatCategory, formatProjectStatus, formatRunType, formatStatus, friendlyError,
+} from "@/lib/labels";
 import { EvidenceDialog } from "../monitor/evidence-dialog";
 
 /* ------------------------------------------------------------------ */
@@ -75,29 +78,13 @@ type MetricBlock = {
 /* 常量与工具                                                           */
 /* ------------------------------------------------------------------ */
 
-const CATEGORY_LABELS: Record<string, string> = {
-  "tool-discovery": "Tool Discovery",
-  comparison: "Comparison",
-  workflow: "Workflow / How-to",
-  recommendation: "Recommendation",
-  "pain-point": "Pain Point",
-  competition: "Competition-specific",
-  "sanity-control": "Sanity Control",
-};
-
-const statusLabels: Record<string, string> = {
-  PENDING: "待执行", QUEUED: "排队中", RUNNING: "执行中", RETRYING: "重试中",
-  SUCCEEDED: "成功", FAILED: "失败", PARTIAL: "部分成功", CANCELLED: "已取消",
-};
-
-const runTypeLabels: Record<string, string> = { DEMO: "Demo", REAL: "Real" };
 const terminalStatuses = new Set(["SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"]);
 const percent = (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%`;
 const badge = (color: string, text: string) => `inline-block rounded px-2 py-0.5 text-xs font-semibold ${color}`;
 const buttonClass = "rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50";
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "请求失败，请稍后重试。";
+  return friendlyError(error);
 }
 
 /* ------------------------------------------------------------------ */
@@ -240,10 +227,10 @@ export default function BenchmarkPage() {
       <div className="mx-auto max-w-6xl space-y-6">
         <header>
           <Link href="/app" className="text-sm text-blue-700 hover:underline">← 返回工作台</Link>
-          <h1 className="mt-3 text-2xl font-semibold">GEO Benchmark</h1>
+          <h1 className="mt-3 text-2xl font-semibold">GEO 基准测试</h1>
           <p className="mt-2 text-sm text-slate-500">
-            ProjectMentor 自然可见度基准（M6A）。Suite 版本化；每条结果可追溯到
-            Query → Run → Evidence → Analysis。Demo 为 Mock 模拟，Real 才会产生真实 Provider 调用。
+            ProjectMentor 自然可见度基准（M6A）。测试集版本化；每条结果可追溯到
+            测试问题 → 检测记录 → 原始证据 → 分析结果。「演示」为 Mock 模拟，「真实」才会产生真实模型服务调用。
           </p>
         </header>
 
@@ -254,7 +241,7 @@ export default function BenchmarkPage() {
           <>
             {/* 项目 / Suite 选择 */}
             <section aria-labelledby="suite-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h2 id="suite-heading" className="mb-4 text-lg font-semibold">Benchmark Suite</h2>
+              <h2 id="suite-heading" className="mb-4 text-lg font-semibold">基准测试集</h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label htmlFor="project" className="mb-2 block text-sm font-medium">项目</label>
@@ -263,30 +250,30 @@ export default function BenchmarkPage() {
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="suite" className="mb-2 block text-sm font-medium">Suite（版本化）</label>
+                  <label htmlFor="suite" className="mb-2 block text-sm font-medium">测试集（版本化）</label>
                   <select id="suite" value={suiteId} className="w-full rounded-lg border border-slate-300 p-2" onChange={event => setSuiteId(event.target.value)}>
-                    {suites.map(item => <option key={item.id} value={item.id}>{item.name} · v{item.version}（{item.status}）</option>)}
+                    {suites.map(item => <option key={item.id} value={item.id}>{item.name} · v{item.version}（{formatProjectStatus(item.status)}）</option>)}
                   </select>
                 </div>
               </div>
               {suitesError && <p role="alert" className="mt-3 text-sm text-red-700">{suitesError}</p>}
               {projectId && !suitesError && !suites.length && (
-                <p className="mt-3 text-sm text-slate-500">该项目暂无 Benchmark Suite（可运行 seed-benchmark-v1 创建 v1）。</p>
+                <p className="mt-3 text-sm text-slate-500">该项目暂无基准测试集（可运行 seed-benchmark-v1 创建 v1）。</p>
               )}
               {suite && (
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold">{suite.name}</span>
-                    <span className={badge("bg-blue-100 text-blue-800", `v${suite.version}`)}>Version {suite.version}</span>
-                    <span className={badge("bg-emerald-100 text-emerald-800", `${suite.queryCount} Queries`)}>Query Count {suite.queryCount}</span>
-                    {suite.sanityQueryCount > 0 && <span className={badge("bg-slate-100 text-slate-600", `${suite.sanityQueryCount} Sanity（不计主指标）`)} />}
-                    <span className={badge(suite.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600", suite.status)}>{suite.status}</span>
+                    <span className={badge("bg-blue-100 text-blue-800", `版本 v${suite.version}`)}>版本 v{suite.version}</span>
+                    <span className={badge("bg-emerald-100 text-emerald-800", `测试问题 ${suite.queryCount}`)}>测试问题 {suite.queryCount}</span>
+                    {suite.sanityQueryCount > 0 && <span className={badge("bg-slate-100 text-slate-600", `品牌控制 ${suite.sanityQueryCount}（不计主指标）`)}>品牌控制 {suite.sanityQueryCount}（不计主指标）</span>}
+                    <span className={badge(suite.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600", suite.status)}>{formatProjectStatus(suite.status)}</span>
                   </div>
                   {suite.description && <p className="mt-2 text-sm text-slate-600">{suite.description}</p>}
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {Object.entries(suite.categoryCounts).map(([category, count]) => (
                       <span key={category} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600">
-                        {CATEGORY_LABELS[category] ?? category} · {count}
+                        {formatCategory(category)} · {count}
                       </span>
                     ))}
                   </div>
@@ -297,19 +284,19 @@ export default function BenchmarkPage() {
             {/* Query 列表（信息架构：Category → Intent → Query） */}
             {suite && (
               <section aria-labelledby="queries-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
-                <h2 id="queries-heading" className="mb-1 text-lg font-semibold">Benchmark v1 查询列表</h2>
-                <p className="mb-3 text-xs text-slate-500">主指标只统计启用且非 sanity 的 24 条；每条运行后可在下方结果中点击查看 Evidence。</p>
+                <h2 id="queries-heading" className="mb-1 text-lg font-semibold">测试问题清单</h2>
+                <p className="mb-3 text-xs text-slate-500">主指标只统计启用且非品牌控制的 24 条；每条运行后可在下方结果中点击查看原始证据。</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <caption className="sr-only">Benchmark queries by category</caption>
+                    <caption className="sr-only">按场景分类的测试问题</caption>
                     <thead className="border-b border-slate-200 text-slate-500">
-                      <tr><th scope="col" className="p-2">#</th><th scope="col" className="p-2">Category</th><th scope="col" className="p-2">Intent</th><th scope="col" className="p-2">Query</th><th scope="col" className="p-2">状态</th></tr>
+                      <tr><th scope="col" className="p-2">#</th><th scope="col" className="p-2">场景分类</th><th scope="col" className="p-2">用户意图</th><th scope="col" className="p-2">测试问题</th><th scope="col" className="p-2">状态</th></tr>
                     </thead>
                     <tbody>
                       {suite.queries.map(query => (
                         <tr key={query.id} className={`border-b border-slate-100 align-top ${query.sanity || !query.enabled ? "opacity-50" : ""}`}>
                           <td className="p-2 text-slate-400">{query.sortOrder}</td>
-                          <td className="p-2 whitespace-nowrap">{CATEGORY_LABELS[query.category] ?? query.category}{query.sanity && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700">sanity</span>}</td>
+                          <td className="p-2 whitespace-nowrap">{formatCategory(query.category)}{query.sanity && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700">品牌控制（sanity）</span>}</td>
                           <td className="max-w-56 break-words p-2 text-slate-600">{query.intent}</td>
                           <td className="min-w-64 break-words p-2">{query.queryText}</td>
                           <td className="p-2 whitespace-nowrap">{query.enabled ? "启用" : "停用（不派发）"}</td>
@@ -323,36 +310,36 @@ export default function BenchmarkPage() {
 
             {/* Run 控制 + 进度 */}
             <section aria-labelledby="run-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h2 id="run-heading" className="mb-4 text-lg font-semibold">Benchmark Run</h2>
+              <h2 id="run-heading" className="mb-4 text-lg font-semibold">基准测试运行</h2>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div>
-                  <label htmlFor="runType" className="mb-2 block text-sm font-medium">Run Type</label>
+                  <label htmlFor="runType" className="mb-2 block text-sm font-medium">运行类型</label>
                   <select id="runType" value={runType} className="w-full rounded-lg border border-slate-300 p-2" onChange={event => setRunType(event.target.value as "demo" | "real")}>
-                    <option value="demo">Demo（Mock 模拟，不计入 Real）</option>
-                    <option value="real">Real（DeepSeek Provider，有费用）</option>
+                    <option value="demo">演示（Mock 模拟，不计入真实）</option>
+                    <option value="real">真实（DeepSeek 模型服务，有费用）</option>
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="engine" className="mb-2 block text-sm font-medium">Provider / Engine</label>
+                  <label htmlFor="engine" className="mb-2 block text-sm font-medium">模型服务 / 检测引擎</label>
                   <select id="engine" value={engineId} className="w-full rounded-lg border border-slate-300 p-2" onChange={event => setEngineId(event.target.value)}>
                     {(runType === "demo" ? options.engines.filter(item => item.provider === "mock") : options.engines.filter(item => item.provider !== "mock")).map(item => (
-                      <option key={item.id} value={item.id}>{item.name}{item.provider === "deepseek" ? (item.configured ? " · REAL" : " · 未配置") : ""}</option>
+                      <option key={item.id} value={item.id}>{item.name}{item.provider === "deepseek" ? (item.configured ? " · 真实数据" : " · 未配置") : ""}</option>
                     ))}
                   </select>
                 </div>
                 <div className="flex items-end">
                   <button type="button" disabled={!canStart} onClick={() => void startRun()} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
-                    {starting ? "正在创建…" : "Start Benchmark Run"}
+                    {starting ? "正在创建…" : runType === "demo" ? "开始演示测试" : "开始真实测试"}
                   </button>
                 </div>
               </div>
 
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
                 <div className="flex flex-wrap gap-2">
-                  <span className="font-semibold">Planned：{plannedRuns} queries × 1 provider = {plannedRuns} runs</span>
+                  <span className="font-semibold">计划运行数：{plannedRuns} 个测试问题 × 1 个模型服务 = {plannedRuns} 次运行</span>
                   {runType === "demo"
-                    ? <span className={badge("bg-amber-100 text-amber-800", "Demo 模式 · 无真实调用")} />
-                    : <span className={badge("bg-blue-100 text-blue-800", "Real 模式 · 需配置 DeepSeek 且受单任务上限约束")} />}
+                    ? <span className={badge("bg-amber-100 text-amber-800", "演示模式 · 无真实调用")} />
+                    : <span className={badge("bg-blue-100 text-blue-800", "真实模式 · 需配置 DeepSeek 且受单任务上限约束")} />}
                   {runType === "real" && realEngine && !realEngine.configured && <span className={badge("bg-red-100 text-red-800", "DeepSeek 未配置/未启用")} />}
                 </div>
                 <p className="mt-2 text-xs text-slate-500">真实运行受 REAL_PROVIDER_MAX_RUNS_PER_TASK 上限保护，超出会在创建时拒绝并报出计划调用数。</p>
@@ -361,16 +348,16 @@ export default function BenchmarkPage() {
 
               {runId && (
                 <div className="mt-4">
-                  <p className="text-xs text-slate-500">Run ID：{runId}</p>
+                  <p className="text-xs text-slate-500">检测记录 ID（Run ID）：{runId}</p>
                   {runError && <p role="alert" className="mt-2 text-sm text-red-700">{runError}</p>}
-                  {!run ? <p role="status" className="mt-3 text-sm">正在读取 Run…</p> : (
+                  {!run ? <p role="status" className="mt-3 text-sm">正在读取检测记录…</p> : (
                     <div role="status" className="mt-3">
                       <div className="flex flex-wrap items-center gap-2 text-sm">
-                        <span className="font-semibold">{runTypeLabels[run.runType] ?? run.runType} · {statusLabels[run.status] ?? run.status}</span>
+                        <span className="font-semibold">{formatRunType(run.runType)} · {formatStatus(run.status)}</span>
                         <span className={badge(run.runType === "DEMO" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800", run.provider)}>{run.provider}</span>
-                        <span className="text-slate-500">Planned {run.plannedRuns} · Completed {run.completedRuns} · Succeeded {run.succeededRuns} · Failed {run.failedRuns} · Analyzed {run.analyzedRuns}</span>
+                        <span className="text-slate-500">计划 {run.plannedRuns} · 已完成 {run.completedRuns} · 成功 {run.succeededRuns} · 失败 {run.failedRuns} · 已分析 {run.analyzedRuns}</span>
                       </div>
-                      <progress aria-label="Benchmark 完成进度" className="mt-2 h-3 w-full accent-blue-700" value={run.progress} max={100} />
+                      <progress aria-label="基准测试完成进度" className="mt-2 h-3 w-full accent-blue-700" value={run.progress} max={100} />
                       <p className="mt-1 text-xs text-slate-500">{run.progress}%</p>
                     </div>
                   )}
@@ -381,33 +368,33 @@ export default function BenchmarkPage() {
             {/* 结果（Overall / Category / Query） */}
             {metrics && (
               <section aria-labelledby="metrics-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
-                <h2 id="metrics-heading" className="mb-3 text-lg font-semibold">Benchmark Metrics</h2>
+                <h2 id="metrics-heading" className="mb-3 text-lg font-semibold">基准测试指标</h2>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className={badge(
                     metrics.metricSource === "demo" ? "bg-amber-100 text-amber-800"
                       : metrics.metricSource === "real" ? "bg-blue-100 text-blue-800"
                         : "bg-purple-100 text-purple-800",
-                    metrics.metricSource === "demo" ? "Demo 数据（Mock）"
-                      : metrics.metricSource === "real" ? "Real Provider 数据"
-                        : "Mixed：仅真实子集计入 Real Benchmark",
+                    metrics.metricSource === "demo" ? "演示数据（Mock）"
+                      : metrics.metricSource === "real" ? "真实数据"
+                        : "混合：仅真实子集计入真实基准",
                   )} />
                   <span className="text-slate-400">metricSource = {metrics.metricSource}</span>
                 </div>
                 {metrics.competitorScope?.status === "pending-m6b" && (
                   <p role="note" className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    ⚠️ {metrics.competitorScope.note} —— Share of Voice 不作对外结论。
+                    ⚠️ {metrics.competitorScope.note} —— AI 声量份额（Share of Voice）不作对外结论。
                   </p>
                 )}
 
                 {/* Overall */}
                 <div className="mt-4 rounded-xl border border-slate-200 p-4">
-                  <h3 className="text-sm font-semibold text-slate-700">Overall（{metrics.overall.queryEligibleCount ?? 0} eligible queries）</h3>
+                  <h3 className="text-sm font-semibold text-slate-700">总体表现（{metrics.overall.queryEligibleCount ?? 0} 条有效问题）</h3>
                   <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                     {[
-                      ["Visibility", percent(metrics.overall.visibilityRate), `${metrics.overall.queryMentionedCount ?? 0}/${metrics.overall.queryEligibleCount ?? 0}`],
-                      ["Recommendation", percent(metrics.overall.recommendationRate), ""],
-                      ["Avg Mention Position", metrics.overall.averageMentionPosition == null ? "—" : metrics.overall.averageMentionPosition.toFixed(2), ""],
-                      ["Share of Voice", percent(metrics.overall.shareOfVoice), "（pending M6B）"],
+                      ["品牌可见率", percent(metrics.overall.visibilityRate), `${metrics.overall.queryMentionedCount ?? 0}/${metrics.overall.queryEligibleCount ?? 0}`],
+                      ["推荐率", percent(metrics.overall.recommendationRate), ""],
+                      ["平均提及位置", metrics.overall.averageMentionPosition == null ? "—" : metrics.overall.averageMentionPosition.toFixed(2), ""],
+                      ["AI 声量份额（Share of Voice）", percent(metrics.overall.shareOfVoice), "演示/小样本口径，不作行业结论"],
                     ].map(([label, value, note]) => (
                       <div key={String(label)} className="rounded-lg bg-slate-50 p-3">
                         <dt className="text-xs text-slate-500">{label}</dt>
@@ -416,23 +403,23 @@ export default function BenchmarkPage() {
                       </div>
                     ))}
                   </dl>
-                  <p className="mt-2 text-xs text-slate-500">Citations {metrics.overall.citationCount} · Domains {metrics.overall.citationDomainCount} · 情感：正面 {metrics.overall.sentimentDistribution.positive} / 中性 {metrics.overall.sentimentDistribution.neutral} / 负面 {metrics.overall.sentimentDistribution.negative}</p>
+                  <p className="mt-2 text-xs text-slate-500">引用次数 {metrics.overall.citationCount} · 引用域名 {metrics.overall.citationDomainCount} · 情感：正面 {metrics.overall.sentimentDistribution.positive} / 中性 {metrics.overall.sentimentDistribution.neutral} / 负面 {metrics.overall.sentimentDistribution.negative}</p>
                 </div>
 
                 {/* by Category */}
                 <div className="mt-4">
-                  <h3 className="text-sm font-semibold text-slate-700">按 Category</h3>
-                  {!metrics.byCategory.length && <p className="mt-2 text-xs text-slate-500">暂无已分析结果。</p>}
+                  <h3 className="text-sm font-semibold text-slate-700">按场景分类</h3>
+                  {!metrics.byCategory.length && <p className="mt-2 text-xs text-slate-500">{EMPTY_TEXT.analyses}</p>}
                   <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {metrics.byCategory.map(row => (
                       <div key={row.category} className="rounded-xl border border-slate-200 p-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{CATEGORY_LABELS[row.category] ?? row.category}</span>
+                          <span className="text-sm font-medium">{formatCategory(row.category)}</span>
                           <span className={badge(row.metrics.visibilityRate != null && row.metrics.visibilityRate > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500", `${row.queryMentionedCount}/${row.queryEligibleCount}`)}>
-                            Visibility {row.queryMentionedCount}/{row.queryEligibleCount}
+                            被提及 {row.queryMentionedCount}/{row.queryEligibleCount}
                           </span>
                         </div>
-                        <p className="mt-2 text-xs text-slate-500">Visibility Rate {percent(row.metrics.visibilityRate)} · Recommendation {percent(row.metrics.recommendationRate)}</p>
+                        <p className="mt-2 text-xs text-slate-500">品牌可见率 {percent(row.metrics.visibilityRate)} · 推荐率 {percent(row.metrics.recommendationRate)}</p>
                       </div>
                     ))}
                   </div>
@@ -440,26 +427,26 @@ export default function BenchmarkPage() {
 
                 {/* by Query + Evidence drill-down */}
                 <div className="mt-5 overflow-x-auto">
-                  <h3 className="mb-2 text-sm font-semibold text-slate-700">按 Query（点击查看 Evidence）</h3>
+                  <h3 className="mb-2 text-sm font-semibold text-slate-700">按问题（点击查看原始证据）</h3>
                   <table className="w-full text-left text-sm">
-                    <caption className="sr-only">Per query benchmark results</caption>
+                    <caption className="sr-only">按问题查看基准测试结果</caption>
                     <thead className="border-b border-slate-200 text-slate-500">
-                      <tr><th scope="col" className="p-2">Category</th><th scope="col" className="p-2">Query</th><th scope="col" className="p-2">状态</th><th scope="col" className="p-2">Visible</th><th scope="col" className="p-2">Recommended</th><th scope="col" className="p-2">Pos</th><th scope="col" className="p-2">Evidence</th></tr>
+                      <tr><th scope="col" className="p-2">场景分类</th><th scope="col" className="p-2">测试问题</th><th scope="col" className="p-2">状态</th><th scope="col" className="p-2">提及品牌</th><th scope="col" className="p-2">被推荐</th><th scope="col" className="p-2">位置</th><th scope="col" className="p-2">原始证据</th></tr>
                     </thead>
                     <tbody>
                       {metrics.byQuery.map(row => {
                         const runRow = runRowByText.get(row.queryText);
                         return (
                           <tr key={String(row.benchmarkQueryId)} className="border-b border-slate-100 align-top">
-                            <td className="p-2 whitespace-nowrap text-slate-600">{row.category ? CATEGORY_LABELS[row.category] ?? row.category : "—"}</td>
+                            <td className="p-2 whitespace-nowrap text-slate-600">{row.category ? formatCategory(row.category) : "—"}</td>
                             <td className="min-w-64 break-words p-2">{row.queryText}</td>
-                            <td className="p-2 whitespace-nowrap">{statusLabels[row.status] ?? row.status}</td>
+                            <td className="p-2 whitespace-nowrap">{formatStatus(row.status)}</td>
                             <td className="p-2">{row.analyzed ? (row.brandMentioned ? "✓" : "✗") : "—"}</td>
                             <td className="p-2">{row.analyzed ? (row.recommended ? "✓" : "✗") : "—"}</td>
                             <td className="p-2">{row.analyzed ? row.mentionPosition ?? "—" : "—"}</td>
                             <td className="p-2 whitespace-nowrap">
                               {runRow && runRow.status === "SUCCEEDED"
-                                ? <button type="button" className="text-blue-700 underline" onClick={() => setEvidenceRunId(runRow.id)}>查看 Evidence</button>
+                                ? <button type="button" className="text-blue-700 underline" onClick={() => setEvidenceRunId(runRow.id)}>查看原始证据</button>
                                 : <span className="text-slate-300">—</span>}
                             </td>
                           </tr>

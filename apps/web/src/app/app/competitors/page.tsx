@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import {
+  COMPETITOR_TYPE_OPTIONS, EMPTY_TEXT, formatCandidateStatus, formatCompetitorType,
+  formatMetricName, formatSetStatus, friendlyError,
+} from "@/lib/labels";
 import { EvidenceDialog } from "../monitor/evidence-dialog";
 
 /* ------------------------------------------------------------------ */
@@ -60,14 +64,9 @@ type DiscoveryResult = {
 /* 常量与工具                                                           */
 /* ------------------------------------------------------------------ */
 
-const statusLabels: Record<string, string> = { DISCOVERED: "DISCOVERED", APPROVED: "已批准", REJECTED: "已拒绝" };
-const typeLabels: Record<string, string> = {
-  UNKNOWN: "UNKNOWN", DIRECT: "Direct", ADJACENT: "Adjacent",
-  SUBSTITUTE: "Substitute", NON_COMPETITOR: "非竞对",
-};
 const badge = (color: string, text: string) => `inline-block rounded px-2 py-0.5 text-xs font-semibold ${color}`;
 const buttonClass = "rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50";
-function errorText(error: unknown) { return error instanceof Error ? error.message : "请求失败，请稍后重试。"; }
+function errorText(error: unknown) { return friendlyError(error); }
 
 export default function CompetitorsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -129,7 +128,7 @@ export default function CompetitorsPage() {
       const excluded = Object.entries(result.eligibility.excludedEvidence)
         .map(([key, value]) => `${key} ${value}`).join("；") || "无";
       setNotice(
-        `Discovery 完成：eligible REAL Evidence ${result.eligibility.realEvidenceEligible}（total ${result.eligibility.totalSucceededEvidence}；排除 ${excluded}）· 新增候选 ${result.outcome.candidatesDiscovered} · refresh ${result.outcome.candidatesRefreshed}`,
+        `发现完成：可用真实证据 ${result.eligibility.realEvidenceEligible} 条（共 ${result.eligibility.totalSucceededEvidence} 条；排除 ${excluded}）· 新增候选 ${result.outcome.candidatesDiscovered} · 刷新 ${result.outcome.candidatesRefreshed}`,
       );
       await load(loadSeq.current);
     } catch (err) {
@@ -205,7 +204,7 @@ export default function CompetitorsPage() {
         method: "POST",
         body: JSON.stringify({ name: newSetName.trim(), version: newSetVersion.trim() }),
       });
-      setNotice("Competitor Set 已创建为 DRAFT（条目 = 当前已批准候选快照）。");
+      setNotice("竞品集合已创建为草稿（DRAFT，条目 = 当前已确认候选快照）。");
       await load(loadSeq.current);
     } catch (err) {
       setError(errorText(err));
@@ -218,7 +217,7 @@ export default function CompetitorsPage() {
     setBusy(true); setError("");
     try {
       const result = await api<CompetitorSet>(`/competitor-sets/${encodeURIComponent(set.id)}/activate`, { method: "POST" });
-      setNotice(`Set「${result.name} v${result.version}」已 ACTIVE（激活即冻结；改配置请创建新版本）。`);
+      setNotice(`集合「${result.name} v${result.version}」已启用（激活即冻结；如需修改请创建新版本）。`);
       await load(loadSeq.current);
     } catch (err) {
       setError(errorText(err));
@@ -234,7 +233,7 @@ export default function CompetitorsPage() {
         `/projects/${encodeURIComponent(projectId)}/competitor-reanalysis`,
         { method: "POST", body: JSON.stringify({ competitorSetId: set.id }) },
       );
-      setNotice(`Re-analysis 完成：${result.reanalyzed} Evidence 生成 ${result.analysisVersion}（eligible ${result.evidenceEligible}，已存在跳过 ${result.skippedExisting}）。0 次 DeepSeek 请求。`);
+      setNotice(`重新分析完成：${result.reanalyzed} 条证据生成 ${result.analysisVersion}（可用证据 ${result.evidenceEligible}，已存在跳过 ${result.skippedExisting}）。0 次 DeepSeek 请求。`);
       await load(loadSeq.current);
     } catch (err) {
       setError(errorText(err));
@@ -251,10 +250,10 @@ export default function CompetitorsPage() {
       <div className="mx-auto max-w-6xl space-y-6">
         <header>
           <Link href="/app" className="text-sm text-blue-700 hover:underline">← 返回工作台</Link>
-          <h1 className="mt-3 text-2xl font-semibold">Competitor Discovery（M6B）</h1>
+          <h1 className="mt-3 text-2xl font-semibold">竞品分析（Competitor Discovery）</h1>
           <p className="mt-2 text-sm text-slate-500">
-            仅从 REAL Evidence 生成 Competitor Candidate；Mentioned Brand ≠ Competitor —— 竞争关系只能由人工评审确认。
-            Small evidence base / discovery signal only，不代表稳定行业结论。
+            仅从真实证据（REAL Evidence）生成候选竞品；被提及 ≠ 竞对 —— 竞争关系只能由人工评审确认。
+            <span className="font-medium text-amber-700">样本量较小，仅作为竞品发现信号，不代表稳定行业结论。</span>
           </p>
         </header>
 
@@ -267,7 +266,7 @@ export default function CompetitorsPage() {
           <>
             {/* 项目 + Run Discovery */}
             <section aria-labelledby="disc-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h2 id="disc-heading" className="mb-4 text-lg font-semibold">Discovery（REAL Evidence only）</h2>
+              <h2 id="disc-heading" className="mb-4 text-lg font-semibold">竞品发现（仅消费真实证据）</h2>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-64 flex-1">
                   <label htmlFor="project" className="mb-2 block text-sm font-medium">项目</label>
@@ -277,18 +276,18 @@ export default function CompetitorsPage() {
                 </div>
                 <div>
                   <button type="button" disabled={busy} onClick={() => void runDiscovery()} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50">
-                    {busy ? "运行中…" : "Run Discovery"}
+                    {busy ? "运行中…" : "开始发现"}
                   </button>
                 </div>
               </div>
-              {project && <p className="mt-3 text-xs text-slate-500">{project.name}：mock / demo / estimated Evidence 一律排除；24 条 M6A Demo Benchmark Evidence 不会进入输入。</p>}
+              {project && <p className="mt-3 text-xs text-slate-500">{project.name}：mock / demo / estimated 证据一律排除；24 条 M6A 演示基准证据不会进入输入。</p>}
             </section>
 
             {/* Candidates */}
             <section aria-labelledby="cand-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h2 id="cand-heading" className="mb-1 text-lg font-semibold">Candidates（{candidates.length}）</h2>
-              <p className="mb-3 text-xs text-slate-500">状态 DISCOVERED / 类型 UNKNOWN = 仅事实信号。Approve 时必须选择 DIRECT / ADJACENT / SUBSTITUTE。</p>
-              {candidates.length === 0 && <p className="text-sm text-slate-400">尚无候选 —— 点击 Run Discovery 从 REAL Evidence 提取（需先有真实 Provider 监测结果）。</p>}
+              <h2 id="cand-heading" className="mb-1 text-lg font-semibold">候选竞品（{candidates.length}）</h2>
+              <p className="mb-3 text-xs text-slate-500">状态「待审核」/ 类型「未分类」= 仅事实信号。确认为竞品时必须选择：直接竞品 / 相邻产品 / 替代方案。</p>
+              {candidates.length === 0 && <p className="text-sm text-slate-400">{EMPTY_TEXT.candidates} —— 点击「开始发现」从真实证据提取（需先有真实模型服务监测结果）。</p>}
               <div className="space-y-3">
                 {candidates.map(candidate => {
                   const detail = expanded[candidate.id];
@@ -302,25 +301,25 @@ export default function CompetitorsPage() {
                           candidate.status === "APPROVED" ? "bg-emerald-100 text-emerald-800"
                             : candidate.status === "REJECTED" ? "bg-slate-200 text-slate-600"
                               : "bg-amber-100 text-amber-800",
-                          statusLabels[candidate.status],
-                        )}>{statusLabels[candidate.status]}</span>
+                          formatCandidateStatus(candidate.status),
+                        )}>{formatCandidateStatus(candidate.status)}</span>
                         <span className={badge(
                           candidate.competitorType === "DIRECT" ? "bg-red-100 text-red-800"
                             : candidate.competitorType === "ADJACENT" ? "bg-orange-100 text-orange-800"
                               : candidate.competitorType === "SUBSTITUTE" ? "bg-purple-100 text-purple-800"
                                 : candidate.competitorType === "NON_COMPETITOR" ? "bg-slate-200 text-slate-500"
                                   : "bg-slate-100 text-slate-500",
-                          typeLabels[candidate.competitorType],
-                        )}>{typeLabels[candidate.competitorType]}</span>
+                          formatCompetitorType(candidate.competitorType),
+                        )}>{formatCompetitorType(candidate.competitorType)}</span>
                         {candidate.status === "DISCOVERED" && (
-                          <span className="text-xs text-amber-700">等待人工评审 · 不自动推断 DIRECT</span>
+                          <span className="text-xs text-amber-700">等待人工评审 · 不自动推断直接竞品</span>
                         )}
                       </div>
                       <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-5">
-                        <div><dt className="text-slate-400">Evidence</dt><dd className="mt-0.5 text-base font-semibold text-slate-900">{candidate.evidenceCount}</dd></div>
-                        <div><dt className="text-slate-400">Queries</dt><dd className="mt-0.5 text-base font-semibold text-slate-900">{candidate.queryCount}</dd></div>
-                        <div><dt className="text-slate-400">Mentions</dt><dd className="mt-0.5 text-base font-semibold text-slate-900">{candidate.mentionCount}</dd></div>
-                        <div><dt className="text-slate-400">推荐信号</dt><dd className="mt-0.5 text-base font-semibold text-slate-900">{candidate.recommendationCount}</dd></div>
+                        <div><dt className="text-slate-400">{formatMetricName("evidenceCount")}</dt><dd className="mt-0.5 text-base font-semibold text-slate-900">{candidate.evidenceCount}</dd></div>
+                        <div><dt className="text-slate-400">{formatMetricName("queryCount")}</dt><dd className="mt-0.5 text-base font-semibold text-slate-900">{candidate.queryCount}</dd></div>
+                        <div><dt className="text-slate-400">提及次数</dt><dd className="mt-0.5 text-base font-semibold text-slate-900">{candidate.mentionCount}</dd></div>
+                        <div><dt className="text-slate-400">{formatMetricName("recommendationCount")}</dt><dd className="mt-0.5 text-base font-semibold text-slate-900">{candidate.recommendationCount}</dd></div>
                         <div><dt className="text-slate-400">首/末见</dt><dd className="mt-0.5 text-slate-600">{new Date(candidate.firstSeenAt).toLocaleDateString()}<br />{new Date(candidate.lastSeenAt).toLocaleDateString()}</dd></div>
                       </dl>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -328,7 +327,7 @@ export default function CompetitorsPage() {
                           <>
                             <span className="max-w-64 truncate rounded bg-slate-100 px-2 py-0.5">“{candidate.exampleEvidence.mentionText}”</span>
                             <span className="max-w-72 truncate">{candidate.exampleEvidence.queryText}</span>
-                            <button type="button" className="text-blue-700 underline" onClick={() => setEvidenceRunId(candidate.exampleEvidence!.runId)}>查看 Evidence</button>
+                            <button type="button" className="text-blue-700 underline" onClick={() => setEvidenceRunId(candidate.exampleEvidence!.runId)}>查看原始证据</button>
                           </>
                         )}
                       </div>
@@ -337,28 +336,28 @@ export default function CompetitorsPage() {
                       {editId === candidate.id ? (
                         <div className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
                           <label className="text-xs text-slate-600">
-                            canonicalName
+                            规范名（canonicalName）
                             <input value={editName} onChange={e => setEditName(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
                           </label>
                           <label className="text-xs text-slate-600">
-                            aliases（逗号分隔）
+                            别名（aliases，逗号分隔）
                             <input value={editAliases} onChange={e => setEditAliases(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
                           </label>
                           <label className="text-xs text-slate-600">
-                            类型
+                            竞争类型
                             <select value={approveType} onChange={e => setApproveType(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1">
-                              <option value="DIRECT">DIRECT</option><option value="ADJACENT">ADJACENT</option><option value="SUBSTITUTE">SUBSTITUTE</option>
+                              {COMPETITOR_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                             </select>
                           </label>
                           <div className="flex items-end gap-2 sm:col-span-3">
-                            <button type="button" disabled={busy} onClick={() => void saveEdit(candidate)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800">Approve + 保存</button>
+                            <button type="button" disabled={busy} onClick={() => void saveEdit(candidate)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800">确认并保存</button>
                             <button type="button" onClick={() => setEditId("")} className={buttonClass}>取消</button>
                           </div>
                         </div>
                       ) : (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {candidate.status === "DISCOVERED" && (
-                            <button type="button" disabled={busy} onClick={() => startEdit(candidate)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800">Approve…</button>
+                            <button type="button" disabled={busy} onClick={() => startEdit(candidate)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800">确认为竞品…</button>
                           )}
                           {candidate.status === "APPROVED" && (
                             <>
@@ -366,15 +365,15 @@ export default function CompetitorsPage() {
                               <select value={candidate.competitorType} disabled={busy}
                                 onChange={e => void approve(candidate, e.target.value)}
                                 className="rounded border border-slate-300 px-2 py-1.5 text-xs">
-                                <option value="DIRECT">DIRECT</option><option value="ADJACENT">ADJACENT</option><option value="SUBSTITUTE">SUBSTITUTE</option>
+                                {COMPETITOR_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                               </select>
                             </>
                           )}
                           {(candidate.status === "DISCOVERED" || candidate.status === "APPROVED") && (
-                            <button type="button" disabled={busy} onClick={() => void reject(candidate)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50">Reject</button>
+                            <button type="button" disabled={busy} onClick={() => void reject(candidate)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50">排除</button>
                           )}
                           {candidate.status === "REJECTED" && (
-                            <button type="button" disabled={busy} onClick={() => void approve(candidate, "DIRECT")} className={buttonClass}>重新评审并 Approve（DIRECT）</button>
+                            <button type="button" disabled={busy} onClick={() => void approve(candidate, "DIRECT")} className={buttonClass}>重新评审并确认（直接竞品）</button>
                           )}
                         </div>
                       )}
@@ -384,7 +383,7 @@ export default function CompetitorsPage() {
                         <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
                           <table className="w-full text-left text-xs">
                             <thead className="border-b border-slate-200 text-slate-500">
-                              <tr><th className="p-2">Query</th><th className="p-2">命中文本</th><th className="p-2">Pos</th><th className="p-2">次数</th><th className="p-2">推荐信号</th><th className="p-2">Evidence</th></tr>
+                              <tr><th className="p-2">原始问题</th><th className="p-2">命中文本</th><th className="p-2">位置</th><th className="p-2">次数</th><th className="p-2">推荐信号</th><th className="p-2">原始证据</th></tr>
                             </thead>
                             <tbody>
                               {detail.evidenceLinks.map(link => (
@@ -394,7 +393,7 @@ export default function CompetitorsPage() {
                                   <td className="p-2">{link.mentionPosition}</td>
                                   <td className="p-2">{link.occurrenceCount}</td>
                                   <td className="p-2">{link.recommended ? "✓" : "—"}</td>
-                                  <td className="p-2"><button type="button" className="text-blue-700 underline" onClick={() => setEvidenceRunId(link.runId)}>rawResponse</button></td>
+                                  <td className="p-2"><button type="button" className="text-blue-700 underline" onClick={() => setEvidenceRunId(link.runId)}>查看原始回答</button></td>
                                 </tr>
                               ))}
                             </tbody>
@@ -409,23 +408,23 @@ export default function CompetitorsPage() {
 
             {/* Competitor Sets */}
             <section aria-labelledby="set-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h2 id="set-heading" className="mb-4 text-lg font-semibold">Versioned Competitor Set</h2>
+              <h2 id="set-heading" className="mb-4 text-lg font-semibold">竞品集合（版本化）</h2>
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                 <label className="text-xs text-slate-600">
-                  Name
+                  名称（name）
                   <input value={newSetName} onChange={e => setNewSetName(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
                 </label>
                 <label className="text-xs text-slate-600">
-                  Version
+                  版本（version）
                   <input value={newSetVersion} onChange={e => setNewSetVersion(e.target.value)} className="mt-1 w-28 rounded border border-slate-300 px-2 py-1" />
                 </label>
                 <div className="flex items-end">
                   <button type="button" disabled={busy || !newSetName.trim() || !newSetVersion.trim()} onClick={() => void createSet()} className="rounded-lg bg-blue-700 px-4 py-1.5 text-sm text-white hover:bg-blue-800 disabled:opacity-50">
-                    创建 DRAFT
+                    创建草稿
                   </button>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-slate-500">条目 = 创建瞬间全部 APPROVED 候选的快照（含类型/别名）。ACTIVE 即冻结 —— 要换配置请创建新版本 v2。</p>
+              <p className="mt-2 text-xs text-slate-500">条目 = 创建瞬间全部已确认候选的快照（含类型/别名）。启用即冻结 —— 要换配置请创建新版本 v2。</p>
 
               <div className="mt-4 space-y-2">
                 {sets.map(set => (
@@ -433,16 +432,16 @@ export default function CompetitorsPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{set.name}</span>
                       <span className={badge("bg-blue-100 text-blue-800", `v${set.version}`)}>v{set.version}</span>
-                      <span className={badge(set.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : set.status === "DRAFT" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500", set.status)}>{set.status}</span>
-                      <span className="text-xs text-slate-500">{set.entryCount} entries{set.activatedAt ? ` · activated ${new Date(set.activatedAt).toLocaleString()}` : ""}</span>
+                      <span className={badge(set.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : set.status === "DRAFT" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500", formatSetStatus(set.status))}>{formatSetStatus(set.status)}</span>
+                      <span className="text-xs text-slate-500">{set.entryCount} 个条目{set.activatedAt ? ` · 启用时间 ${new Date(set.activatedAt).toLocaleString()}` : ""}</span>
                       <span className="flex-1" />
                       {set.status === "DRAFT" && (
-                        <button type="button" disabled={busy} onClick={() => void activateSet(set)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs text-white hover:bg-emerald-800">Activate</button>
+                        <button type="button" disabled={busy} onClick={() => void activateSet(set)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs text-white hover:bg-emerald-800">启用</button>
                       )}
                       {set.status === "ACTIVE" && (
                         <>
                           <span className="text-xs text-emerald-700">已冻结（不可变）</span>
-                          <button type="button" disabled={busy} onClick={() => void reanalyze(set)} className="rounded-lg bg-indigo-700 px-3 py-1.5 text-xs text-white hover:bg-indigo-800">Re-analyze REAL Evidence</button>
+                          <button type="button" disabled={busy} onClick={() => void reanalyze(set)} className="rounded-lg bg-indigo-700 px-3 py-1.5 text-xs text-white hover:bg-indigo-800">重新分析真实证据</button>
                         </>
                       )}
                     </div>
@@ -450,39 +449,43 @@ export default function CompetitorsPage() {
                       {set.entries.map(entry => (
                         <span key={entry.id} className="rounded-full border border-slate-200 px-2 py-0.5">
                           {entry.canonicalName}
-                          <span className="ml-1 text-slate-400">{typeLabels[entry.competitorType]}</span>
+                          <span className="ml-1 text-slate-400">{formatCompetitorType(entry.competitorType)}</span>
                         </span>
                       ))}
                     </p>
                   </div>
                 ))}
-                {sets.length === 0 && <p className="text-xs text-slate-400">暂无 Competitor Set。请先 Approve 候选，再创建并 Activate。</p>}
+                {sets.length === 0 && <p className="text-xs text-slate-400">暂无竞品集合。请先确认候选竞品，再创建并启用。</p>}
               </div>
             </section>
 
             {/* Share of Voice */}
             <section aria-labelledby="sov-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h2 id="sov-heading" className="mb-1 text-lg font-semibold">Share of Voice</h2>
+              <h2 id="sov-heading" className="mb-1 text-lg font-semibold">AI 声量份额（Share of Voice）</h2>
               {sov?.status === "pending" && (
                 <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  {sov.reason === "no-active-competitor-set" ? "尚无 ACTIVE Competitor Set —— SoV 需要先人工评审并激活版本化竞对集。" : sov.reason === "not-reanalyzed" ? "Competitor Set 已激活但尚未运行 re-analysis —— 请点击上方 Re-analyze。" : sov.note}
+                  {sov.reason === "no-active-competitor-set"
+                    ? EMPTY_TEXT.activeSet + " —— AI 声量份额需要先人工评审并启用版本化竞品集合。"
+                    : sov.reason === "not-reanalyzed"
+                      ? "竞品集合已启用但尚未运行重新分析 —— 请点击上方「重新分析真实证据」。"
+                      : "AI 声量份额暂不可用（未满足条件）。样本量较小，仅作为竞品发现信号，不代表稳定行业结论。"}
                 </p>
               )}
               {sov?.status === "ready" && sov.competitorSet && (
                 <div className="mt-2 space-y-3">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className={badge("bg-emerald-100 text-emerald-800", `Competitor Set: ${sov.competitorSet.name} v${sov.competitorSet.version}`)}>Set {sov.competitorSet.name} v{sov.competitorSet.version}</span>
-                    <span className={badge("bg-indigo-100 text-indigo-800", `Analysis: ${sov.analysisVersion}`)}>{sov.analysisVersion}</span>
-                    <span className={badge("bg-slate-100 text-slate-600", `eligible Evidence ${sov.pool?.eligibleEvidence ?? 0}`)}>Real Evidence {sov.pool?.eligibleEvidence ?? 0}</span>
+                    <span className={badge("bg-emerald-100 text-emerald-800", `竞品集合：${sov.competitorSet.name} v${sov.competitorSet.version}`)}>竞品集合 {sov.competitorSet.name} v{sov.competitorSet.version}</span>
+                    <span className={badge("bg-indigo-100 text-indigo-800", `分析版本 ${sov.analysisVersion}`)}>分析版本：{sov.analysisVersion}</span>
+                    <span className={badge("bg-slate-100 text-slate-600", `真实证据 ${sov.pool?.eligibleEvidence ?? 0} 条`)}>真实证据 {sov.pool?.eligibleEvidence ?? 0} 条</span>
                   </div>
-                  <p className="text-xs text-amber-700">{sov.pool?.note}</p>
+                  <p className="text-xs text-amber-700">样本量较小，仅作为竞品发现信号，不代表稳定行业结论。</p>
                   <div className="space-y-2">
                     {sov.competitors?.map(competitor => {
                       const share = competitor.shareOfVoice ?? 0;
                       return (
                         <div key={competitor.candidateId} className="flex items-center gap-3 text-sm">
                           <span className="w-36 shrink-0 font-medium">{competitor.canonicalName}</span>
-                          <span className="w-20 shrink-0 text-xs text-slate-400">{typeLabels[competitor.competitorType]}</span>
+                          <span className="w-20 shrink-0 text-xs text-slate-400">{formatCompetitorType(competitor.competitorType)}</span>
                           <div className="h-4 flex-1 overflow-hidden rounded bg-slate-100">
                             <div className="h-full rounded bg-blue-600" style={{ width: `${Math.round(share * 100)}%` }} />
                           </div>
@@ -493,10 +496,10 @@ export default function CompetitorsPage() {
                       );
                     })}
                   </div>
-                  {sov.note && <p className="text-xs text-slate-500">{sov.note}</p>}
+                  <p className="text-xs text-slate-500">竞品集合：{sov.competitorSet.name} v{sov.competitorSet.version}；分析版本：{sov.analysisVersion}。未启用 / 未重新分析前不出正式 AI 声量份额。</p>
                 </div>
               )}
-              {!sov && <p className="text-sm text-slate-400">加载 SoV…</p>}
+              {!sov && <p className="text-sm text-slate-400">正在加载 AI 声量份额…</p>}
             </section>
           </>
         )}
