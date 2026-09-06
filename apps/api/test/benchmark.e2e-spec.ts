@@ -48,7 +48,14 @@ describe("Benchmark M6A e2e", () => {
     metricsSuiteId: "",
     metricsRunId: "",
     mixedRunId: "",
+    versionProjectId: "",
+    versionRunId: "",
+    versionQueryIds: [] as string[],
+    versionMirrorQueryIds: [] as string[],
   };
+
+  // 版本化测试基线：记录 v1 历史 Run 的报告/指标，用于证明未来编辑不漂移。
+  let v1Baseline: { run: unknown; metrics: unknown } | null = null;
 
   const mainQueries = BENCHMARK_V1_QUERIES.filter(query => query.enabled && !query.sanity);
   const sanityQueries = BENCHMARK_V1_QUERIES.filter(query => query.sanity);
@@ -206,6 +213,93 @@ describe("Benchmark M6A e2e", () => {
       engineId: deepseekEngine.id, monitorTaskId: task2.id, plannedRuns: 3, status: "SUCCEEDED",
     } });
     ids.mixedRunId = mixedRun.id;
+
+    // ============ fixture 语义快照（BenchmarkRunQuery，只读历史不变性） ============
+    // 真实 API 创建的 Run 由 startRun 在事务内自动写快照；这里的直连 fixture 需
+    // 手工补齐，模拟同一行为。
+    await prisma.benchmarkRunQuery.createMany({
+      data: defs.map((def, index) => ({
+        benchmarkRunId: metricsRun.id, benchmarkQueryId: benchQueryIds[index],
+        projectQueryId: projectQueryIds[index], queryText: `${def.text} ${suffix}`,
+        category: def.category, intent: `${def.category} intent`,
+        locale: "zh-CN", weight: 1, sortOrder: index, sanity: false,
+      })),
+    });
+    await prisma.benchmarkRunQuery.createMany({
+      data: [0, 1, 2].map(index => ({
+        benchmarkRunId: mixedRun.id, benchmarkQueryId: benchQueryIds[index],
+        projectQueryId: projectQueryIds[index], queryText: `${defs[index].text} ${suffix}`,
+        category: defs[index].category, intent: `${defs[index].category} intent`,
+        locale: "zh-CN", weight: 1, sortOrder: index, sanity: false,
+      })),
+    });
+
+    // ============ fixture 4: 版本化语义（v1 suite + 2 查询，全 SUCCEEDED 已分析） ============
+    const versionProject = await prisma.project.create({ data: {
+      organizationId: ids.orgA, name: `Versioning ${suffix}`,
+    } });
+    ids.versionProjectId = versionProject.id;
+    const vSuite = await prisma.benchmarkSuite.create({ data: {
+      projectId: versionProject.id, name: `Versioning Suite ${suffix}`, version: "1",
+    } });
+    const vDefs = [
+      { text: "v-q-a", category: "tool-discovery", intent: "td intent" },
+      { text: "v-q-b", category: "comparison", intent: "cmp intent" },
+    ];
+    const vSucceeded = async (taskId: string, queryId: string, text: string, mentioned = true) => {
+      const run = await prisma.run.create({ data: {
+        monitorTaskId: taskId, queryId, engineId: mockEngine.id,
+        status: "SUCCEEDED", analysisStatus: "SUCCEEDED", executionToken: randomUUID(),
+      } });
+      const evidence = await prisma.evidence.create({ data: {
+        runId: run.id, queryText: text, rawPrompt, rawResponse,
+        provider: "mock", engineKey: "bench-mock", engineName: "Bench mock",
+        model: "geolens-mock", modelVersion: "1", retrievalMode: "unknown", sourceType: "mock",
+        metadata: {}, entitySnapshot: [],
+      } });
+      await prisma.analysis.create({ data: {
+        evidenceId: evidence.id, analysisVersion: "m4-rule-v1", brandMentioned: mentioned,
+        mentionPosition: mentioned ? 1 : null, recommended: mentioned,
+        sentiment: mentioned ? "positive" : "unknown",
+        mentions: mentioned ? { create: [{
+          entityType: "brand", entityId: "brand-geolens", canonicalName: "GeoLens", displayName: "GeoLens",
+          position: 1, context: rawResponse, sentiment: "positive", startOffset: 5, endOffset: 12,
+        }] } : undefined,
+        citations: { create: [{ url: "https://example.com/bench", domain: "example.com", title: null, position: 1 }] },
+      } });
+      return run;
+    };
+    for (const [index, def] of vDefs.entries()) {
+      const mirror = await prisma.query.create({ data: {
+        projectId: versionProject.id, text: `${def.text} ${suffix}`, source: "IMPORTED", status: "PAUSED",
+      } });
+      ids.versionMirrorQueryIds.push(mirror.id);
+      const bq = await prisma.benchmarkQuery.create({ data: {
+        suiteId: vSuite.id, sortOrder: index, queryText: mirror.text,
+        category: def.category, intent: def.intent, projectQueryId: mirror.id,
+      } });
+      ids.versionQueryIds.push(bq.id);
+    }
+    const vTask = await prisma.monitorTask.create({ data: {
+      organizationId: ids.orgA, projectId: versionProject.id, totalRuns: 2, status: "SUCCEEDED",
+    } });
+    for (const [index, def] of vDefs.entries()) {
+      await vSucceeded(vTask.id, ids.versionMirrorQueryIds[index], `${def.text} ${suffix}`);
+    }
+    const vRun = await prisma.benchmarkRun.create({ data: {
+      organizationId: ids.orgA, projectId: versionProject.id, suiteId: vSuite.id,
+      suiteName: vSuite.name, suiteVersion: "1", runType: "DEMO", provider: "mock",
+      engineId: mockEngine.id, monitorTaskId: vTask.id, plannedRuns: 2, status: "SUCCEEDED",
+    } });
+    ids.versionRunId = vRun.id;
+    await prisma.benchmarkRunQuery.createMany({
+      data: vDefs.map((def, index) => ({
+        benchmarkRunId: vRun.id, benchmarkQueryId: ids.versionQueryIds[index],
+        projectQueryId: ids.versionMirrorQueryIds[index], queryText: `${def.text} ${suffix}`,
+        category: def.category, intent: def.intent,
+        locale: "zh-CN", weight: 1, sortOrder: index, sanity: false,
+      })),
+    });
   });
 
   afterAll(async () => {
@@ -303,6 +397,9 @@ describe("Benchmark M6A e2e", () => {
     expect(again.body.runs.every((run: { status: string }) => ["PENDING", "QUEUED", "RUNNING", "SUCCEEDED"].includes(run.status))).toBe(true);
     const task = await prisma.monitorTask.findUniqueOrThrow({ where: { id: (await prisma.benchmarkRun.findUniqueOrThrow({ where: { id: body.id } })).monitorTaskId } });
     expect(task.totalRuns).toBe(24);
+    // startRun 事务内为每次 Run 写 24 条语义快照（版本化不可变性的落地点）
+    const snapCount = await prisma.benchmarkRunQuery.count({ where: { benchmarkRunId: body.id } });
+    expect(snapCount).toBe(24);
   });
 
   it("Demo Run 拒绝非 mock 引擎（真实引擎不可被 demo 误触发）", async () => {
@@ -437,5 +534,131 @@ describe("Benchmark M6A e2e", () => {
       .send({ engineId: ids.engines[0], runType: "not-a-type" }).expect(400);
     await owner.post(`/benchmark-suites/${ids.seededSuiteId}/runs`)
       .send({ engineId: randomUUID(), runType: "demo" }).expect(400);
+  });
+
+  // ---------- 版本化语义不可变性（M6A final audit） ----------
+  it("版本化语义：编辑 v1 的 BenchmarkQuery(queryText/category/intent) + 镜像 Query 后，历史 Run 报告与指标不变", async () => {
+    const runBefore = (await owner.get(`/benchmark-runs/${ids.versionRunId}`).expect(200)).body;
+    const metricsBefore = (await owner.get(`/benchmark-runs/${ids.versionRunId}/metrics`).expect(200)).body;
+    v1Baseline = { run: runBefore, metrics: metricsBefore };
+    // 基线预检：v1 报告读快照原值（非当前行）
+    expect(metricsBefore.byQuery).toHaveLength(2);
+    expect(metricsBefore.byQuery.map((row: { category: string }) => row.category).sort())
+      .toEqual(["comparison", "tool-discovery"]);
+    expect(metricsBefore.byQuery.every((row: { queryText: string }) => row.queryText.startsWith("v-q-"))).toBe(true);
+    expect(metricsBefore.byCategory.map((row: { category: string }) => row.category).sort())
+      .toEqual(["comparison", "tool-discovery"]);
+
+    // 模拟“未来编辑”：直接改 BenchmarkQuery 语义行 + 镜像 Query 文本
+    await prisma.benchmarkQuery.update({
+      where: { id: ids.versionQueryIds[0] },
+      data: { queryText: `EDITED-A ${suffix}`, category: "competition", intent: "edited-a" },
+    });
+    await prisma.benchmarkQuery.update({
+      where: { id: ids.versionQueryIds[1] },
+      data: { queryText: `EDITED-B ${suffix}`, category: "pain-point", intent: "edited-b" },
+    });
+    await prisma.query.update({
+      where: { id: ids.versionMirrorQueryIds[0] },
+      data: { text: `EDITED-MIRROR-A ${suffix}` },
+    });
+
+    const runAfter = (await owner.get(`/benchmark-runs/${ids.versionRunId}`).expect(200)).body;
+    const metricsAfter = (await owner.get(`/benchmark-runs/${ids.versionRunId}/metrics`).expect(200)).body;
+
+    // runs 逐字段稳定：queryText/category/intent/benchmarkQueryId/sortOrder 全为快照原值
+    expect(runAfter.runs).toEqual(runBefore.runs);
+    expect(runAfter.runs[0]).toMatchObject({
+      queryText: `v-q-a ${suffix}`, category: "tool-discovery", intent: "td intent",
+      benchmarkQueryId: ids.versionQueryIds[0],
+    });
+    // 指标整体不变（三级聚合 + suite 版本）
+    expect(metricsAfter.overall).toEqual(metricsBefore.overall);
+    expect(metricsAfter.byQuery).toEqual(metricsBefore.byQuery);
+    expect(metricsAfter.byCategory).toEqual(metricsBefore.byCategory);
+    expect(metricsAfter.suite.version).toBe("1");
+  });
+
+  it("版本化语义：创建 v2 承载新 query/category，v1 历史 Run 完全不变", async () => {
+    const v2Suite = await prisma.benchmarkSuite.create({ data: {
+      projectId: ids.versionProjectId, name: `Versioning Suite ${suffix}`, version: "2",
+    } });
+    const v2Defs = [
+      { text: "v2-q-a", category: "competition", intent: "comp intent" },
+      { text: "v2-q-b", category: "pain-point", intent: "pain intent" },
+    ];
+    let v2RunId = "";
+    let v2TaskId = "";
+    let v2SuiteId = "";
+    try {
+      // v2 用全新查询语义（新版本 suite，与 v1 行无关）
+      const mirrors: string[] = [];
+      const benchIds: string[] = [];
+      for (const [index, def] of v2Defs.entries()) {
+        const mirror = await prisma.query.create({ data: {
+          projectId: ids.versionProjectId, text: `${def.text} ${suffix}`, source: "IMPORTED", status: "PAUSED",
+        } });
+        mirrors.push(mirror.id);
+        const bq = await prisma.benchmarkQuery.create({ data: {
+          suiteId: v2Suite.id, sortOrder: index, queryText: mirror.text,
+          category: def.category, intent: def.intent, projectQueryId: mirror.id,
+        } });
+        benchIds.push(bq.id);
+      }
+      const v2Task = await prisma.monitorTask.create({ data: {
+        organizationId: ids.orgA, projectId: ids.versionProjectId, totalRuns: 2, status: "SUCCEEDED",
+      } });
+      v2TaskId = v2Task.id;
+      const mk = async (queryId: string, text: string) => {
+        const run = await prisma.run.create({ data: {
+          monitorTaskId: v2Task.id, queryId, engineId: ids.engines[0],
+          status: "SUCCEEDED", analysisStatus: "SUCCEEDED", executionToken: randomUUID(),
+        } });
+        const evidence = await prisma.evidence.create({ data: {
+          runId: run.id, queryText: text, rawPrompt: "p", rawResponse: "r",
+          provider: "mock", engineKey: "bench-mock", engineName: "Bench mock",
+          model: "geolens-mock", modelVersion: "1", retrievalMode: "unknown", sourceType: "mock",
+          metadata: {}, entitySnapshot: [],
+        } });
+        await prisma.analysis.create({ data: {
+          evidenceId: evidence.id, analysisVersion: "m4-rule-v1", brandMentioned: true,
+          mentionPosition: 1, recommended: true, sentiment: "positive",
+        } });
+      };
+      await mk(mirrors[0], `${v2Defs[0].text} ${suffix}`);
+      await mk(mirrors[1], `${v2Defs[1].text} ${suffix}`);
+      const v2Run = await prisma.benchmarkRun.create({ data: {
+        organizationId: ids.orgA, projectId: ids.versionProjectId, suiteId: v2Suite.id,
+        suiteName: v2Suite.name, suiteVersion: "2", runType: "DEMO", provider: "mock",
+        engineId: ids.engines[0], monitorTaskId: v2Task.id, plannedRuns: 2, status: "SUCCEEDED",
+        runQueries: { create: v2Defs.map((def, index) => ({
+          benchmarkQueryId: benchIds[index], projectQueryId: mirrors[index],
+          queryText: `${def.text} ${suffix}`, category: def.category, intent: def.intent,
+          locale: "zh-CN", weight: 1, sortOrder: index, sanity: false,
+        })) },
+      } });
+      v2RunId = v2Run.id;
+      const metricsV2 = (await owner.get(`/benchmark-runs/${v2RunId}/metrics`).expect(200)).body;
+      expect(metricsV2.suite.version).toBe("2");
+      expect(metricsV2.byQuery.map((row: { queryText: string }) => row.queryText).sort())
+        .toEqual([`v2-q-a ${suffix}`, `v2-q-b ${suffix}`]);
+      expect(metricsV2.byQuery.map((row: { category: string }) => row.category).sort())
+        .toEqual(["competition", "pain-point"]);
+
+      // v1 历史 Run 完全不变（尽管 v1 行已被编辑、v2 已用新语义）
+      expect(v1Baseline).not.toBeNull();
+      const baselineMetrics = (v1Baseline as { metrics: { byQuery: unknown; byCategory: unknown } }).metrics;
+      const metricsV1 = (await owner.get(`/benchmark-runs/${ids.versionRunId}/metrics`).expect(200)).body;
+      expect(metricsV1.byQuery).toEqual(baselineMetrics.byQuery);
+      expect(metricsV1.byCategory).toEqual(baselineMetrics.byCategory);
+      const runV1 = (await owner.get(`/benchmark-runs/${ids.versionRunId}`).expect(200)).body;
+      expect(runV1.runs).toEqual((v1Baseline as { run: { runs: unknown } }).run.runs);
+      v2SuiteId = v2Suite.id;
+    } finally {
+      // 精确清理：按 id 删除 v2 的 run → task → suite（镜像 Query 由 afterAll project 删除级联清理）
+      if (v2RunId) await prisma.benchmarkRun.deleteMany({ where: { id: v2RunId } });
+      if (v2TaskId) await prisma.monitorTask.deleteMany({ where: { id: v2TaskId } });
+      if (v2SuiteId) await prisma.benchmarkSuite.deleteMany({ where: { id: v2SuiteId } });
+    }
   });
 });

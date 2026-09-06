@@ -467,8 +467,36 @@ model BenchmarkRun {
   suite        BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Restrict)
   engine       Engine         @relation(fields: [engineId], references: [id], onDelete: Restrict)
   monitorTask  MonitorTask    @relation(fields: [monitorTaskId], references: [id], onDelete: Restrict)
+  runQueries   BenchmarkRunQuery[]
 
   @@index([projectId, createdAt])
   @@index([suiteId, createdAt])
   @@index([organizationId, createdAt])
+}
+
+// Benchmark Run 的查询语义快照：Run 创建瞬间从启用 BenchmarkQuery 行复制
+// benchmarkQueryId/projectQueryId/queryText/category/intent/locale/weight/sortOrder/sanity。
+// 报告路径（GET /benchmark-runs/:id、/metrics）只读本快照，绝不 live-join 当前
+// BenchmarkQuery —— 因此未来编辑 Suite/Query（甚至直接改库）都不会改变历史 Run 的
+// 语义与指标；要换语义必须新建 suite 版本（v2），v1 历史保持原样。
+model BenchmarkRunQuery {
+  id               String  @id @default(uuid()) @db.Uuid
+  benchmarkRunId   String  @db.Uuid
+  // 来源语义行 / 执行镜像 Query：仅记录（非 FK，归档语义）—— 即使未来源行被删除，
+  // 快照仍完整自包含；与 MonitorTask.run.queryId 的关联经 projectQueryId 匹配。
+  benchmarkQueryId String  @db.Uuid
+  projectQueryId   String  @db.Uuid
+  queryText        String
+  category         String
+  intent           String
+  locale           String   @default("zh-CN")
+  weight           Float    @default(1)
+  sortOrder        Int
+  sanity           Boolean  @default(false)
+
+  benchmarkRun BenchmarkRun @relation(fields: [benchmarkRunId], references: [id], onDelete: Cascade)
+
+  @@unique([benchmarkRunId, sortOrder])
+  @@unique([benchmarkRunId, projectQueryId])
+  @@index([benchmarkRunId])
 }

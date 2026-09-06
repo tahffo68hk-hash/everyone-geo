@@ -15,8 +15,10 @@ import { StartBenchmarkRunDto } from "./dto/start-benchmark-run.dto";
  *   - Benchmark 是“编排层”，不重写 Monitor pipeline：每次 Run 只创建一条
  *     MonitorTask（runs = 启用的 BenchmarkQuery 镜像 × 所选 Engine），
  *     Evidence / Analysis 仍由既有 Worker 写入 —— Evidence 是唯一事实源。
- *   - 版本快照：BenchmarkRun 记录 suiteName / suiteVersion；未来编辑 Query
- *     不影响历史 Run 的解释。
+ *   - 语义快照：Run 创建瞬间把启用查询的完整语义复制进 BenchmarkRunQuery
+ *     （queryText/category/intent/locale/weight/sortOrder/sanity + 源 id）；
+ *     历史报告只读快照 → 未来编辑 Suite/Query 不改变历史 Run 的语义与指标，
+ *     要换语义必须新建 suite 版本（v2）。
  *   - demo 只允许 mock provider；real 只允许 deepseek provider 且受
  *     REAL_PROVIDER_MAX_RUNS_PER_TASK 上限保护（plannedRuns > cap 直接拒绝）。
  *   - 指标聚合复用 geolens-v1 aggregateMetrics，不发明第二套指标；报告按
@@ -40,7 +42,10 @@ interface MetricsPoolRun {
   engineProvider: string;
   benchmarkQueryId: string | null;
   category: string | null;
+  intent: string | null;
   queryText: string | null;
+  sortOrder: number | null;
+  sanity: boolean;
   analysis: MetricsAnalysis | null;
 }
 
@@ -190,6 +195,15 @@ export class BenchmarkService implements OnModuleDestroy {
           monitorTaskId: monitorTask.id, plannedRuns,
           status: "PENDING",
           metadata: { engineKey: engine.key } as JsonValue,
+          // 语义快照：复制每个启用 query 的完整语义（queryText/category/intent/
+          // locale/weight/sortOrder/sanity）。历史报告只读快照 → 未来编辑 Suite/
+          // Query 不影响已创建 Run 的语义与指标（版本化不可变性）。
+          runQueries: { create: enabledQueries.map(query => ({
+            benchmarkQueryId: query.id, projectQueryId: query.projectQueryId!,
+            queryText: query.queryText, category: query.category, intent: query.intent,
+            locale: query.locale, weight: query.weight,
+            sortOrder: query.sortOrder, sanity: query.sanity,
+          })) },
         },
       });
       return { benchmarkRun };
@@ -213,12 +227,13 @@ export class BenchmarkService implements OnModuleDestroy {
       },
     });
     if (!run) throw new NotFoundException("Benchmark Run 不存在或无权访问");
-    const benchQueries = await this.db.client.benchmarkQuery.findMany({
-      where: { suiteId: run.suiteId, projectQueryId: { not: null } },
-      select: { id: true, projectQueryId: true, queryText: true, category: true, intent: true, sortOrder: true, sanity: true },
+    // 版本化不可变性：语义只来自 Run 创建时的快照行，绝不 live-join 当前
+    // BenchmarkQuery（suite/query 未来被编辑不改变历史 Run 的解释）。
+    const snapRows = await this.db.client.benchmarkRunQuery.findMany({
+      where: { benchmarkRunId: run.id },
       orderBy: { sortOrder: "asc" },
     });
-    const byProjectQuery = new Map(benchQueries.map(query => [query.projectQueryId!, query]));
+    const byProjectQuery = new Map(snapRows.map(query => [query.projectQueryId, query]));
     const task = run.monitorTask;
     const taskRuns = task.runs.map(runRow => {
       const bench = byProjectQuery.get(runRow.queryId);
@@ -227,7 +242,7 @@ export class BenchmarkService implements OnModuleDestroy {
         errorCode: runRow.errorCode, errorMessage: runRow.errorMessage,
         analysisStatus: runRow.analysisStatus, analysisErrorCode: runRow.analysisErrorCode,
         queryId: runRow.queryId, queryText: bench?.queryText ?? runRow.query.text,
-        benchmarkQueryId: bench?.id ?? null, category: bench?.category ?? null,
+        benchmarkQueryId: bench?.benchmarkQueryId ?? null, category: bench?.category ?? null,
         intent: bench?.intent ?? null, sortOrder: bench?.sortOrder ?? null, sanity: bench?.sanity ?? false,
       };
     });
@@ -264,19 +279,23 @@ export class BenchmarkService implements OnModuleDestroy {
       },
     });
     if (!run) throw new NotFoundException("Benchmark Run 不存在或无权访问");
-    const benchQueries = await this.db.client.benchmarkQuery.findMany({
-      where: { suiteId: run.suiteId },
-      select: { id: true, projectQueryId: true, queryText: true, category: true, intent: true, sortOrder: true, sanity: true },
+    // 同 getRun：指标聚合只消费 Run 创建时的快照语义，绝不读当前 BenchmarkQuery。
+    const snapRows = await this.db.client.benchmarkRunQuery.findMany({
+      where: { benchmarkRunId: run.id },
+      orderBy: { sortOrder: "asc" },
     });
-    const byProjectQuery = new Map(benchQueries.filter(query => query.projectQueryId).map(query => [query.projectQueryId!, query]));
+    const byProjectQuery = new Map(snapRows.map(query => [query.projectQueryId, query]));
 
     const rows: MetricsPoolRun[] = run.monitorTask.runs.map(runRow => {
       const bench = byProjectQuery.get(runRow.queryId);
       const analysis = runRow.evidence?.analyses[0];
       return {
         status: runRow.status, engineProvider: runRow.engine.provider,
-        benchmarkQueryId: bench?.id ?? null, category: bench?.category ?? null,
+        benchmarkQueryId: bench?.benchmarkQueryId ?? null,
+        category: bench?.category ?? null, intent: bench?.intent ?? null,
         queryText: bench?.queryText ?? runRow.query.text,
+        sortOrder: bench?.sortOrder ?? null,
+        sanity: bench?.sanity ?? false,
         analysis: analysis ? {
           analysisVersion: analysis.analysisVersion,
           brandMentioned: analysis.brandMentioned,
@@ -309,11 +328,11 @@ export class BenchmarkService implements OnModuleDestroy {
     const categories = new Map<string, { eligible: number; mentioned: number }>();
     const byQuery = pool
       .filter(row => {
-        if (!row.benchmarkQueryId) return false;
-        return !byProjectQuery.get(row.benchmarkQueryId!)?.sanity;
+        // sanity 以 Run 创建时的快照语义为准（不随当前 Suite 编辑漂移）
+        if (!row.benchmarkQueryId || row.sanity) return false;
+        return true;
       })
       .map(row => {
-        const bench = byProjectQuery.get(row.benchmarkQueryId!);
         const eligible = row.status === "SUCCEEDED" && row.analysis?.analysisVersion === analysisVersion;
         const rowCategory = row.category;
         if (rowCategory) {
@@ -327,8 +346,8 @@ export class BenchmarkService implements OnModuleDestroy {
         const a = eligible ? row.analysis! : null;
         return {
           benchmarkQueryId: row.benchmarkQueryId, queryText: row.queryText,
-          category: row.category, intent: bench?.intent ?? null,
-          sortOrder: bench?.sortOrder ?? null,
+          category: row.category, intent: row.intent,
+          sortOrder: row.sortOrder,
           status: row.status,
           analyzed: eligible,
           brandMentioned: a?.brandMentioned ?? null,

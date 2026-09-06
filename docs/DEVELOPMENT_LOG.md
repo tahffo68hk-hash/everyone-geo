@@ -328,3 +328,32 @@ Provider、不大规模真实调用、不进 M6B/M6C/M6D。
   （响应上报 deepseek-v4-flash）的 schema 拆分——不做 schema migration、不回填历史 Evidence。
 - Control Center：M6 = IN_PROGRESS，checkpoints M6A DONE / M6B NEXT / M6C、M6D NOT_STARTED；
   Overall Progress 维持 7/8（M6 未 DONE 不计）；nextUp=M6B Competitor Discovery。
+
+## 2026-09-06 — M6A Versioning Semantic Audit（fix(m6) snapshot，未 push）
+
+M6A 最终验收前版本化语义审计。结论：原实现存在真实漂移风险 —— GET
+/benchmark-runs/:id 与 /metrics 的 byCategory/byQuery 按 suiteId live-join 当前
+BenchmarkQuery 行（queryText/category/intent/sortOrder/sanity 全部取当前值），
+只有 suiteName/suiteVersion 是快照；一旦未来编辑 Suite/Query（甚至直接改库），
+历史 Run 的解释与分类指标就会漂移。
+
+采用方案 B（Run 创建时完整 snapshot），而非 freeze：
+- 新增 migration 20260906071539_m6a_benchmark_run_query_snapshot：BenchmarkRunQuery
+  归档表（benchmarkRunId FK Cascade；benchmarkQueryId/projectQueryId/queryText/
+  category/intent/locale/weight/sortOrder/sanity 为纯归档列、非 FK —— 源行即使被
+  删除快照仍完整自包含；@unique(benchmarkRunId, sortOrder) + (benchmarkRunId,
+  projectQueryId)）。
+- startRun 在创建 BenchmarkRun 的同一事务内为每个启用 query 写一条快照（24 queries
+  → 24 条，事务原子）。
+- getRun / getMetrics 改为只读快照（Map by projectQueryId），不再触碰 BenchmarkQuery；
+  顺带修复原 sanity 排除逻辑（原代码用 benchmarkQueryId 查 projectQueryId 为 key 的
+  Map，是死代码——现改为基于快照 sanity 字段）。
+- 一次性回填脚本 backfill-benchmark-run-queries.ts（幂等，仅补 runQueries 为空的
+  run；geo_dev 实测 0 条需回填——migration 前尚无任何 BenchmarkRun）。
+- 测试：新增 2 项版本化语义 e2e ——(a) 编辑 v1 的 BenchmarkQuery(queryText/category/
+  intent) + 镜像 Query 后，GET run 的 runs[] 与 GET metrics 的 overall/byQuery/
+  byCategory 逐字段不变（toEqual 基线）；(b) 创建 v2 用新 query/category 跑 Run 后
+  v2 指标显示新语义、v1 历史 Run 报告仍等于基线。Demo Run 测试补快照计数断言
+  （startRun 后 BenchmarkRunQuery = 24）。benchmark e2e 17/17；全套 api e2e 49/49
+  （M3/M4/M5 回归）；worker 24/24（含 benchmark.integration 2/2）。
+- geo_dev + geo_test 均已 migrate deploy。未进 M6B、无真实 DeepSeek 调用。
