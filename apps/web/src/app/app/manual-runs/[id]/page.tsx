@@ -66,8 +66,25 @@ function ManualRunInner() {
 
   const load = useCallback(async () => {
     setError("");
-    try { setWs(await api<ManualWorkspace>(`/manual-runs/${id}`)); }
-    catch (e) { setError(friendlyError(e)); }
+    try {
+      const data = await api<ManualWorkspace>(`/manual-runs/${id}`);
+      setWs(data);
+      // workspace 到达后一次性保证每个 row 都有「完整」的 editing state。
+      // 只补缺失行（??= 语义），绝不覆盖当前未提交的用户输入 ——
+      // 刷新/提交后重新 load 不会清空其它行正在输入的内容。
+      // render 期仍有 `?? createEmptyEditing()` 兜底，但 state 层显式
+      // 初始化才是「value 恒为 string/枚举」的真正保证。
+      if (data.runs.length > 0) {
+        setEditing(prev => {
+          let changed = false;
+          const next: Record<string, Editing> = { ...prev };
+          for (const row of data.runs) {
+            if (!next[row.id]) { next[row.id] = emptyEditing(); changed = true; }
+          }
+          return changed ? next : prev;
+        });
+      }
+    } catch (e) { setError(friendlyError(e)); }
   }, [id]);
 
   useEffect(() => { void load(); }, [load]);
