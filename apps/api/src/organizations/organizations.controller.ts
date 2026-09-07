@@ -41,7 +41,14 @@ export class OrganizationsController {
         members: {
           include: { user: { select: { id: true, email: true, name: true } } },
         },
-        projects: { orderBy: { createdAt: "asc" } },
+        projects: {
+          // 工作台依赖 project.brands 展示监测对象；relation 必须显式 include，
+          // 否则 Prisma 序列化会整体缺失该 key（undefined），导致前端 p.brands.length 崩溃。
+          include: {
+            brands: { select: { id: true, name: true }, orderBy: { createdAt: "asc" } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
       },
     });
   }
