@@ -110,6 +110,8 @@ export class BenchmarkService implements OnModuleDestroy {
     if (existing) {
       throw new BadRequestException(`Benchmark Suite「${dto.name} v${dto.version}」已存在；请递增 version 或改名。`);
     }
+    // queries 允许缺省/空：新建空 Query Set（后续经 suite 详情页追加问题）也是合法流程。
+    const queries = dto.queries ?? [];
     // M8E：createSuite 也执行 Target Contamination Guard —— primary Brand 即监测对象；
     // DISCOVERY query 含目标 ⇒ 400（会虚高自然可见度）。无 target 时跳过（无法判断）。
     const primaryBrand = (await this.db.client.brand.findMany({
@@ -120,7 +122,7 @@ export class BenchmarkService implements OnModuleDestroy {
     const targetIdentity = primaryBrand
       ? { canonicalName: primaryBrand.name, aliases: primaryBrand.aliases }
       : null;
-    for (const [index, query] of dto.queries.entries()) {
+    for (const [index, query] of queries.entries()) {
       const queryType = query.queryType ?? (query.sanity === true ? "BRANDED_SANITY" : null);
       if (queryType === "DISCOVERY" && targetIdentity) {
         const c = detectTargetContamination(query.queryText, targetIdentity);
@@ -132,7 +134,7 @@ export class BenchmarkService implements OnModuleDestroy {
     // 排序：显式 sortOrder 或按数组顺序；重复 sortOrder / queryText 直接拒绝。
     const byOrder = new Map<number, number>();
     const seenText = new Set<string>();
-    for (const [index, query] of dto.queries.entries()) {
+    for (const [index, query] of queries.entries()) {
       const order = query.sortOrder ?? index;
       if (byOrder.has(order)) throw new BadRequestException(`queries 中存在重复 sortOrder=${order}`);
       byOrder.set(order, index);
@@ -151,7 +153,7 @@ export class BenchmarkService implements OnModuleDestroy {
         data: {
           projectId: project.id, name: dto.name, version: dto.version,
           description: dto.description ?? null,
-          queries: { create: dto.queries.map((query, index) => {
+          queries: { create: queries.map((query, index) => {
             // M8E：queryType 显式语义（DISCOVERY / BRANDED_SANITY / CUSTOM）。
             // legacy 兼容：不传 queryType 时按 sanity 推导（sanity=true ⇒ BRANDED_SANITY；
             // 否则保持 null=legacy，由 metrics 端按 sanity 口径解释，避免历史语义漂移）。
@@ -489,7 +491,7 @@ export class BenchmarkService implements OnModuleDestroy {
   }
 
   private presentSuite(suite: {
-    id: string; name: string; version: string; description: string | null;
+    projectId: string; id: string; name: string; version: string; description: string | null;
     status: string; createdAt: Date; updatedAt: Date;
     queries: Array<{
       id: string; queryText: string; category: string; intent: string; sortOrder: number;
@@ -505,7 +507,7 @@ export class BenchmarkService implements OnModuleDestroy {
     const effectiveType = (q: { queryType: string | null; sanity: boolean }) => q.queryType ?? (q.sanity ? "BRANDED_SANITY" : null);
     const enabled = suite.queries.filter(query => query.enabled && !query.sanity).length;
     return {
-      id: suite.id, name: suite.name, version: suite.version,
+      projectId: suite.projectId, id: suite.id, name: suite.name, version: suite.version,
       description: suite.description, status: suite.status,
       queryCount: enabled,
       discoveryCount: suite.queries.filter(query => query.enabled && effectiveType(query) === "DISCOVERY").length,

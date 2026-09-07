@@ -1,7 +1,6 @@
 import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
-  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -89,10 +88,10 @@ export class CreateBenchmarkSuiteDto {
   @Length(0, 500)
   description?: string;
 
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => BenchmarkQueryDto)
-  queries!: BenchmarkQueryDto[];
+  queries?: BenchmarkQueryDto[];
 }
