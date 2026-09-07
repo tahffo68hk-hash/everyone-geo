@@ -128,6 +128,12 @@ export default function AppPage() {
         <Link href="/app/site-assets" className="inline-block rounded-lg border border-violet-700 px-4 py-2 text-sm font-medium text-violet-700 hover:bg-violet-50">
           站点资产
         </Link>
+        <Link href="/app/target" className="inline-block rounded-lg border border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50">
+          监测对象
+        </Link>
+        <Link href="/app/queries" className="inline-block rounded-lg border border-sky-700 px-4 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50">
+          监测问题
+        </Link>
       </div>
 
       {me && me.organizations.length === 0 ? (

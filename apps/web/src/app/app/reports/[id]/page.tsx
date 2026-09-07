@@ -25,6 +25,10 @@ type Report = {
   generatedAt: string;
   metricsSnapshot: {
     metricVersion: string;
+    metricQueryScope?: string | null;
+    metricScopeQueryCount?: number | null;
+    excludedSanityCount?: number | null;
+    excludedContaminatedCount?: number | null;
     overall: {
       visibilityRate: number | null; recommendationRate: number | null; averageMentionPosition: number | null;
       shareOfVoice: number | null; citationCount: number; citationDomainCount: number;
@@ -113,6 +117,14 @@ export default function ReportDetailPage() {
         {/* 核心指标 */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-semibold">核心指标</h2>
+          {snap.metricQueryScope && (
+            <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              核心指标样本：{snap.metricQueryScope}（{snap.metricScopeQueryCount ?? "—"} 个可用问题
+              {snap.excludedSanityCount ? ` · 排除品牌认知测试 ${snap.excludedSanityCount} 个` : ""}
+              {snap.excludedContaminatedCount ? ` · 排除含品牌自定义问题 ${snap.excludedContaminatedCount} 个` : ""}）。
+              品牌认知测试不混入核心可见度指标。
+            </p>
+          )}
           <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
             {[
               ["品牌可见率", percent(snap.overall.visibilityRate)],

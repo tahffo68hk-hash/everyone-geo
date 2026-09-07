@@ -946,3 +946,93 @@ export const PILOT_NAV = {
   realPilotPending: "真实试点待用户授权（REAL_PILOT_PENDING_USER_APPROVAL）",
   realPilotBlocked: "真实试点因测量路径无效受阻（REAL_PILOT_BLOCKED_BY_MEASUREMENT）",
 } as const;
+
+
+/* ---------------------------------------------------------------
+ * M8E — 监测对象 / 问题集 / 问题生成器 / 品牌认知测试
+ * ---------------------------------------------------------------- */
+export const TARGET_ENTITY_TYPE: Dict = {
+  BRAND: "品牌", PRODUCT: "产品", SERVICE: "服务", ORGANIZATION: "组织", OTHER: "其他",
+};
+export const formatTargetEntityType = (value: string | null | undefined): string =>
+  fallback(lookup(TARGET_ENTITY_TYPE, value), value ?? "");
+
+export const ALIAS_TYPE: Dict = {
+  OFFICIAL: "官方", PRODUCT: "产品名", ABBREVIATION: "缩写", LOCALIZED: "本地化", CUSTOM: "自定义",
+};
+export const formatAliasType = (value: string | null | undefined): string =>
+  fallback(lookup(ALIAS_TYPE, value), value ?? "");
+
+export const QUERY_TYPE_LABEL: Dict = {
+  DISCOVERY: "自然发现", BRANDED_SANITY: "品牌认知测试", CUSTOM: "自定义",
+};
+export const formatQueryType = (value: string | null | undefined): string =>
+  fallback(lookup(QUERY_TYPE_LABEL, value), value ?? "未分类");
+
+export const QUERY_SOURCE_LABEL: Dict = {
+  MANUAL: "手动添加", BUILDER: "问题生成器", IMPORT: "批量导入", SEED: "示例/种子",
+};
+export const formatQuerySource = (value: string | null | undefined): string =>
+  fallback(lookup(QUERY_SOURCE_LABEL, value), value ?? "");
+
+export const TARGET_CHECK_LABEL: Dict = {
+  CLEAN: "✓ 未包含目标品牌", TARGET_MENTIONED: "含目标品牌", POSSIBLE_TARGET_MENTION: "可能含目标（URL 内）",
+};
+export const formatTargetCheck = (value: string | null | undefined): string =>
+  fallback(lookup(TARGET_CHECK_LABEL, value), value ?? "—");
+
+export const QUERY_INTENT_LABEL: Dict = {
+  RECOMMEND: "推荐", HOW_TO: "怎么做", COMPARE: "对比", PROBLEM_SOLVING: "问题解决", INFORMATIONAL: "了解",
+};
+export const formatQueryIntent = (value: string | null | undefined): string =>
+  fallback(lookup(QUERY_INTENT_LABEL, value), value ?? "");
+
+export const TARGET_NAV = {
+  title: "监测对象",
+  empty: "还没有设置监测对象",
+  emptyHint: "请先设置监测对象（品牌/产品名称与产品类别），之后才能开始 GEO 检测。",
+  canonicalName: "监测名称",
+  entityType: "实体类型",
+  productCategory: "产品类别",
+  productCategoryHint: "这个产品属于什么类别？如：大学生创新创业 AI 工具、CRM SaaS、洗地机。（自由文本）",
+  website: "官网地址",
+  description: "简介（可选）",
+  aliases: "品牌别名",
+  aliasesHint: "别名用于识别 AI 回答中出现的品牌（如 Project Mentor / 项目导师）。",
+  addAlias: "添加别名",
+  aliasType: "别名类型",
+  save: "保存监测对象",
+  historyNote: "修改只影响之后的新检测。历史 Evidence、Analysis 和报告不会重新计算。",
+  noAlias: "暂无别名",
+} as const;
+
+export const QUERY_WORKSPACE_NAV = {
+  title: "监测问题",
+  pageHint: "把这些真实用户问题发给所选 AI，并检测回答中是否自然出现你的品牌。",
+  empty: "还没有监测问题集",
+  emptyHint: "创建问题集后，GeoLens 会把这些真实用户问题发送给所选 AI，并检测回答中是否自然出现你的品牌。",
+  create: "创建问题集",
+  discoveryNote: "自然发现问题不包含目标品牌，用于衡量 AI 是否会自然提及或推荐你的品牌。",
+  queryBuilder: "问题生成器",
+  builderNote: "根据场景和用户意图组合问题（确定性模板，不调用 AI）。",
+  importText: "批量导入",
+  importNote: "每行一个问题；导入前先预览与品牌检查。",
+  addQuery: "添加问题",
+  tableColumns: { query: "问题", type: "类型", category: "类目", intent: "意图", locale: "语言", weight: "权重", source: "来源", targetCheck: "品牌检查", enabled: "启用" },
+  runBenchmark: "开始 GEO 检测",
+  cloneVersion: "复制为新版本",
+  runPreflight: "开始检测前请确认",
+  discoveryQueries: "自然发现问题",
+  sanityQueries: "品牌认知测试",
+  engines: "AI 模型",
+  plannedRuns: "计划运行",
+  realDemo: "真实 / 演示",
+  preflightNote: "运行 AI 检测 ≠ 联网搜索；检索模式取决于所选引擎（api_plain 不联网）。",
+} as const;
+
+export const TARGET_LEAK_ERROR = "该问题包含当前监测品牌，会使自然可见度指标偏高。请移除品牌名，或改为品牌认知测试。";
+export const CONTAMINATION = {
+  targetPresentInDiscovery: "该问题包含当前监测品牌，会使自然可见度指标偏高。请移除品牌名，或改为品牌认知测试。",
+  customContainsTarget: "自定义问题含监测品牌，不计入自然可见度主指标（如需品牌测试请用品牌认知测试类型）。",
+  sanityNoBrand: "品牌认知测试通常应包含品牌名；若该问题不含品牌，请确认是否作为品牌认知测试保留。",
+} as const;
