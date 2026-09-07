@@ -12,7 +12,7 @@ import {
 type Project = { id: string; name: string };
 type TargetBrief = { canonicalName: string; productCategory: string | null };
 type Suite = {
-  id: string; name: string; version: string; description: string | null;
+  id: string; projectId: string; name: string; version: string; description: string | null;
   queryCount: number; discoveryCount: number; sanityQueryCount: number; customCount: number;
   queries: Array<{
     id: string; queryText: string; category: string; intent: string; enabled: boolean;
@@ -30,6 +30,7 @@ const TYPE_BADGE: Record<string, string> = {
 function SuiteInner() {
   const { id } = useParams<{ id: string }>();
   const [suite, setSuite] = useState<Suite | null>(null);
+  const [suiteProjectId, setSuiteProjectId] = useState("");
   const [target, setTarget] = useState<TargetBrief | null>(null);
   const [engines, setEngines] = useState<Engine[]>([]);
   const [error, setError] = useState("");
@@ -65,34 +66,41 @@ function SuiteInner() {
     try {
       const s = await api<Suite>(`/benchmark-suites/${id}`);
       setSuite(s);
+      setSuiteProjectId(s.projectId ?? "");
     } catch (e) { setError(friendlyError(e)); }
   }, [id]);
+
+  // Target 一律按「本问题集所属项目」读取，保证多项目隔离下上下文不错配。
+  useEffect(() => {
+    if (!suiteProjectId) return;
+    api<TargetBrief | null>(`/projects/${encodeURIComponent(suiteProjectId)}/target-profile`)
+      .then(t => {
+        setTarget(t);
+        if (t?.productCategory) setBCategory(prev => prev || t.productCategory!);
+      })
+      .catch(() => undefined);
+  }, [suiteProjectId]);
 
   useEffect(() => {
     void load();
     api<{ projects: Project[]; engines: Engine[] }>("/monitor-tasks/options")
       .then(d => {
-        const first = d.projects[0];
-        if (first) {
-          void api<TargetBrief | null>(`/projects/${first.id}/target-profile`).then(t => {
-            setTarget(t);
-            if (t?.productCategory) setBCategory(t.productCategory);
-          }).catch(() => undefined);
-        }
         setEngines(d.engines);
         const mock = d.engines.find(e => e.provider === "mock");
         if (mock) setEngineId(mock.id);
       })
       .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const split = (s: string) => s.split(/[,，\n]/).map(x => x.trim()).filter(Boolean);
 
   async function previewBuilder() {
+    if (!suiteProjectId) return;
     setBusy(true); setError("");
     try {
       const r = await api<{ estimated: number; targetContaminated: number; rows: PreviewRow[] }>(
-        `/projects/${encodeURIComponent((await api<{ projects: Project[] }>("/monitor-tasks/options")).projects[0]?.id ?? "")}/query-builder/preview`,
+        `/projects/${encodeURIComponent(suiteProjectId)}/query-builder/preview`,
         { method: "POST", body: JSON.stringify({ category: bCategory, scenario: split(bScenario), intents: split(bIntents), audience: split(bAudience), modifiers: split(bModifiers) }) },
       );
       setBuilderMeta({ estimated: r.estimated, targetContaminated: r.targetContaminated });
@@ -119,11 +127,12 @@ function SuiteInner() {
   }
 
   async function previewImport() {
+    if (!suiteProjectId) return;
     const lines = importText.split("\n").filter(l => l.trim());
     if (lines.length === 0) return;
     setBusy(true); setError("");
     try {
-      const pid = (await api<{ projects: Project[] }>("/monitor-tasks/options")).projects[0]?.id ?? "";
+      const pid = suiteProjectId;
       const r = await api<{ rows: PreviewRow[] }>(`/projects/${encodeURIComponent(pid)}/queries/import-preview`, {
         method: "POST", body: JSON.stringify({ lines }),
       });
@@ -195,7 +204,7 @@ function SuiteInner() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href="/app/queries" className="text-xs text-blue-700 hover:underline">← 返回问题集</Link>
+          <Link href={`/app/queries?project=${suiteProjectId}`} className="text-xs text-blue-700 hover:underline">← 返回问题集</Link>
           <h1 className="mt-1 text-xl font-semibold text-slate-800">{suite?.name} <span className="text-slate-400">v{suite?.version}</span></h1>
           {suite && (
             <p className="mt-1 text-xs text-slate-500">

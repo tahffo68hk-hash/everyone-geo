@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
   formatAliasType, formatTargetEntityType, friendlyError, TARGET_NAV,
@@ -15,6 +16,8 @@ type Target = {
 };
 
 function TargetInner() {
+  const params = useSearchParams();
+  const projectParam = params.get("project");
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [target, setTarget] = useState<Target | null>(null);
@@ -26,8 +29,13 @@ function TargetInner() {
 
   useEffect(() => {
     api<{ projects: Project[] }>("/monitor-tasks/options")
-      .then(d => { setProjects(d.projects); if (d.projects[0]) setProjectId(d.projects[0]!.id); })
+      .then(d => {
+        setProjects(d.projects);
+        const requested = projectParam ? d.projects.find(p => p.id === projectParam) : undefined;
+        setProjectId((requested ?? d.projects[0])?.id ?? "");
+      })
       .catch(e => setError(friendlyError(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function load() {
@@ -175,8 +183,10 @@ function TargetInner() {
 
 export default function TargetPage() {
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6">
-      <TargetInner />
-    </div>
+    <Suspense fallback={<div className="mx-auto max-w-3xl px-4 py-6"><p className="text-sm text-slate-500">正在加载监测对象…</p></div>}>
+      <div className="mx-auto max-w-3xl px-4 py-6">
+        <TargetInner />
+      </div>
+    </Suspense>
   );
 }

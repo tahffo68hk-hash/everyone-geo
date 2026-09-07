@@ -29,7 +29,8 @@ type MeResponse = {
   organizations: Organization[];
 };
 
-type ProjectBrand = { id: string; name: string };
+type ProjectBrand = { id: string; name: string; entityType?: string | null; productCategory?: string | null; website?: string | null };
+type LatestRun = { id: string; status: string; runType: string; createdAt: string };
 
 /**
  * API 返回的原始 project。brands 为 optional relation：
@@ -43,16 +44,32 @@ type RawProject = {
   description: string | null;
   status: string;
   brands?: Array<ProjectBrand> | null;
+  _count?: { benchmarkSuites?: number };
+  benchmarkRuns?: Array<LatestRun> | null;
 };
 
-type Project = Omit<RawProject, "brands"> & { brands: ProjectBrand[] };
+type Project = Omit<RawProject, "brands" | "_count" | "benchmarkRuns"> & {
+  brands: ProjectBrand[];
+  suiteCount: number;
+  latestRun: LatestRun | null;
+};
 
 function normalizeProject(p: RawProject): Project {
   return {
     ...p,
     brands: Array.isArray(p.brands) ? p.brands : [],
+    suiteCount: p._count?.benchmarkSuites ?? 0,
+    latestRun:
+      Array.isArray(p.benchmarkRuns) && p.benchmarkRuns[0] ? p.benchmarkRuns[0] : null,
   };
 }
+
+/** BenchmarkRun 状态 → 中文（工作台卡片摘要）。 */
+const RUN_STATUS_LABEL: Record<string, string> = {
+  PENDING: "排队中", QUEUED: "排队中", RUNNING: "检测中",
+  SUCCEEDED: "成功", PARTIAL: "部分成功", FAILED: "失败", CANCELLED: "已取消",
+  AWAITING_MANUAL_INPUT: "待人工录入", SKIPPED: "已跳过",
+};
 
 export default function AppPage() {
   const router = useRouter();
@@ -119,7 +136,13 @@ export default function AppPage() {
         </button>
       </header>
 
-      <div className="mb-6 flex flex-wrap gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <Link
+          href={`/app/projects/new?org=${selectedOrg?.id ?? me?.organizations[0]?.id ?? ""}`}
+          className="inline-block rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+        >
+          + 新建监测项目
+        </Link>
         <Link href="/app/monitor" className="inline-block rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800">
           创建监测任务
         </Link>
@@ -186,48 +209,78 @@ export default function AppPage() {
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="mb-4 text-sm font-semibold text-slate-700">
-              项目（租户隔离验证）
-            </h2>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-700">我的项目</h2>
+              <Link href={`/app/projects/new?org=${selectedOrg?.id ?? me?.organizations[0]?.id ?? ""}`} className="text-xs font-medium text-blue-700 hover:underline">+ 新建监测项目</Link>
+            </div>
             {projects.length === 0 ? (
-              <p className="text-sm text-slate-400">该组织暂无项目。</p>
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 px-6 py-10 text-center">
+                <p className="text-sm font-medium text-slate-600">还没有监测项目</p>
+                <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">
+                  创建一个品牌或产品，配置真实用户问题，GeoLens 会检测 AI 回答中是否自然提到你的品牌。
+                </p>
+                <Link
+                  href={`/app/projects/new?org=${selectedOrg?.id ?? me?.organizations[0]?.id ?? ""}`}
+                  className="mt-4 inline-block rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  创建第一个监测项目
+                </Link>
+              </div>
             ) : (
               <ul className="space-y-3">
-                {projects.map((p) => (
-                  <li
-                    key={p.id}
-                    className="rounded-xl border border-slate-200 p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-900">
-                        {p.name}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs ${
-                          p.status === "ACTIVE"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {formatProjectStatus(p.status)}
-                      </span>
-                    </div>
-                    {p.description && (
-                      <p className="mt-1 text-sm text-slate-500">
-                        {p.description}
-                      </p>
-                    )}
-                    {p.brands.length > 0 ? (
-                      <p className="mt-2 text-xs text-slate-400">
-                        品牌：{p.brands.map((b) => b.name).join("、")}
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-xs text-slate-300">
-                        尚未设置监测对象
-                      </p>
-                    )}
-                  </li>
-                ))}
+                {projects.map((p) => {
+                  const brand = p.brands[0] ?? null;
+                  const hasTarget = Boolean(brand?.name);
+                  return (
+                    <li key={p.id} className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-slate-900">{p.name}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs ${
+                            p.status === "ACTIVE"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {formatProjectStatus(p.status)}
+                        </span>
+                      </div>
+                      {p.description && (
+                        <p className="mt-1 text-sm text-slate-500">{p.description}</p>
+                      )}
+                      {hasTarget ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800">
+                            监测对象：{brand!.name}
+                          </span>
+                          {brand!.productCategory && (
+                            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                              产品类别：{brand!.productCategory}
+                            </span>
+                          )}
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                            {p.suiteCount} 个问题集
+                          </span>
+                          {p.latestRun && (
+                            <span className="text-xs text-slate-500">
+                              最近检测：{RUN_STATUS_LABEL[p.latestRun.status] ?? p.latestRun.status}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-800">尚未设置监测对象</span>
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.suiteCount} 个问题集</span>
+                          <Link href={`/app/target?project=${p.id}`} className="text-xs font-medium text-blue-700 hover:underline">继续设置 →</Link>
+                        </div>
+                      )}
+                      <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                        <Link href={`/app/queries?project=${p.id}`} className="font-medium text-slate-700 hover:text-blue-700">问题集</Link>
+                        <Link href={`/app/target?project=${p.id}`} className="font-medium text-slate-700 hover:text-blue-700">监测对象</Link>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

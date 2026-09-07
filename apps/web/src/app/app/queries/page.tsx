@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
   formatQueryType, friendlyError, formatTargetEntityType, QUERY_WORKSPACE_NAV,
@@ -19,6 +20,8 @@ type Suite = {
 };
 
 function QueriesInner() {
+  const params = useSearchParams();
+  const projectParam = params.get("project");
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [target, setTarget] = useState<TargetBrief | null>(null);
@@ -29,8 +32,13 @@ function QueriesInner() {
 
   useEffect(() => {
     api<{ projects: Project[] }>("/monitor-tasks/options")
-      .then(d => { setProjects(d.projects); if (d.projects[0]) setProjectId(d.projects[0]!.id); })
+      .then(d => {
+        setProjects(d.projects);
+        const requested = projectParam ? d.projects.find(p => p.id === projectParam) : undefined;
+        setProjectId((requested ?? d.projects[0])?.id ?? "");
+      })
       .catch(e => setError(friendlyError(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function load() {
@@ -84,12 +92,12 @@ function QueriesInner() {
             {target.aliases.filter(a => a.enabled).length > 0 && (
               <span className="text-xs text-emerald-700">别名：{target.aliases.filter(a => a.enabled).map(a => a.alias).join("、")}</span>
             )}
-            <Link href="/app/target" className="ml-auto text-xs text-blue-700 hover:underline">修改监测对象 →</Link>
+            <Link href={`/app/target?project=${projectId}`} className="ml-auto text-xs text-blue-700 hover:underline">修改监测对象 →</Link>
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
             <span>{QUERY_WORKSPACE_NAV.emptyHint}</span>
-            <Link href="/app/target" className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700">设置监测对象 →</Link>
+            <Link href={`/app/target?project=${projectId}`} className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700">设置监测对象 →</Link>
           </div>
         )}
       </section>
@@ -145,8 +153,10 @@ function QueriesInner() {
 
 export default function QueriesPage() {
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6">
-      <QueriesInner />
-    </div>
+    <Suspense fallback={<div className="mx-auto max-w-5xl px-4 py-6"><p className="text-sm text-slate-500">正在加载问题集…</p></div>}>
+      <div className="mx-auto max-w-5xl px-4 py-6">
+        <QueriesInner />
+      </div>
+    </Suspense>
   );
 }
