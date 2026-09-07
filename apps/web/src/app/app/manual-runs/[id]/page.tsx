@@ -50,6 +50,20 @@ function ManualRunInner() {
   const [skipReason, setSkipReason] = useState<Record<string, string>>({});
   const [busySkip, setBusySkip] = useState<string | null>(null);
 
+  /**
+   * 受控表单状态补丁。Editing 的每个字段都必须始终是字符串/布尔/null 的完整形状：
+   * 直接 { ...prev[row.id], ...patch } 在该行还没有记录时（prev[row.id] === undefined）
+   * 会产出缺键对象，导致后续 render 中其它 input 的 value 变成 undefined，
+   * React 判定「uncontrolled → controlled」并告警。
+   * 这里始终以 emptyEditing() 为基底合并，保证任意首写都补齐全部字段。
+   */
+  const patchEditing = useCallback((rowId: string, patch: Partial<Editing>) => {
+    setEditing(prev => {
+      const base = prev[rowId] ?? emptyEditing();
+      return { ...prev, [rowId]: { ...base, ...patch } };
+    });
+  }, []);
+
   const load = useCallback(async () => {
     setError("");
     try { setWs(await api<ManualWorkspace>(`/manual-runs/${id}`)); }
@@ -59,10 +73,10 @@ function ManualRunInner() {
   useEffect(() => { void load(); }, [load]);
 
   async function submitEvidence(row: ManualRow) {
-    const ed = editing[row.id];
+    const ed = editing[row.id] ?? emptyEditing();
     if (!ed || !ed.rawResponse.trim()) { setNotice("请先粘贴完整回答。"); return; }
     if (ed.retrieval === null) { setNotice("请确认是否联网检索（是/无法确认）。"); return; }
-    setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, submitting: true, error: "" } }));
+    patchEditing(row.id, { submitting: true, error: "" });
     try {
       await api(`/runs/${row.id}/manual-evidence`, {
         method: "POST",
@@ -80,7 +94,7 @@ function ManualRunInner() {
       setEditing(prev => ({ ...prev, [row.id]: emptyEditing() }));
       setNotice("证据已提交并通过自动分析。");
       await load();
-    } catch (e) { setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, error: friendlyError(e), submitting: false } })); }
+    } catch (e) { patchEditing(row.id, { error: friendlyError(e), submitting: false }); }
   }
 
   async function skipRow(row: ManualRow) {
@@ -201,8 +215,8 @@ function ManualRunInner() {
                       <label className="block">
                         <span className="text-[11px] text-slate-500">{MANUAL_NAV.rawResponse}</span>
                         <textarea
-                          value={ed.rawResponse}
-                          onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, rawResponse: e.target.value } }))}
+                          value={ed.rawResponse ?? ""}
+                          onChange={e => patchEditing(row.id, { rawResponse: e.target.value })}
                           className="mt-0.5 w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-800"
                           rows={6}
                           placeholder={MANUAL_NAV.rawResponseHint}
@@ -210,36 +224,36 @@ function ManualRunInner() {
                       </label>
                       <label className="block">
                         <span className="text-[11px] text-slate-500">{MANUAL_NAV.displayedModel}</span>
-                        <input value={ed.displayedModel} onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, displayedModel: e.target.value } }))} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="如 Qwen3-Web（可选）" />
+                        <input value={ed.displayedModel ?? ""} onChange={e => patchEditing(row.id, { displayedModel: e.target.value })} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="如 Qwen3-Web（可选）" />
                       </label>
                       <div>
                         <span className="text-[11px] text-slate-500">{MANUAL_NAV.retrievalConfirm}</span>
                         <div className="mt-1 flex gap-2">
                           {(["confirmed", "unknown"] as const).map(k => (
                             <button key={k} type="button"
-                              onClick={() => setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, retrieval: k } }))}
+                              onClick={() => patchEditing(row.id, { retrieval: k })}
                               className={`rounded-lg border px-3 py-1.5 text-xs ${ed.retrieval === k ? (k === "confirmed" ? "border-teal-600 bg-teal-50 text-teal-800" : "border-amber-600 bg-amber-50 text-amber-800") : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
                               {k === "confirmed" ? MANUAL_NAV.retrievalYes : MANUAL_NAV.retrievalNo}
                             </button>
                           ))}
                         </div>
                         {ed.retrieval === "confirmed" && (
-                          <input value={ed.signals} onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, signals: e.target.value } }))}
+                          <input value={ed.signals ?? ""} onChange={e => patchEditing(row.id, { signals: e.target.value })}
                             className="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="你如何确认？如：界面显示联网搜索 / 显示网页来源 / 显示引用链接" />
                         )}
                       </div>
                       <label className="block">
                         <span className="text-[11px] text-slate-500">{MANUAL_NAV.notes}</span>
-                        <input value={ed.notes} onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, notes: e.target.value } }))} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="可选" />
+                        <input value={ed.notes ?? ""} onChange={e => patchEditing(row.id, { notes: e.target.value })} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="可选" />
                       </label>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="block">
                           <span className="text-[11px] text-slate-500">{MANUAL_NAV.observedAt}</span>
-                          <input type="datetime-local" value={ed.observedAt} onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, observedAt: e.target.value } }))} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                          <input type="datetime-local" value={ed.observedAt ?? ""} onChange={e => patchEditing(row.id, { observedAt: e.target.value })} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
                         </label>
                         <label className="block">
                           <span className="text-[11px] text-slate-500">{MANUAL_NAV.citations}</span>
-                          <textarea value={ed.citations} onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...prev[row.id]!, citations: e.target.value } }))} className="mt-0.5 w-full rounded-lg border border-slate-300 p-1.5 text-xs" rows={1} placeholder={MANUAL_NAV.citations} />
+                          <textarea value={ed.citations ?? ""} onChange={e => patchEditing(row.id, { citations: e.target.value })} className="mt-0.5 w-full rounded-lg border border-slate-300 p-1.5 text-xs" rows={1} placeholder={MANUAL_NAV.citations} />
                         </label>
                       </div>
                       {ed.error && <p className="rounded bg-rose-50 px-2 py-1 text-xs text-rose-700">{ed.error}</p>}
