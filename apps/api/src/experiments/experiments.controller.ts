@@ -4,6 +4,7 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { ExperimentsService } from "./experiments.service";
 import { CreateExecutionDto } from "./dto/create-execution.dto";
 import { UpdateExperimentStatusDto } from "./dto/update-experiment-status.dto";
+import { UpdateExperimentTargetDto } from "./dto/update-experiment-target.dto";
 
 /**
  * M7D Optimization Experiment & Re-test API（auth + tenant + DB isolation）。
@@ -29,6 +30,18 @@ export class ExperimentsController {
   @Get("experiments/:id")
   get(@CurrentUser() user: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
     return this.experiments.getExperiment(user.sub, id);
+  }
+
+  /** M8A：实验测量有效性（冻结的 Baseline 判定 + WEB_CONTENT guard 说明）。 */
+  @Get("experiments/:id/measurement-validity")
+  measurementValidity(@CurrentUser() user: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.experiments.getMeasurementValidity(user.sub, id);
+  }
+
+  /** M8C：标记实验验证目标（MODEL_BEHAVIOR ↔ WEB_CONTENT）。 */
+  @Patch("experiments/:id/measurement-target")
+  setMeasurementTarget(@CurrentUser() user: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateExperimentTargetDto) {
+    return this.experiments.setTargetChangeType(user.sub, id, dto.targetChangeType);
   }
 
   @Get("experiments/:id/executions")

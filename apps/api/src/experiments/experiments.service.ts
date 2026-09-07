@@ -2,8 +2,9 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from "@nes
 import type { Prisma } from "@geo/database";
 import {
   EVALUATION_VERSION, EXPERIMENT_VERSION, evaluateExperiment, fingerprintQuerySet,
+  aggregateMeasurementFacts, factsFromRetrievalModes, measurementGuard,
   type ExperimentEvaluationInput, type ExperimentQueryFact, type ExperimentReportFacts,
-  type QueryFingerprintRow,
+  type MeasurementModeFact, type QueryFingerprintRow,
 } from "@geo/core";
 import { PrismaService } from "../prisma.service";
 import { BenchmarkService } from "../benchmark/benchmark.service";
@@ -22,9 +23,15 @@ import { UpdateExperimentStatusDto } from "./dto/update-experiment-status.dto";
  *   3) Evaluation 生成即 immutable snapshot（evaluationVersion 幂等）；
  *      Demo/Real 隔离 + Real Provider Guard + 时序 guard + coverage guard。
  *   4) Execution 只做用户确认的变更记录；绝不自动修改/验证外部页面。
+ *   5) M8A Measurement Guard：创建实验时把 Baseline 测量有效性（来自 Evidence
+ *      retrievalMode/sourceType 快照）冻结在 measurement* 列。当实验被标记为
+ *      WEB_CONTENT 目标（真实网页优化试点）时，evaluate 会检查 After 测量路径：
+ *      api_plain/演示 ⇒ outcome 降级 INCONCLUSIVE + INVALID_MEASUREMENT warning，
+ *      禁止把模型 API 行为变化当作“网页优化已验证”。
  */
 type JsonValue = Prisma.InputJsonValue;
 const logger = new Logger("ExperimentsService");
+type MeasurementVerdictRow = { retrievalMode: string; sourceType: string };
 
 @Injectable()
 export class ExperimentsService {
@@ -80,6 +87,11 @@ export class ExperimentsService {
       `该假设为待验证方向（“可能”改善，非“一定”提升），结论须以受控复测观察为准，不能解读为严格因果证明。`;
 
     const engine = report.benchmarkRun?.engine ?? null;
+
+    // ---- M8A：冻结 Baseline 测量有效性（来自 baseline run 的 Evidence retrieval 快照）----
+    const measurementFacts = await this.measurementRowsForRun(report.benchmarkRunId);
+    const measurement = aggregateMeasurementFacts(factsFromRetrievalModes(measurementFacts));
+
     const created = await this.db.client.optimizationExperiment.create({
       data: {
         projectId: opp.opportunityRun.projectId,
@@ -91,6 +103,9 @@ export class ExperimentsService {
         baselineReportId: report.id,
         querySetFingerprint: fingerprint,
         metricSource: report.metricSource,
+        measurementValidity: measurement.verdict,
+        measurementMode: measurement.mode,
+        measurementWarnings: JSON.parse(JSON.stringify(measurement.reasons)) as JsonValue,
         provider: engine?.provider ?? report.provider,
         engineId: engine?.id ?? null,
         engineKey: report.engineKey,
@@ -106,13 +121,14 @@ export class ExperimentsService {
           contentOpportunityTitleDirection: opp.titleDirection,
           contentOpportunityType: opp.opportunityType,
           expectedSignals: signals,
+          targetChangeType: "MODEL_BEHAVIOR", // 默认非网页目标；M8C Pilot 绑定站点资产后置 WEB_CONTENT
           generatedBy: "m7d-experiment-v1",
           note: "Observed Outcome ≠ proven causal effect；真正结论需用户正式验收并考虑多次 Re-test。",
         } as JsonValue,
       },
     });
 
-    logger.log(JSON.stringify({ event: "experiment_created", experimentId: created.id, contentOpportunityId: opp.id, baselineReportId: report.id, experimentVersion: EXPERIMENT_VERSION, plannedQueryCount: snapRows.length }));
+    logger.log(JSON.stringify({ event: "experiment_created", experimentId: created.id, contentOpportunityId: opp.id, baselineReportId: report.id, experimentVersion: EXPERIMENT_VERSION, plannedQueryCount: snapRows.length, measurementValidity: measurement.verdict, measurementMode: measurement.mode }));
     return this.presentExperiment(created, { withCounts: true });
   }
 
@@ -303,6 +319,31 @@ export class ExperimentsService {
 
     const started = Date.now();
     const out = evaluateExperiment(input);
+
+    // ---- M8A Measurement Guard：WEB_CONTENT 目标实验的 After 测量路径必须有效 ----
+    const targetChangeType = (exp.metadata as any)?.targetChangeType ?? "MODEL_BEHAVIOR";
+    let measurementGuardInfo: { verdict: string; mode: string; warnings: string[]; blocked: string | null } | null = null;
+    if (targetChangeType === "WEB_CONTENT" && afterReport.benchmarkRunId) {
+      const afterFacts = await this.measurementRowsForRun(afterReport.benchmarkRunId);
+      const afterMeasurement = aggregateMeasurementFacts(factsFromRetrievalModes(afterFacts));
+      const guard = measurementGuard({ verdict: afterMeasurement.verdict, targetChangeType: "WEB_CONTENT" });
+      measurementGuardInfo = {
+        verdict: afterMeasurement.verdict,
+        mode: afterMeasurement.mode,
+        warnings: afterMeasurement.reasons,
+        blocked: guard.blockedOutcome,
+      };
+      if (!guard.allowsWebChangeClaim) {
+        // 网页目标但测量无效 → 绝不出“网页优化已验证”，outcome 降级并保留观测 warning
+        out.outcome = "INCONCLUSIVE";
+        out.compatibility.warnings.push({
+          code: guard.blockedOutcome === "INVALID_MEASUREMENT" ? "INVALID_MEASUREMENT" : "MEASUREMENT_INCONCLUSIVE",
+          message: "目标为网页内容优化，但 After 测量路径无法证明读取到修改后的公开网页（api_plain/演示/未确认）。Evaluation 不得输出网页优化验证结论。",
+        });
+        out.compatibility.inconclusiveReasons.push("M8A measurement guard：" + afterMeasurement.reasons.join(" "));
+      }
+    }
+
     const metricSource = before.metricSource === after.metricSource ? after.metricSource : "NOT_COMPARABLE";
 
     const created = await this.db.client.$transaction(async tx => {
@@ -318,6 +359,7 @@ export class ExperimentsService {
             verdict: out.compatibility.verdict,
             warnings: out.compatibility.warnings,
             inconclusiveReasons: out.compatibility.inconclusiveReasons,
+            ...(measurementGuardInfo ? { measurementGuard: measurementGuardInfo } : {}),
           })) as JsonValue,
           summarySnapshot: JSON.parse(JSON.stringify(out.summary)) as JsonValue,
           metricSource,
@@ -471,6 +513,60 @@ export class ExperimentsService {
   }
 
   // ---------------------------------------------------------------
+  // M8A Measurement（有效性查询 / WEB_CONTENT 目标标记）
+  // ---------------------------------------------------------------
+
+  /** 读取实验冻结的 Baseline 测量有效性（+ 该实验若为 WEB_CONTENT 的 guard 提示）。 */
+  async getMeasurementValidity(userId: string, experimentId: string) {
+    const exp = await this.experimentForUser(userId, experimentId);
+    const targetChangeType = (exp.metadata as any)?.targetChangeType ?? "MODEL_BEHAVIOR";
+    return {
+      experimentId: exp.id,
+      measurementFramework: "geolens-measurement-v1",
+      measurementValidity: exp.measurementValidity ?? "UNKNOWN",
+      measurementMode: exp.measurementMode ?? "UNKNOWN",
+      measurementWarnings: Array.isArray(exp.measurementWarnings) ? exp.measurementWarnings : [],
+      targetChangeType,
+      note: targetChangeType === "WEB_CONTENT"
+        ? "该实验以真实网页内容变化为验证目标：After 测量必须为 VALID_FOR_WEB_CHANGE（manual_verified / 确认真实网页检索），否则 Evaluation 自动降级 INCONCLUSIVE 并附 INVALID_MEASUREMENT warning。"
+        : "该实验当前为模型行为观测目标（MODEL_BEHAVIOR）：普通模型 API 变化不构成网页优化验证；如需验证网页内容变化，请经 M8C Pilot 流程将目标置为 WEB_CONTENT。",
+    };
+  }
+
+  /** 标记实验验证目标：MODEL_BEHAVIOR（默认）↔ WEB_CONTENT（真实网页试点；仅 PLANNED/EXECUTION_RECORDED/RETEST_READY 状态可改）。 */
+  async setTargetChangeType(userId: string, experimentId: string, targetChangeType: string) {
+    if (!["WEB_CONTENT", "MODEL_BEHAVIOR"].includes(targetChangeType)) {
+      throw new BadRequestException("targetChangeType 只允许 WEB_CONTENT / MODEL_BEHAVIOR。");
+    }
+    const exp = await this.experimentForUser(userId, experimentId);
+    if (!["PLANNED", "EXECUTION_RECORDED", "RETEST_READY"].includes(exp.status)) {
+      throw new BadRequestException(`状态 ${exp.status} 不允许修改实验目标（需在复测/评估前确定）。`);
+    }
+    const metadata = { ...((exp.metadata as any) ?? {}), targetChangeType };
+    const updated = await this.db.client.optimizationExperiment.update({
+      where: { id: exp.id },
+      data: { metadata: JSON.parse(JSON.stringify(metadata)) as JsonValue },
+    });
+    logger.log(JSON.stringify({ event: "experiment_target_change_type", experimentId: updated.id, targetChangeType }));
+    return this.presentExperiment(updated);
+  }
+
+  /** Baseline run 的 Evidence retrieval 快照（用于冻结测量有效性；只看 evidence 不动原始数据）。 */
+  private async measurementRowsForRun(benchmarkRunId: string): Promise<MeasurementVerdictRow[]> {
+    const run = await this.db.client.benchmarkRun.findUnique({
+      where: { id: benchmarkRunId },
+      include: { monitorTask: { include: { runs: { include: { evidence: { select: { retrievalMode: true, sourceType: true } } } } } } },
+    });
+    const rows: MeasurementVerdictRow[] = [];
+    for (const r of run?.monitorTask.runs ?? []) {
+      if (r.status === "SUCCEEDED" && r.evidence) {
+        rows.push({ retrievalMode: r.evidence.retrievalMode, sourceType: r.evidence.sourceType });
+      }
+    }
+    return rows;
+  }
+
+  // ---------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------
   private async experimentForUser(userId: string, id: string) {
@@ -587,6 +683,9 @@ export class ExperimentsService {
       baselineReportId: exp.baselineReportId,
       querySetFingerprint: exp.querySetFingerprint,
       metricSource: exp.metricSource,
+      measurementValidity: exp.measurementValidity ?? null,
+      measurementMode: exp.measurementMode ?? null,
+      measurementWarnings: Array.isArray(exp.measurementWarnings) ? exp.measurementWarnings : [],
       provider: exp.provider,
       engineId: exp.engineId, engineKey: exp.engineKey, engineName: exp.engineName,
       requestedModel: exp.requestedModel, responseModel: exp.responseModel,
@@ -635,6 +734,7 @@ export class ExperimentsService {
       verdict: compat.verdict ?? null,
       warnings: Array.isArray(compat.warnings) ? compat.warnings : [],
       inconclusiveReasons: Array.isArray(compat.inconclusiveReasons) ? compat.inconclusiveReasons : [],
+      measurementGuard: compat.measurementGuard ?? null,
       summary: ev.summarySnapshot,
       metricSource: ev.metricSource,
       generatedAt: ev.generatedAt, createdAt: ev.createdAt,
