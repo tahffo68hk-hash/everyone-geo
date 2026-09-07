@@ -10,6 +10,9 @@ import {
   formatMeaningful, formatMetricValue, formatOutcome, formatQueryTransition,
   formatWarningCode, friendlyError, EXPERIMENT_NAV, EXECUTION_TYPE,
   formatMetricSource, OPPORTUNITY_NAV,
+  formatMeasurementVerdict, formatMeasurementMode, formatTargetChangeType,
+  formatPilotOutcome, formatExecutionValidity, formatAttributionConfidence,
+  PILOT_NAV, MEASUREMENT_VERSION_LABEL, formatChangePlanStatus, CHANGE_PLAN_NAV,
 } from "@/lib/labels";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
 
@@ -57,6 +60,18 @@ type QueryDelta = {
   transitionType: string; status: string;
 };
 type Pair = { before: { evidenceId: string; runId: string; queryText: string } | null; after: { evidenceId: string; runId: string; queryText: string } | null };
+type MeasurementInfo = {
+  experimentId: string; measurementFramework: string;
+  measurementValidity: string; measurementMode: string;
+  measurementWarnings: string[]; targetChangeType: string; note: string;
+};
+type PilotReview = {
+  id: string; reviewVersion: string; measurementValidity: string; measurementMode: string | null;
+  executionValidity: string; comparisonValidity: string; observedOutcome: string;
+  attributionConfidence: string; changedAssetCited: boolean | null;
+  lessons: Array<{ category: string; message: string }>;
+  generatedAt: string;
+};
 
 const STATUS_BADGE: Record<string, string> = {
   PLANNED: "bg-slate-100 text-slate-600", EXECUTION_RECORDED: "bg-blue-100 text-blue-800",
@@ -93,6 +108,8 @@ export default function ExperimentDetailPage() {
   const [queryDeltas, setQueryDeltas] = useState<QueryDelta[]>([]);
   const [queryFilter, setQueryFilter] = useState("");
   const [pair, setPair] = useState<Pair | null>(null);
+  const [measurement, setMeasurement] = useState<MeasurementInfo | null>(null);
+  const [pilotReviews, setPilotReviews] = useState<PilotReview[]>([]);
 
   const load = useCallback(async () => {
     setError("");
@@ -105,6 +122,10 @@ export default function ExperimentDetailPage() {
       ]);
       setExp(e); setExecutions(ex.executions); setRetests(rt.retests); setEvaluations(evs.evaluations);
       if (evs.evaluations.length > 0 && !selectedEvalId) setSelectedEvalId(evs.evaluations[0].id);
+      const mv = await api<MeasurementInfo>(`/experiments/${id}/measurement-validity`).catch(() => null);
+      if (mv) setMeasurement(mv);
+      const pr = await api<{ reviews: PilotReview[] }>(`/experiments/${id}/pilot-reviews`).catch(() => null);
+      if (pr) setPilotReviews(pr.reviews);
     } catch (err) { setError(friendlyError(err)); }
     finally { setLoading(false); }
   }, [id, selectedEvalId]);
@@ -190,6 +211,27 @@ export default function ExperimentDetailPage() {
     } catch (err) { setError(friendlyError(err)); }
     finally { setOperating(false); }
   }
+  async function setWebTarget(web: boolean) {
+    if (!exp) return;
+    setOperating(true); setError("");
+    try {
+      await api(`/experiments/${exp.id}/measurement-target`, {
+        method: "PATCH",
+        body: JSON.stringify({ targetChangeType: web ? "WEB_CONTENT" : "MODEL_BEHAVIOR" }),
+      });
+      await load();
+    } catch (err) { setError(friendlyError(err)); }
+    finally { setOperating(false); }
+  }
+  async function createPilotReview() {
+    if (!exp) return;
+    setOperating(true); setError("");
+    try {
+      await api(`/experiments/${exp.id}/pilot-review`, { method: "POST" });
+      await load();
+    } catch (err) { setError(friendlyError(err)); }
+    finally { setOperating(false); }
+  }
   async function openEvidenceAB(q: QueryDelta) {
     try {
       const res = await api<Pair>(`/experiment-query-deltas/${q.id}/evidence`);
@@ -262,6 +304,44 @@ export default function ExperimentDetailPage() {
                 <div><dt className="text-xs text-slate-500">请求/响应模型</dt><dd className="break-all text-xs">{exp.requestedModel ?? "—"} / {exp.responseModel ?? "—"}</dd></div>
                 <div><dt className="text-xs text-slate-500">测试集指纹（SHA-256）</dt><dd className="break-all font-mono text-[10px]">{exp.querySetFingerprint}</dd></div>
               </div>
+            </section>
+
+            {/* M8A：测量有效性（网页验证 guard） */}
+            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold">{PILOT_NAV.measurementValidity}（{MEASUREMENT_VERSION_LABEL}）</h2>
+                {exp.status === "PLANNED" && (
+                  <button
+                    type="button"
+                    disabled={operating}
+                    onClick={() => void setWebTarget(measurement?.targetChangeType !== "WEB_CONTENT")}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${measurement?.targetChangeType === "WEB_CONTENT" ? "bg-amber-100 text-amber-800" : "bg-slate-800 text-white hover:bg-slate-700"}`}
+                  >
+                    {measurement?.targetChangeType === "WEB_CONTENT" ? "当前：验证网页内容变化（点击切回模型行为）" : "标记为网页内容变化验证目标"}
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs text-slate-500">测量有效性</dt>
+                  <dd className="mt-0.5 font-medium">
+                    <span className={`rounded px-2 py-0.5 text-xs ${measurement?.measurementValidity === "VALID_FOR_WEB_CHANGE" ? "bg-emerald-100 text-emerald-800" : measurement?.measurementValidity === "PARTIALLY_VALID" ? "bg-amber-100 text-amber-800" : "bg-red-50 text-red-700"}`}>
+                      {measurement ? formatMeasurementVerdict(measurement.measurementValidity) : "—"}
+                    </span>
+                  </dd>
+                </div>
+                <div><dt className="text-xs text-slate-500">测量模式</dt><dd className="mt-0.5">{measurement ? formatMeasurementMode(measurement.measurementMode) : "—"}</dd></div>
+                <div><dt className="text-xs text-slate-500">实验目标</dt><dd className="mt-0.5">{measurement ? formatTargetChangeType(measurement.targetChangeType) : "—"}</dd></div>
+              </div>
+              {measurement?.measurementValidity === "INVALID_FOR_WEB_CHANGE" && (
+                <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{PILOT_NAV.measurementWarning}</p>
+              )}
+              {measurement?.measurementWarnings?.length ? (
+                <ul className="mt-2 space-y-1 text-xs text-slate-500">
+                  {measurement.measurementWarnings.slice(0, 4).map((w, i) => <li key={i}>· {w}</li>)}
+                </ul>
+              ) : null}
+              {measurement?.note && <p className="mt-2 text-[11px] text-slate-400">{measurement.note}</p>}
             </section>
 
             {/* Execution */}
@@ -507,6 +587,49 @@ export default function ExperimentDetailPage() {
               <h2 className="text-sm font-semibold text-slate-700">{EXPERIMENT_NAV.attribution}</h2>
               <p className="mt-2 text-sm text-slate-600">{EXPERIMENT_NAV.attributionDisclaimer}</p>
               <p className="mt-1 font-mono text-xs text-slate-400">{EXPERIMENT_NAV.observedNotProven}</p>
+            </section>
+
+            {/* M8C：Pilot Review */}
+            <section className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-5">
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-base font-semibold text-slate-800">{PILOT_NAV.title}</h2>
+                {!real && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">{PILOT_NAV.demoLabel}</span>}
+                {exp.status === "EVALUATED" && pilotReviews.length === 0 && (
+                  <button type="button" disabled={operating} onClick={() => void createPilotReview()} className="rounded-lg bg-indigo-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-900 disabled:opacity-50">
+                    {PILOT_NAV.createReview}
+                  </button>
+                )}
+                {pilotReviews.length > 0 && (
+                  <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs text-indigo-800">
+                    {PILOT_NAV.reviewVersion} {pilotReviews[0]?.reviewVersion}
+                  </span>
+                )}
+              </div>
+              {exp.status !== "EVALUATED" && pilotReviews.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">真实试点在完成执行 → Frozen Re-test → 评估后生成；演示数据仅验证闭环，不伪装真实 Pilot。</p>
+              ) : pilotReviews.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">评估已完成，可生成试点评审（会核对 AFTER 快照变更与测量有效性）。</p>
+              ) : (
+                pilotReviews.map(rv => (
+                  <div key={rv.id} className="mt-3 rounded-xl border border-indigo-200 bg-white p-4 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                        rv.observedOutcome === "VALIDATED_OBSERVATION" ? "bg-emerald-100 text-emerald-800"
+                          : rv.observedOutcome === "INVALID_MEASUREMENT" || rv.observedOutcome === "CHANGE_NOT_VERIFIED" ? "bg-red-50 text-red-700"
+                            : "bg-slate-100 text-slate-700"}`}
+                      >{formatPilotOutcome(rv.observedOutcome)}</span>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">测量 {formatMeasurementVerdict(rv.measurementValidity)}</span>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">执行 {formatExecutionValidity(rv.executionValidity)}</span>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{PILOT_NAV.attribution} {formatAttributionConfidence(rv.attributionConfidence)}</span>
+                    </div>
+                    {rv.lessons.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-xs text-slate-600">
+                        {rv.lessons.map((l, i) => <li key={i}>· [{l.category}] {l.message}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                ))
+              )}
             </section>
           </>
         )}

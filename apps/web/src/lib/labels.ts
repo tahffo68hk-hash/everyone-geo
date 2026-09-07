@@ -774,3 +774,175 @@ export const EXPERIMENT_NAV = {
   notEvaluableLabel: "数据不可用（不等于品牌缺席）",
   latestFirst: "最新在前",
 } as const;
+
+
+/* ---------------------------------------------------------------
+ * M8 — 测量有效性 / 站点资产 / 变更计划 / 真实试点
+ * ---------------------------------------------------------------- */
+export const MEASUREMENT_VERSION_LABEL = "geolens-measurement-v1";
+export const CHANGE_PLAN_VERSION_LABEL = "geolens-change-plan-v1";
+export const PILOT_REVIEW_VERSION_LABEL = "geolens-pilot-review-v1";
+
+export const MEASUREMENT_VERDICT: Dict = {
+  VALID_FOR_WEB_CHANGE: "可验证网页变化",
+  PARTIALLY_VALID: "部分有效",
+  INVALID_FOR_WEB_CHANGE: "不可验证网页变化",
+  UNKNOWN: "未知",
+};
+export const formatMeasurementVerdict = (value: string | null | undefined): string =>
+  fallback(lookup(MEASUREMENT_VERDICT, value), value ?? "未知");
+
+export const MEASUREMENT_MODE: Dict = {
+  WEB_VALIDATED: "网页检索已验证",
+  MANUAL_VERIFIED: "人工验证（官方 AI Web UI）",
+  MODEL_BEHAVIOR_ONLY: "仅模型 API 行为",
+  UNKNOWN: "未知",
+};
+export const formatMeasurementMode = (value: string | null | undefined): string =>
+  fallback(lookup(MEASUREMENT_MODE, value), value ?? "未知");
+
+export const TARGET_CHANGE_TYPE: Dict = {
+  WEB_CONTENT: "验证网页内容变化",
+  MODEL_BEHAVIOR: "观测模型行为",
+  UNSPECIFIED: "未指定",
+};
+export const formatTargetChangeType = (value: string | null | undefined): string =>
+  fallback(lookup(TARGET_CHANGE_TYPE, value), value ?? "未指定");
+
+export const SITE_ASSET_STATUS: Dict = { KNOWN: "已知", REMOVED: "已移除", UNKNOWN: "未知" };
+export const formatSiteAssetStatus = (value: string | null | undefined): string =>
+  fallback(lookup(SITE_ASSET_STATUS, value), value ?? "");
+
+export const SITE_ASSET_SOURCE: Dict = { MANUAL: "人工登记", SITEMAP: "站点地图", CRAWLER: "抓取", IMPORTED: "导入" };
+export const formatSiteAssetSource = (value: string | null | undefined): string =>
+  fallback(lookup(SITE_ASSET_SOURCE, value), value ?? "");
+
+export const SNAPSHOT_TYPE: Dict = {
+  BEFORE_CHANGE: "变更前", AFTER_CHANGE: "变更后", OBSERVED: "观察", MANUAL_IMPORT: "人工录入",
+};
+export const formatSnapshotType = (value: string | null | undefined): string =>
+  fallback(lookup(SNAPSHOT_TYPE, value), value ?? "");
+
+export const ASSET_MAPPING_TYPE: Dict = {
+  UPDATE_EXISTING: "更新已有页面",
+  CREATE_NEW: "建议新建页面",
+  UNKNOWN: "尚未确认目标页面",
+};
+export const formatAssetMappingType = (value: string | null | undefined): string =>
+  fallback(lookup(ASSET_MAPPING_TYPE, value), value ?? "");
+
+export const CHANGE_PLAN_STATUS: Dict = {
+  DRAFT: "草稿", APPROVED: "已批准", EXECUTED_MANUALLY: "已执行", CANCELLED: "已取消",
+};
+export const formatChangePlanStatus = (value: string | null | undefined): string =>
+  fallback(lookup(CHANGE_PLAN_STATUS, value), value ?? "");
+
+export const CHANGE_TYPE: Dict = {
+  ADD_SECTION: "新增板块",
+  UPDATE_SECTION: "更新板块",
+  CLARIFY_ENTITY: "澄清实体信息",
+  ADD_USE_CASE: "补充用例场景",
+  ADD_FAQ: "补充 FAQ",
+  ADD_COMPARISON_INFO: "补充对比信息",
+  ADD_VERIFIABLE_FACT: "补充可验证事实",
+  ADD_SOURCE_REFERENCE: "补充来源引用",
+  UPDATE_TITLE: "更新标题",
+  UPDATE_METADATA: "更新元数据",
+  OTHER: "其他",
+};
+export const formatChangeType = (value: string | null | undefined): string =>
+  fallback(lookup(CHANGE_TYPE, value), value ?? "");
+
+export const PILOT_EXECUTION_VALIDITY: Dict = {
+  CHANGE_VERIFIED: "变更已证实",
+  CHANGE_NOT_OBSERVED: "未观察到变更",
+  NOT_RECORDED: "未记录执行",
+};
+export const formatExecutionValidity = (value: string | null | undefined): string =>
+  fallback(lookup(PILOT_EXECUTION_VALIDITY, value), value ?? "");
+
+export const PILOT_OUTCOME: Dict = {
+  VALIDATED_OBSERVATION: "观察到改善",
+  MIXED_OBSERVATION: "结果混合",
+  NO_CLEAR_OBSERVATION: "未观察到明确变化",
+  NEGATIVE_OBSERVATION: "观察到下降",
+  INCONCLUSIVE: "暂无法判断",
+  INVALID_MEASUREMENT: "测量无效（不可作为网页验证）",
+  CHANGE_NOT_VERIFIED: "变更未证实",
+};
+export const formatPilotOutcome = (value: string | null | undefined): string =>
+  fallback(lookup(PILOT_OUTCOME, value), value ?? "");
+
+export const ATTRIBUTION_CONFIDENCE: Dict = { LOW: "低", MEDIUM: "中" };
+export const formatAttributionConfidence = (value: string | null | undefined): string =>
+  fallback(lookup(ATTRIBUTION_CONFIDENCE, value), value ?? "");
+
+export const PILOT_LESSON_CATEGORY: Dict = {
+  PRODUCT: "产品", DIAGNOSIS: "诊断", RECOMMENDATION: "建议",
+  CONTENT_OPPORTUNITY: "内容机会", MEASUREMENT: "测量", UX: "体验", DATA: "数据", EXECUTION: "执行", ATTRIBUTION: "归因",
+};
+
+export const SITE_NAV = {
+  title: "站点资产",
+  createSite: "登记站点",
+  addAsset: "登记页面",
+  captureSnapshot: "抓取快照",
+  manualSnapshot: "人工录入快照",
+  beforeChange: "记录变更前",
+  afterChange: "记录变更后",
+  noSite: "还没有站点",
+  noSiteHint: "先登记你的站点，再维护页面清单（可手动登记或从 sitemap 导入）。",
+  noAsset: "还没有页面资产",
+  noAssetHint: "人工登记目标页面，或通过 sitemap 导入站点页面清单。",
+  importSitemap: "从站点地图导入",
+  columns: { url: "页面", assetType: "资产类型", source: "来源", title: "标题", lastObserved: "最后观察", snapshots: "快照", mappings: "关联机会" },
+  urlSafeNote: "仅读取同一站点域名的公开页面；禁止内网/私网/元数据地址。",
+  createNew: "建议新建页面",
+  updateExisting: "更新已有页面",
+  unknown: "尚未确认目标页面",
+  manualSnapshotHint: "不抓取页面时，可人工录入变更前后的文本/标题（用于验证变更 hash）。",
+  back: "← 返回",
+} as const;
+
+export const CHANGE_PLAN_NAV = {
+  title: "变更计划",
+  create: "创建变更计划",
+  noPlan: "暂无变更计划",
+  noPlanHint: "从内容机会的建议结构生成编辑说明（不会自动修改或发布网站）。",
+  noAutoPublish: "此计划不会自动修改或发布网站。",
+  draft: "草稿",
+  approved: "已批准",
+  executed: "已执行",
+  cancelled: "已取消",
+  item: "编辑项",
+  section: "区域",
+  changeType: "动作",
+  instruction: "编辑说明",
+  reason: "原因",
+  source: "来源建议",
+  notFinalText: "变更计划是编辑说明，不是最终正文；请人工核验真实事实后执行。",
+} as const;
+
+export const PILOT_NAV = {
+  title: "真实优化试点",
+  measurementValidity: "测量有效性",
+  measurementWarning: "当前测量模式无法证明模型读取了公开网页变化（api_plain 不等价于产品 Web 检索）。",
+  noVerifyWebButton: "禁止将结果标为“网页优化已验证”",
+  recordModelChange: "仅记录模型行为变化",
+  baseline: "基线测量",
+  execution: "执行与变更核实",
+  changeNotObserved: "AFTER 快照与 BEFORE 一致 —— 变更尚未被证实。",
+  pilotReview: "试点评审",
+  reviewVersion: "评审版本",
+  attribution: "归因置信",
+  attributionLOW: "单次 Before/After 观察归因置信低：不构成因果证明。",
+  observedNotCausal: "观察到变化 ≠ 已证明因果（Observed change ≠ proven causal effect）",
+  lessons: "学习记录",
+  createReview: "生成试点评审",
+  reviewGenerated: "试点评审已生成",
+  reviewVersionLabel: "评审版本",
+  contentHashChanged: "页面内容已变化（hash 不一致）",
+  demoLabel: "演示试点 —— 不伪装真实 Pilot",
+  realPilotPending: "真实试点待用户授权（REAL_PILOT_PENDING_USER_APPROVAL）",
+  realPilotBlocked: "真实试点因测量路径无效受阻（REAL_PILOT_BLOCKED_BY_MEASUREMENT）",
+} as const;

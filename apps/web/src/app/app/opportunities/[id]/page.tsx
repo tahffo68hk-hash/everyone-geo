@@ -5,9 +5,10 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
-  formatCategory, formatContentIntent, formatEffortLevel, formatExpectedSignal,
-  formatOpportunityAsset, formatOpportunityPriority, formatOpportunityStatus,
-  formatExperimentStatus, friendlyError, EXPERIMENT_NAV, OPPORTUNITY_NAV, OPPORTUNITY_VERSION_LABEL,
+  formatAssetMappingType, formatCategory, formatChangePlanStatus, formatContentIntent,
+  formatEffortLevel, formatExpectedSignal, formatOpportunityAsset, formatOpportunityPriority,
+  formatOpportunityStatus, formatExperimentStatus, formatSiteAssetSource, friendlyError,
+  CHANGE_PLAN_NAV, EXPERIMENT_NAV, OPPORTUNITY_NAV, OPPORTUNITY_VERSION_LABEL,
 } from "@/lib/labels";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
 
@@ -44,6 +45,14 @@ type ExperimentBrief = {
   id: string; contentOpportunityId: string; title: string; status: string;
   metricSource: string; provider: string; plannedQueryCount: number; createdAt: string;
 };
+type AssetMapping = {
+  id: string; siteAssetId: string | null; mappingType: string; confirmedByUser: boolean;
+  siteAsset: { id: string; url: string; title: string | null; assetType: string | null } | null;
+};
+type PlanBrief = {
+  id: string; title: string; status: string; changePlanVersion: string;
+  itemCount: number; siteAssetId: string | null; createdAt: string;
+};
 
 const PRIO_BADGE: Record<string, string> = {
   HIGH: "bg-red-100 text-red-800", MEDIUM: "bg-amber-100 text-amber-800", LOW: "bg-blue-100 text-blue-800",
@@ -68,6 +77,8 @@ export default function OpportunityDetailPage() {
   const [evidenceRunId, setEvidenceRunId] = useState<string | null>(null);
   const [operating, setOperating] = useState(false);
   const [experiments, setExperiments] = useState<ExperimentBrief[]>([]);
+  const [mappings, setMappings] = useState<AssetMapping[]>([]);
+  const [plans, setPlans] = useState<PlanBrief[]>([]);
 
   const load = useCallback(async () => {
     setError("");
@@ -76,16 +87,20 @@ export default function OpportunityDetailPage() {
       setOpp(detail);
       setBlocks(detail.blocks);
       setQueries(detail.queries);
-      const [runRes, evRes, srcRes, expRes] = await Promise.all([
+      const [runRes, evRes, srcRes, expRes, mapRes, planRes] = await Promise.all([
         api<OppRun>(`/opportunity-runs/${detail.opportunityRunId}`),
         api<{ evidence: EvidenceLink[] }>(`/content-opportunities/${id}/evidence`),
         api<{ recommendations: SourceRec[] }>(`/content-opportunities/${id}/recommendations`),
         api<ExperimentBrief[]>(`/content-opportunities/${id}/experiments`),
+        api<{ mappings: AssetMapping[] }>(`/content-opportunities/${id}/asset-mappings`).catch(() => ({ mappings: [] })),
+        api<{ changePlans: PlanBrief[] }>(`/content-opportunities/${id}/change-plans`).catch(() => ({ changePlans: [] })),
       ]);
       setRun(runRes);
       setEvidence(evRes.evidence);
       setSources(srcRes.recommendations);
       setExperiments(expRes);
+      setMappings(mapRes.mappings);
+      setPlans(planRes.changePlans);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -114,6 +129,19 @@ export default function OpportunityDetailPage() {
     setOperating(true);
     try {
       await api(`/content-opportunities/${id}/experiments`, { method: "POST" });
+      await load();
+    } catch (err) { setError(friendlyError(err)); }
+    finally { setOperating(false); }
+  }
+
+  async function createChangePlan() {
+    setOperating(true);
+    try {
+      const existingAsset = mappings.find(m => m.siteAsset?.id)?.siteAsset?.id ?? null;
+      await api(`/content-opportunities/${id}/change-plans`, {
+        method: "POST",
+        body: JSON.stringify({ siteAssetId: existingAsset }),
+      });
       await load();
     } catch (err) { setError(friendlyError(err)); }
     finally { setOperating(false); }
@@ -227,6 +255,48 @@ export default function OpportunityDetailPage() {
                     <Link href={`/app/experiments?opp=${id}`} className="text-xs text-blue-700 hover:underline">{EXPERIMENT_NAV.view} →</Link>
                   </>
                 )}
+              </div>
+            </section>
+
+            {/* M8B：目标站点资产 + 变更计划 */}
+            <section className="rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-sm font-semibold text-slate-700">目标站点资产（M8B）</span>
+                {mappings.length === 0 ? (
+                  <Link href="/app/site-assets" className="text-xs text-blue-700 hover:underline">
+                    去登记站点资产（确定是更新已有页面还是新建）
+                  </Link>
+                ) : (
+                  mappings.map(m => (
+                    <span key={m.id} className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-white px-2 py-1 text-xs text-violet-900">
+                      {m.siteAsset ? (
+                        <Link href={`/app/site-assets/${m.siteAsset.id}`} className="hover:underline">{m.siteAsset.title ?? m.siteAsset.url}</Link>
+                      ) : <span>待建页面</span>}
+                      <span className="text-violet-500">· {formatAssetMappingType(m.mappingType)}</span>
+                    </span>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-3 border-t border-violet-200 pt-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-600">{CHANGE_PLAN_NAV.title}（{plans.length}）</span>
+                  {plans.length === 0 ? (
+                    <>
+                      <button type="button" disabled={operating} onClick={() => void createChangePlan()} className="rounded-lg bg-violet-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-900 disabled:opacity-50">
+                        {CHANGE_PLAN_NAV.create}
+                      </button>
+                      <span className="text-xs text-slate-500">{CHANGE_PLAN_NAV.noPlanHint}</span>
+                    </>
+                  ) : (
+                    plans.map(p => (
+                      <Link key={p.id} href={`/app/change-plans/${p.id}`} className="rounded-lg border border-violet-300 bg-white px-2 py-1 text-xs text-violet-900 hover:bg-violet-100">
+                        {p.title} · {formatChangePlanStatus(p.status)}（{p.itemCount} 项）
+                      </Link>
+                    ))
+                  )}
+                </div>
+                <p className="mt-2 text-[11px] text-slate-400">{CHANGE_PLAN_NAV.noAutoPublish}</p>
               </div>
             </section>
 

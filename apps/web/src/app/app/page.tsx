@@ -125,6 +125,9 @@ export default function AppPage() {
         <Link href="/app/experiments" className="inline-block rounded-lg border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50">
           优化实验
         </Link>
+        <Link href="/app/site-assets" className="inline-block rounded-lg border border-violet-700 px-4 py-2 text-sm font-medium text-violet-700 hover:bg-violet-50">
+          站点资产
+        </Link>
       </div>
 
       {me && me.organizations.length === 0 ? (
