@@ -375,7 +375,11 @@ export class BenchmarkService implements OnModuleDestroy {
     });
 
     // demo/real 隔离（M5 语义）：mixed 时仅 real 子集为 Real Benchmark。
-    const realRows = rows.filter(row => row.engineProvider !== "mock");
+    // M8C-R0：manual-web-ui provider='manual' 代表人工采集（不等于自动真实调用）；
+    // 归边以 BenchmarkRun.runType 为准（demo manual → demo 侧；real manual → real 侧）。
+    const realRows = rows.filter(row =>
+      row.engineProvider !== "mock"
+      && !(row.engineProvider === "manual" && run.runType === "DEMO"));
     const metricSource = realRows.length === 0 ? "demo"
       : realRows.length === rows.length ? "real" : "mixed";
     const pool = realRows.length > 0 ? realRows : rows;
