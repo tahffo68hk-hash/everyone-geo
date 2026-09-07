@@ -29,13 +29,30 @@ type MeResponse = {
   organizations: Organization[];
 };
 
-type Project = {
+type ProjectBrand = { id: string; name: string };
+
+/**
+ * API 返回的原始 project。brands 为 optional relation：
+ * 正常 contract 下 GET /organizations/:id 恒为数组（[] 或 [{...}]），
+ * 但防御性起见允许缺失/空/null，统一在 normalizeProject 收敛为 []，
+ * 页面渲染只用归一化后的值，杜绝 p.brands.length 这类 undefined 崩溃。
+ */
+type RawProject = {
   id: string;
   name: string;
   description: string | null;
   status: string;
-  brands: Array<{ name: string }>;
+  brands?: Array<ProjectBrand> | null;
 };
+
+type Project = Omit<RawProject, "brands"> & { brands: ProjectBrand[] };
+
+function normalizeProject(p: RawProject): Project {
+  return {
+    ...p,
+    brands: Array.isArray(p.brands) ? p.brands : [],
+  };
+}
 
 export default function AppPage() {
   const router = useRouter();
@@ -60,10 +77,12 @@ export default function AppPage() {
 
   useEffect(() => {
     if (!selectedOrg) return;
-    api<Organization & { projects: Project[] }>(
+    api<Organization & { projects?: RawProject[] }>(
       `/organizations/${selectedOrg.id}`,
     )
-      .then((data) => setProjects((data as { projects: Project[] }).projects))
+      .then((data) =>
+        setProjects((data.projects ?? []).map(normalizeProject)),
+      )
       .catch(() => setProjects([]));
   }, [selectedOrg]);
 
@@ -198,9 +217,13 @@ export default function AppPage() {
                         {p.description}
                       </p>
                     )}
-                    {p.brands.length > 0 && (
+                    {p.brands.length > 0 ? (
                       <p className="mt-2 text-xs text-slate-400">
                         品牌：{p.brands.map((b) => b.name).join("、")}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-300">
+                        尚未设置监测对象
                       </p>
                     )}
                   </li>
