@@ -858,3 +858,47 @@ M8 实现完成：把 M7 的优化闭环接到真实世界层（真实站点资�
 - 数据事实迁移：ProjectMentor v1 suite 26 行 → 24 DISCOVERY + 2 BRANDED_SANITY（seed 可证）。
 - secret scan PASS。Control Center：M8E DONE；M8 仍 IN_PROGRESS（A/B DONE、C/D IMPLEMENTATION
   _DONE、E DONE）；Overall 9/10 ≈90%（REAL_PILOT 待用户授权/测量路径）。
+
+
+## 2026-09-07 — M8C-R0 Manual Verified Measurement（Readiness Patch，未 push，0 real AI calls）
+
+补齐 M8C Real Pilot 前置测量通道：manual_verified 从「数据模型支持」变成「用户真能使用」。
+复用完整 BenchmarkRun→Run→Evidence→Analysis→Metrics→Report→M7 链，不建第二套平行体系。
+
+- 架构决定：隔离 = RunStatus 新增 AWAITING_MANUAL_INPUT / SKIPPED（worker dispatch 只捞
+  PENDING/QUEUED、reconcile 捞 RUNNING/QUEUED/PENDING → manual run 永不入队）；系统级
+  engine manual-web-ui（provider='manual'，不在 worker registry → 误入队也 UNSUPPORTED）。
+  migration m8c0_manual_verified_runs（additive）+ geo_test deploy + generate。
+- queue/state：isTerminalRun 含 SKIPPED；aggregateRunStatuses 支持 SKIPPED（done 计数、
+  全 skip→PARTIAL）与 AWAITING（非终态→RUNNING 语义）；19 单测全绿。
+- API：manual-measurements module —— POST benchmark-suites/:id/manual-runs（runType
+  demo/real + measurementProduct + 冻结 target/query snapshot）、GET manual-runs/:id
+  workspace（进度 x/N + 每条 evidence）、POST runs/:id/manual-evidence（DTO 仅原始事实；
+  rawResponse 必填≤100k；retrievalConfirmed=false→unknown；true+signals→manual_verified；
+  verifiedBy/verifiedAt/measurementProduct/notes/observedAt/citations 入 metadata；
+  Evidence immutable；本地 analyzeResponse 同 automated 规则；repeat 409；automated run
+  禁止人工覆盖 400）、POST runs/:id/manual-skip。auth/tenant/404/401。
+- benchmark.getMetrics：realRows 判定扩展 —— engineProvider='manual' 且 runType=DEMO 归
+  demo 侧（demo manual 不伪装 real）；report 复用零分支。
+- e2e manual-measurements 7/7（geo_test）：创建不进 queue（AWAITING/manual engine）→
+  提交 manual_verified/unknown + 自动 Analysis + 用户无法提交分析字段 → 409/automated
+  拒绝 → skip PARTIAL → metrics（real scope）+ Report + Diagnosis + Recommendation +
+  Opportunity 全链 → demo manual metricSource=demo。
+- worker 隔离集成测试：真实 dispatch 后 manual run 无 job、provider registry resolve
+  undefined（benchmark.integration +1，32 全绿）。
+- UI 中文：Query Set 详情「人工 Web UI 检测」入口（与「运行 AI 检测」并列不混淆）→
+  创建 dialog（AI 产品/界面模型/真实·演示）→ /app/manual-runs/:id 工作区（复制问题、
+  粘贴完整回答、联网检索确认[是|无法确认]+signals、验证说明、实际查询时间、引用；
+  提交后展示自动分析不可改；skip；完成后查看指标/生成报告）。labels M8C-R0。
+- 回归：geo-core 242 / queue 19 / llm 38 / worker 32（含隔离）/ database 15 /
+  API e2e 173（15 suites，M8C-R0 7）/ web tsc + build(.next-m8c0，gitignore) /
+  check-ui-zh 32 —— 全绿；M3–M8E 无回归。
+- 0-cost Demo（geo_dev，0 real calls / 0 external writes，跑后清理）：AcmeFlow(CRM SaaS)
+  3 DISCOVERY → manual run(demo) → 3 manual evidences（manual_verified/unknown 混合）→
+  metrics(scope DISCOVERY_ONLY visibility 0.33) → report → diagnosis → recommendation →
+  opportunity×2 —— 全链通，诚实标 demo。
+- secret scan PASS；migration additive；无 external read/write/CMS/publish。
+- Control Center：manualVerifiedMeasurement=DONE；realPilotReadiness=WAITING_FOR_REAL_BASELINE；
+  M8 仍 IN_PROGRESS（A/B DONE、C/D IMPLEMENTATION_DONE、E DONE、R0 DONE）；Overall 9/10。
+- Next：REAL BASELINE USER INPUT —— 用户在官方 AI Web UI 完成第一组真实 Discovery Query
+  （真实站点/真实授权下）后才进入网站修改与 After；不进入 M9。

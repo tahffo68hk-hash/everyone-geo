@@ -752,7 +752,8 @@
         "M8A Measurement Validity —— DONE：api_plain 不构成网页优化验证（DeepSeek/Qwen 均为 official_api/api_plain → INVALID_FOR_WEB_CHANGE）；geo-core measurement.ts 纯函数（12 单测，verdict 只依 retrievalMode/sourceType 不按 provider 猜）+ url-safety.ts（SSRF：loopback/私网/metadata/file/ftp/redirect/白名单）；OptimizationExperiment 冻结 measurement* 快照 + WEB_CONTENT target measurement guard（Evaluation 自动降级 INCONCLUSIVE + INVALID_MEASUREMENT warning）；manual_verified 作为严谨 fallback（Evidence 已支持 manual/manual_verified）。",
         "M8B Site Asset & Change Planning —— DONE：Site/SiteAsset/SiteAssetSnapshot（contentHash+BEFORE/AFTER）/OpportunityAssetMapping（UPDATE_EXISTING/CREATE_NEW/UNKNOWN 人工确认）；GET-only 同源抓取 + DNS 复查 + 大小/超时限制；OptimizationChangePlan/Item（编辑说明，无 finalPublishedText，不自动发布，Evidence 回链）；e2e sites-pilot 10/10。",
         "M8C/M8D Real Pilot —— IMPLEMENTATION_DONE：PilotReview（reviewVersion immutable、executionValidity CHANGE_VERIFIED/CHANGE_NOT_OBSERVED、observedOutcome 允许 INVALID_MEASUREMENT/CHANGE_NOT_VERIFIED、attributionConfidence LOW/MEDIUM、lessons）；0-cost Demo（geo_dev）全链 Site→Asset→BEFORE→Mapping→ChangePlan(APPROVED)→measurement-validity→AFTER(hash 变化)→PilotReview：INVALID_MEASUREMENT + CHANGE_VERIFIED + attribution LOW —— 诚实不伪装提升。REAL_PILOT_PENDING_USER_APPROVAL / BLOCKED_BY_MEASUREMENT（api_plain）。",
-        "M8E —— DONE：通用监测对象（Brand=Target Profile：entityType/productCategory + TargetEntityAlias 可启停）；Query 语义（queryType DISCOVERY/BRANDED_SANITY/CUSTOM + source + contamination 快照 + Target snapshot 冻结）；Target Contamination Detector + Discovery Guard（DISCOVERY 含品牌拒存）；确定性 Query Builder/Import preview（无副作用）+ 批量保存；metrics scope（DISCOVERY_ONLY denominator，sanity/污染 excluded，report 记 eligible/excluded 元数据）；prompt neutrality 单测；AcmeFlow(CRM SaaS) 通用 Demo + Branded-in-query 防虚高 e2e 7/7 —— 同一 pipeline 无品牌硬编码。"
+        "M8E —— DONE：通用监测对象（Brand=Target Profile：entityType/productCategory + TargetEntityAlias 可启停）；Query 语义（queryType DISCOVERY/BRANDED_SANITY/CUSTOM + source + contamination 快照 + Target snapshot 冻结）；Target Contamination Detector + Discovery Guard（DISCOVERY 含品牌拒存）；确定性 Query Builder/Import preview（无副作用）+ 批量保存；metrics scope（DISCOVERY_ONLY denominator，sanity/污染 excluded，report 记 eligible/excluded 元数据）；prompt neutrality 单测；AcmeFlow(CRM SaaS) 通用 Demo + Branded-in-query 防虚高 e2e 7/7 —— 同一 pipeline 无品牌硬编码。",
+        "M8C-R0 —— DONE：manual_verified 从数据模型支持变为可用产品通道（复用全链不建平行体系）：RunStatus 新增 AWAITING_MANUAL_INPUT/SKIPPED 隔离 worker（dispatch 只捞 PENDING/QUEUED）；manual-web-ui engine（provider=manual 不入 registry 双保险）；Manual Benchmark Run（冻结 target/query snapshot）+ Evidence 人工录入（sourceType=manual；confirmed→manual_verified，否则 unknown）+ 本地 analyzeResponse 同规则 + skip→PARTIAL；metricSource：real manual→real、demo manual→demo；中文 UI「人工 Web UI 检测」工作区；e2e 7/7 + worker 隔离测试 + 0-cost Demo 全链（0 calls）。realPilotReadiness=WAITING_FOR_REAL_BASELINE。"
       ],
       "gates": {
         "implementation": {
@@ -788,13 +789,17 @@
         {
           "name": "M8E Target Entity & Query Workspace",
           "status": "DONE"
+        },
+        {
+          "name": "M8C-R0 Manual Verified Measurement（Readiness Patch）",
+          "status": "DONE"
         }
       ],
       "verification": {
         "method": "用户验收（真实试点需授权；技术闭环已用 Demo/Mock 验证）",
         "command": "0-cost Demo + e2e + regression",
         "lastRunAt": "2026-09-07T02:30:00.000Z",
-        "result": "IMPLEMENTATION_DONE —— REAL_PILOT_PENDING_USER_APPROVAL / REAL_PILOT_BLOCKED_BY_MEASUREMENT（api_plain）；M8 不自动 ACCEPTED"
+        "result": "IMPLEMENTATION_DONE + M8C-R0 DONE —— REAL_BASELINE_PENDING（manual_verified 通道已可用，待用户在官方 AI Web UI 录入真实 Discovery 结果）"
       }
     }
   ],

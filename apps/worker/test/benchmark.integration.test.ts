@@ -117,3 +117,38 @@ test("历史 BenchmarkRun 版本快照不随 Suite 编辑改变", async () => {
   assert.equal(afterSnapshot.suiteVersion, beforeSnapshot.suiteVersion);
   assert.notEqual(afterSnapshot.suiteName, "Edited Suite Name");
 });
+
+test("M8C-R0：AWAITING_MANUAL_INPUT Run 永不被 dispatch（0 provider 调用隔离）", async () => {
+  // 额外创建一条 manual run（engine provider=manual —— worker registry 无此 provider）
+  const suffix = randomUUID();
+  const manualEngine = await prisma.engine.create({
+    data: { key: `bench-w-manual-${suffix}`, name: "人工 Web UI", provider: "manual", config: { manual: true } },
+  });
+  const manualMirror = await prisma.query.create({ data: { projectId: fixture.projectId, text: "适合小型销售团队的 CRM 有哪些？", source: "IMPORTED", status: "PAUSED" } });
+  const manualTask = await prisma.monitorTask.create({
+    data: {
+      organizationId: fixture.organizationId, projectId: fixture.projectId, totalRuns: 1,
+      runs: { create: [{ queryId: manualMirror.id, engineId: manualEngine.id, status: "AWAITING_MANUAL_INPUT" }] },
+    },
+    include: { runs: true },
+  });
+  const manualRunId = manualTask.runs[0].id;
+  try {
+    // 真实 dispatch：worker 轮询只会捞 PENDING/QUEUED —— manual run 必须无 job。
+    await dispatchPendingRuns(prisma, queue);
+    const job = await queue.getJob(jobIdForRun(manualRunId));
+    assert.equal(job ?? null, null, "manual run 不得产生 worker job");
+    const run = await prisma.run.findUniqueOrThrow({ where: { id: manualRunId } });
+    assert.equal(run.status, "AWAITING_MANUAL_INPUT");
+    assert.equal(run.attempt, 0);
+    // manual engine provider 不被 worker registry 解析（双保险）
+    const { createProviderRegistry } = await import("../src/processor");
+    const resolved = createProviderRegistry().resolve(manualEngine.provider);
+    assert.equal(resolved, undefined, "manual provider 不应被解析为任何 adapter");
+  } finally {
+    await prisma.run.deleteMany({ where: { id: manualRunId } });
+    await prisma.monitorTask.deleteMany({ where: { id: manualTask.id } });
+    await prisma.engine.deleteMany({ where: { id: manualEngine.id } });
+    await prisma.query.deleteMany({ where: { id: manualMirror.id } });
+  }
+});

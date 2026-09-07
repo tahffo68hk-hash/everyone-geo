@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import {
   formatQuerySource, formatQueryType, formatTargetCheck, friendlyError,
-  QUERY_WORKSPACE_NAV, TARGET_NAV,
+  MANUAL_NAV, QUERY_WORKSPACE_NAV, TARGET_NAV,
 } from "@/lib/labels";
 
 type Project = { id: string; name: string };
@@ -53,6 +53,12 @@ function SuiteInner() {
   const [runOpen, setRunOpen] = useState(false);
   const [engineId, setEngineId] = useState("");
   const [runType, setRunType] = useState<"demo" | "real">("demo");
+  // M8C-R0：人工 Web UI 检测
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualProduct, setManualProduct] = useState("qwen-web");
+  const [manualRunType, setManualRunType] = useState<"demo" | "real">("real");
+  const [manualDisplayedModel, setManualDisplayedModel] = useState("");
+  const [manualTarget, setManualTarget] = useState<TargetBrief | null>(null);
 
   const load = useCallback(async () => {
     setError("");
@@ -164,6 +170,23 @@ function SuiteInner() {
     finally { setBusy(false); }
   }
 
+  async function createManualRun() {
+    setBusy(true); setError("");
+    try {
+      const r = await api<{ id: string }>(`/benchmark-suites/${id}/manual-runs`, {
+        method: "POST",
+        body: JSON.stringify({
+          runType: manualRunType,
+          measurementProduct: manualProduct,
+          ...(manualDisplayedModel.trim() ? { displayedModel: manualDisplayedModel.trim() } : {}),
+        }),
+      });
+      setManualOpen(false);
+      window.location.href = `/app/manual-runs/${r.id}`;
+    } catch (e) { setError(friendlyError(e)); }
+    finally { setBusy(false); }
+  }
+
   const effectiveType = (q: Suite["queries"][number]) => q.queryType ?? (q.enabled && q.category !== "sanity-control" ? "DISCOVERY" : "CUSTOM");
 
   if (!suite && !error) return <div className="space-y-2" aria-busy="true">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-8 animate-pulse rounded-lg bg-slate-100" />)}</div>;
@@ -183,6 +206,9 @@ function SuiteInner() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => void cloneSuite()} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">{QUERY_WORKSPACE_NAV.cloneVersion}</button>
+          <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => { setManualProduct("qwen-web"); setManualRunType("real"); setManualDisplayedModel(""); setManualOpen(true); }} className="rounded-lg border border-teal-600 bg-white px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-40" title={MANUAL_NAV.entryHint}>
+            {MANUAL_NAV.entry}
+          </button>
           <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => setRunOpen(true)} className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800 disabled:opacity-40">
             {QUERY_WORKSPACE_NAV.runBenchmark}
           </button>
@@ -324,6 +350,43 @@ function SuiteInner() {
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setRunOpen(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">取消</button>
               <button type="button" disabled={busy || !engineId} onClick={() => void startRun()} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-40">开始 GEO 检测</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 人工 Web UI 检测设置 */}
+      {manualOpen && suite && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setManualOpen(false)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 text-slate-900 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold">{MANUAL_NAV.entry}</h2>
+            <p className="mt-1 text-xs text-slate-500">{MANUAL_NAV.entryHint}</p>
+            <dl className="mt-3 space-y-2 text-sm">
+              <div className="flex justify-between"><dt className="text-slate-500">监测对象</dt><dd className="font-medium">{target?.canonicalName ?? "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">问题集</dt><dd className="font-medium">{suite.name} v{suite.version}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">自然发现 / 品牌认知</dt><dd className="font-medium">{suite.discoveryCount} / {suite.sanityQueryCount}</dd></div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-slate-500">{MANUAL_NAV.product}</dt>
+                <select value={manualProduct} onChange={e => setManualProduct(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" aria-label="AI 产品">
+                  {Object.entries(MANUAL_NAV.products).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-slate-500">{MANUAL_NAV.displayedModel}</span>
+                <input value={manualDisplayedModel} onChange={e => setManualDisplayedModel(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="如 Qwen3-Web" aria-label="界面显示模型" />
+              </label>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-slate-500">{MANUAL_NAV.runType}</dt>
+                <select value={manualRunType} onChange={e => setManualRunType(e.target.value as "demo" | "real")} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" aria-label="数据性质">
+                  <option value="real">{MANUAL_NAV.realType}</option>
+                  <option value="demo">{MANUAL_NAV.demoType}（0 调用）</option>
+                </select>
+              </div>
+            </dl>
+            <p className="mt-3 rounded-lg bg-teal-50 px-3 py-2 text-[11px] text-teal-800">{MANUAL_NAV.aiRunVsManual}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setManualOpen(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">取消</button>
+              <button type="button" disabled={busy} onClick={() => void createManualRun()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">{MANUAL_NAV.createManual}</button>
             </div>
           </div>
         </div>
