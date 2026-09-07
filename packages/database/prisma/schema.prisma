@@ -106,6 +106,8 @@ model Project {
   recommendationRuns RecommendationRun[]
   contentOpportunityRuns ContentOpportunityRun[]
   experiments      OptimizationExperiment[]
+  sites            Site[]
+  changePlans      OptimizationChangePlan[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -979,6 +981,8 @@ model ContentOpportunity {
   evidenceLinks    ContentOpportunityEvidence[]
   blocks           ContentOpportunityBlock[]
   experiments      OptimizationExperiment[]
+  assetMappings    OpportunityAssetMapping[]
+  changePlans      OptimizationChangePlan[]
 
   @@index([opportunityRunId, priorityScore])
   @@index([opportunityRunId, status])
@@ -1088,6 +1092,10 @@ model OptimizationExperiment {
   baselineReportId      String   @db.Uuid
   querySetFingerprint   String   // 基线测试集指纹（SHA-256，语义行有序序列化）
   metricSource          String   // demo | real | mixed（继承基线；Demo/Real 隔离）
+  // ---- M8A Measurement Validity（基线测量有效性快照：创建时从 baseline evidence 冻结）----
+  measurementValidity   String?  // VALID_FOR_WEB_CHANGE / PARTIALLY_VALID / INVALID_FOR_WEB_CHANGE / UNKNOWN
+  measurementMode       String?  // WEB_VALIDATED / MANUAL_VERIFIED / MODEL_BEHAVIOR_ONLY / UNKNOWN
+  measurementWarnings   Json?    // reasons[]（为什么该基线不能直接支撑网页变化结论）
   provider              String
   engineId              String?  @db.Uuid
   engineKey             String?
@@ -1110,6 +1118,7 @@ model OptimizationExperiment {
   executions       ExperimentExecution[]
   retests          ExperimentRetest[]
   evaluations      ExperimentEvaluation[]
+  pilotReviews     PilotReview[]
 
   @@index([projectId, createdAt])
   @@index([contentOpportunityId, createdAt])
@@ -1226,4 +1235,179 @@ model ExperimentQueryDelta {
   evaluation ExperimentEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
 
   @@index([evaluationId, sortOrder])
+}
+
+// ============================================================
+// M8 - Real Optimization Pilot（真实站点资产 / 变更计划 / 试点 / 学习）
+// ============================================================
+// 设计原则（M8）：
+//   1) M8A Measurement Validity：普通模型 API（api_plain）≠ Web Search/Retrieval，
+//      不能把“改了公开网页”与“api_plain 输出变化”直接当网页 GEO 实验结论。
+//      判定只依据 Evidence.retrievalMode/sourceType（不按 provider 名猜），
+//      快照冻结在 OptimizationExperiment.measurement*。
+//   2) M8B Site Asset：解决 M7C“无 website inventory”limitation。清单来源分
+//      MANUAL/SITEMAP/CRAWLER/IMPORTED；本轮若无 crawler 不假装有（优先 manual+sitemap）。
+//      抓取一律 GET-only、同站点域名白名单、禁内网/metadata/file/redirect 跳私网；
+//      snapshot 只存可审计文本/标题/hash，不存页面二进制。
+//   3) Opportunity→Asset 映射必须是 UPDATE_EXISTING / CREATE_NEW / UNKNOWN 且人工确认：
+//      系统不因“没有匹配资产”就自动声称“必须新建页面”。
+//   4) Change Plan 是编辑说明（section/type/instruction/reason），不是最终正文
+//      （无 finalPublishedText），不自动发布（DRAFT/APPROVED/EXECUTED_MANUALLY/CANCELLED）。
+//   5) M8C Pilot Review 是观察结果快照（reviewVersion 独立并存），outcome 允许
+//      IMPROVED/MIXED/NO_CLEAR_CHANGE/REGRESSED/INCONCLUSIVE/INVALID_MEASUREMENT/
+//      CHANGE_NOT_VERIFIED —— 绝不伪造提升；attributionConfidence 只有 LOW/MEDIUM。
+//   6) 真实授权（Real Provider Calls / External Site Write / Publication）不在 DB
+//      表达，一律走 env + 用户逐次批准；本层只记录真实发生的事实（execution record、
+//      after snapshot、review），0 成本 Demo 永不伪装真实 Pilot。
+
+// 站点（一个项目可有多个：官网/帮助中心…）
+model Site {
+  id        String @id @default(uuid()) @db.Uuid
+  projectId String @db.Uuid
+  name      String
+  baseUrl   String   // 同源校验白名单根（http(s)://host）
+  status    String   @default("ACTIVE") // ACTIVE / ARCHIVED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assets  SiteAsset[]
+
+  @@index([projectId, status])
+}
+
+// 站点资产（页面/资源）：M8B inventory 单页单位。
+model SiteAsset {
+  id             String   @id @default(uuid()) @db.Uuid
+  siteId         String   @db.Uuid
+  url            String   // 观测到的 URL（可能带 query/hash）
+  canonicalUrl   String   // 去重用的 canonical（去 fragment、尾斜杠归一）
+  assetType      String?  // PRODUCT_PAGE / USE_CASE_PAGE / …（同 M7C assetType 语义；可空=未知）
+  title          String?
+  status         String   @default("KNOWN") // KNOWN / REMOVED / UNKNOWN
+  source         String   @default("MANUAL") // MANUAL / SITEMAP / CRAWLER / IMPORTED
+  lastObservedAt DateTime?
+  contentHash    String?  // 最近一次观察的文本 hash（sha256 of normalized text/title）
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  snapshots    SiteAssetSnapshot[]
+  assetMappings OpportunityAssetMapping[]
+  changePlans  OptimizationChangePlan[]
+
+  @@index([siteId, status])
+  @@unique([siteId, canonicalUrl])
+}
+
+// 资产快照：记录“网页改了什么”（title/text/hash），可审计变更。
+// snapshotType: BEFORE_CHANGE / AFTER_CHANGE / OBSERVED / MANUAL_IMPORT
+model SiteAssetSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  assetId      String   @db.Uuid
+  snapshotType String   @default("OBSERVED")
+  capturedAt   DateTime @default(now())
+  contentHash  String   // sha256（title+extracted text 的规范化串）
+  title        String?
+  textSnapshot String?  // 安全抽取文本（长度受限，绝不含完整 HTML/二进制）
+  textLength   Int?
+  headings     Json     @default("{}") // { items: [heading text…] }（可选，非正文）
+  source       String   @default("MANUAL") // MANUAL / SITEMAP / CRAWLER / IMPORTED
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  asset SiteAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, capturedAt])
+}
+
+// Opportunity → 站点资产映射（人工确认）。mappingType: UPDATE_EXISTING / CREATE_NEW / UNKNOWN
+model OpportunityAssetMapping {
+  id                   String   @id @default(uuid()) @db.Uuid
+  contentOpportunityId String   @db.Uuid
+  siteAssetId          String?  @db.Uuid // CREATE_NEW 时可为空（尚未有资产）
+  mappingType          String   // UPDATE_EXISTING / CREATE_NEW / UNKNOWN
+  confirmedByUser      Boolean  @default(false)
+  note                 String?
+  metadata             Json     @default("{}")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  contentOpportunity ContentOpportunity @relation(fields: [contentOpportunityId], references: [id], onDelete: Cascade)
+  siteAsset          SiteAsset?         @relation(fields: [siteAssetId], references: [id], onDelete: SetNull)
+
+  @@index([contentOpportunityId])
+  @@index([siteAssetId])
+}
+
+// 变更计划：把 M7C 建议结构转成“编辑说明”（不是正文、不自动发布）。
+model OptimizationChangePlan {
+  id                   String   @id @default(uuid()) @db.Uuid
+  projectId            String   @db.Uuid
+  contentOpportunityId String   @db.Uuid
+  siteAssetId          String?  @db.Uuid
+  changePlanVersion    String   // geolens-change-plan-v1
+  title                String
+  summary              String
+  status               String   @default("DRAFT") // DRAFT / APPROVED / EXECUTED_MANUALLY / CANCELLED
+  approvedAt           DateTime?
+  metadata             Json     @default("{}")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contentOpportunity ContentOpportunity @relation(fields: [contentOpportunityId], references: [id], onDelete: Restrict)
+  siteAsset          SiteAsset?         @relation(fields: [siteAssetId], references: [id], onDelete: SetNull)
+  items              OptimizationChangeItem[]
+
+  @@index([projectId, createdAt])
+  @@index([contentOpportunityId])
+  @@index([siteAssetId])
+}
+
+model OptimizationChangeItem {
+  id                      String   @id @default(uuid()) @db.Uuid
+  changePlanId            String   @db.Uuid
+  section                 String   // 建议结构块/页面区域（来自 Opportunity Block title 等）
+  changeType              String   // ADD_SECTION / UPDATE_SECTION / CLARIFY_ENTITY / ADD_USE_CASE / ADD_FAQ / ADD_COMPARISON_INFO / ADD_VERIFIABLE_FACT / ADD_SOURCE_REFERENCE / UPDATE_TITLE / UPDATE_METADATA / OTHER
+  instruction             String   // 具体编辑指令（≤ 若干句；不是最终全文）
+  reason                  String   // 为什么改（回链 opportunity rationale / block purpose）
+  sourceRecommendationId  String?  @db.Uuid // 普通 uuid 归档（非 FK）：可回溯 M7B Recommendation
+  sourceFindingId         String?  @db.Uuid // 普通 uuid 归档（非 FK）：可回溯 M7A DiagnosisFinding
+  sortOrder               Int      @default(0)
+  status                  String   @default("PENDING") // PENDING / DONE / SKIPPED（人工勾选）
+  metadata                Json     @default("{}")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  changePlan OptimizationChangePlan @relation(fields: [changePlanId], references: [id], onDelete: Cascade)
+
+  @@index([changePlanId, sortOrder])
+}
+
+// Pilot Review：M8C 完成后的一次性观察结果快照（immutable；reviewVersion 并存）。
+model PilotReview {
+  id                     String   @id @default(uuid()) @db.Uuid
+  experimentId           String   @db.Uuid
+  reviewVersion          String   // geolens-pilot-review-v1
+  measurementValidity    String   // 判定快照：VALID_FOR_WEB_CHANGE / PARTIALLY_VALID / INVALID_FOR_WEB_CHANGE / UNKNOWN
+  measurementMode        String?  // WEB_VALIDATED / MANUAL_VERIFIED / MODEL_BEHAVIOR_ONLY / UNKNOWN
+  executionValidity      String   // CHANGE_VERIFIED / CHANGE_NOT_OBSERVED / NOT_RECORDED
+  comparisonValidity     String   // CONTROLLED_COMPARABLE / PARTIALLY_COMPARABLE / NOT_COMPARABLE
+  observedOutcome        String   // IMPROVED_SIGNALS / MIXED_SIGNALS / NO_CLEAR_CHANGE / REGRESSED_SIGNALS / INCONCLUSIVE / INVALID_MEASUREMENT / CHANGE_NOT_VERIFIED
+  attributionConfidence  String   // LOW / MEDIUM（无 control/repeat/stable 之前不做 HIGH）
+  changedAssetCited      Boolean?
+  retrievalObservedForChangedAsset String? // TRUE / FALSE / UNKNOWN
+  evaluationId           String?  @db.Uuid // 普通 uuid 归档（非 FK）：本 review 依据的 M7D Evaluation
+  lessons                Json     @default("{}") // { items: [{ category, message }] }
+  summarySnapshot        Json     @default("{}") // 指标/query delta 汇总随 review 冻结
+  generatedAt            DateTime @default(now())
+  createdAt              DateTime @default(now())
+
+  experiment OptimizationExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId, generatedAt])
+  @@index([experimentId, reviewVersion])
 }
