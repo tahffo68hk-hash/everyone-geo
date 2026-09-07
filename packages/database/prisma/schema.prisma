@@ -284,6 +284,11 @@ enum RunStatus {
   SUCCEEDED
   FAILED
   CANCELLED
+  // M8C-R0：人工 Web UI 测量 —— 该 Run 等待用户在官方 AI Web 产品中执行并粘贴回答，
+  // 永不进入 worker queue（dispatchPendingRuns 只捞 PENDING/QUEUED）。
+  AWAITING_MANUAL_INPUT
+  // M8C-R0：用户主动跳过该问题（AI UI 无法回答等）。SKIPPED ≠ 品牌未出现（M7D 语义）。
+  SKIPPED
 }
 
 enum TaskStatus {

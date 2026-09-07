@@ -8,6 +8,8 @@ async function main() {
     ['mock-gamma', 'Mock Gamma', { delayMs: 650 }],
     ['mock-retry', 'Mock Retry', { delayMs: 350, failuresBeforeSuccess: 1 }],
     ['mock-failure', 'Mock Permanent Failure', { delayMs: 350, permanentFailure: true }],
+    // M8C-R0：人工 Web UI 测量引擎（永不进入 worker registry，仅作 Run 归属与展示）
+    ['manual-web-ui', '人工 Web UI', { manual: true }],
   ] as const) {
     await prisma.engine.upsert({ where: { key }, update: {}, create: { key, name, config: { ...config } } });
   }

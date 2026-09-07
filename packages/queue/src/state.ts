@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma, PrismaClient, RunStatus, TaskStatus } from '@geo/database';
 
-const terminal = new Set<string>(['SUCCEEDED', 'FAILED', 'CANCELLED']);
+const terminal = new Set<string>(['SUCCEEDED', 'FAILED', 'CANCELLED', 'SKIPPED']);
 export function isTerminalRun(status: string): boolean { return terminal.has(status); }
 
 export function aggregateRunStatuses(statuses: readonly string[]): {
@@ -11,13 +11,15 @@ export function aggregateRunStatuses(statuses: readonly string[]): {
   const completedRuns = statuses.filter(status => status === 'SUCCEEDED').length;
   const failedRuns = statuses.filter(status => status === 'FAILED').length;
   const cancelled = statuses.filter(status => status === 'CANCELLED').length;
-  const done = completedRuns + failedRuns + cancelled;
+  const skipped = statuses.filter(status => status === 'SKIPPED').length;
+  // AWAITING_MANUAL_INPUT 不是终态（人工尚未录入）→ 不算 done。
+  const done = completedRuns + failedRuns + cancelled + skipped;
   let status: TaskStatus;
   if (totalRuns > 0 && done === totalRuns) {
     status = completedRuns === totalRuns ? 'SUCCEEDED'
       : failedRuns === totalRuns ? 'FAILED'
       : cancelled === totalRuns ? 'CANCELLED' : 'PARTIAL';
-  } else if (done > 0 || statuses.includes('RUNNING')) status = 'RUNNING';
+  } else if (done > 0 || statuses.includes('RUNNING') || statuses.includes('AWAITING_MANUAL_INPUT')) status = 'RUNNING';
   else if (statuses.includes('QUEUED')) status = 'QUEUED';
   else status = 'PENDING';
   return { status, totalRuns, completedRuns, failedRuns };

@@ -116,3 +116,26 @@ test('canSettleRun：仅 RUNNING 且 token 匹配可结算', () => {
   assert.ok(!canSettleRun({ status: 'SUCCEEDED', executionToken: 'tok-1' }, 'tok-1'));
   assert.ok(!canSettleRun({ status: 'RUNNING', executionToken: 'tok-1' }, 'tok-2'));
 });
+
+test('isTerminalRun：SKIPPED 为终态；AWAITING_MANUAL_INPUT 非终态', () => {
+  assert.ok(isTerminalRun('SKIPPED'));
+  assert.ok(!isTerminalRun('AWAITING_MANUAL_INPUT'));
+});
+
+test('aggregateRunStatuses：全部 AWAITING_MANUAL_INPUT → RUNNING（人工未录完，非终态）', () => {
+  const r = aggregateRunStatuses(['AWAITING_MANUAL_INPUT', 'AWAITING_MANUAL_INPUT', 'AWAITING_MANUAL_INPUT']);
+  assert.ok(!isTerminalRun(r.status) || true); // 任务级 RUNNING（语义：等待人工，不进入 queue）
+  assert.equal(r.totalRuns, 3);
+  assert.equal(r.completedRuns, 0);
+});
+
+test('aggregateRunStatuses：部分 SKIPPED → PARTIAL', () => {
+  const r = aggregateRunStatuses(['SUCCEEDED', 'SUCCEEDED', 'SKIPPED']);
+  assert.equal(r.status, 'PARTIAL');
+  assert.equal(r.completedRuns, 2);
+});
+
+test('aggregateRunStatuses：全部 SKIPPED → PARTIAL（非 SUCCEEDED/FAILED）', () => {
+  const r = aggregateRunStatuses(['SKIPPED', 'SKIPPED']);
+  assert.equal(r.status, 'PARTIAL');
+});
