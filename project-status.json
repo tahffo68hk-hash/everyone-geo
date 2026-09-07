@@ -3,19 +3,19 @@
   "project": "GeoLens",
   "description": "GeoLens — AI Visibility Intelligence（GEO 监测数据平台）",
   "currentMilestone": "M7",
-  "overallStatus": "IN_PROGRESS",
+  "overallStatus": "DONE",
   "nextUp": {
-    "id": "M7",
-    "name": "Awaiting M7 Acceptance (M7D IMPLEMENTATION_DONE; 用户验收后 M7 DONE / 9-9 100%)",
-    "status": "AWAITING_ACCEPTANCE"
+    "id": "NONE",
+    "name": "M8 未定义 —— 不自动进入新 milestone（等待用户决定）",
+    "status": "NONE"
   },
-  "updatedAt": "2026-09-06T16:10:00.000Z",
+  "updatedAt": "2026-09-07T01:22:00.000Z",
   "updatedBy": "agent",
-  "updatedNote": "M7D Experiment & Re-test IMPLEMENTATION_DONE（M7A/B/C/D 均实现完成；0 real AI calls；REAL_EXPERIMENT=NOT_RUN）。M7 仍 IN_PROGRESS · AWAITING USER ACCEPTANCE —— Overall 8/9 DONE · ≈89%（用户正式验收 M7 后才改 M7=DONE / 9/9=100%）",
+  "updatedNote": "M7 已由用户正式验收（验收基线 ae9a32d）。M7=DONE / ACCEPTED，M7A-D DONE；Overall 9/9 DONE · 100%。独立事实保留：REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN —— 技术闭环已验证，但尚未在真实 ProjectMentor 业务环境执行优化实验，不声称验证了真实业务 GEO 提升。",
   "git": {
     "branch": "master",
-    "head": "f4e02d9",
-    "headLabel": "docs(m7): document experiment and retest loop",
+    "head": "ae9a32d",
+    "headLabel": "M7 正式验收基线（chore(m7): finalize project status after m7d）",
     "baselineBeforeDX1": "1137d23"
   },
   "realRunEvidence": {
@@ -591,17 +591,17 @@
     {
       "id": "M7",
       "name": "GEO Optimization & Action Center",
-      "status": "IN_PROGRESS",
-      "completedAt": null,
-      "commit": null,
-      "dataType": "n/a",
-      "demoRoute": null,
+      "status": "DONE",
+      "completedAt": "2026-09-07T09:22:00+08:00",
+      "commit": "ae9a32d",
+      "dataType": "mixed",
+      "demoRoute": "/app/experiments",
       "summary": [
-        "M7A GEO Diagnosis Foundation —— DONE/FROZEN（同前）",
-        "M7B Optimization Recommendations —— DONE/FROZEN（同前）",
-        "M7C Content Opportunities —— DONE/FROZEN（同前）",
-        "M7D Experiment & Re-test —— IMPLEMENTATION_DONE：OptimizationExperiment/Execution/Retest(多轮)/Evaluation(immutable v1) 模型+migration；geo-core 纯函数 evaluation engine（37 单测）；frozen snapshot re-run（startRunFromSnapshot 复用既有 pipeline，杜绝 Query Drift + SHA-256 query fingerprint）；compat/metric(pp·位·count)/query delta(outcome + failed≠absent)/coverage/timing guard；API+e2e(16)；中文 UI /app/experiments(+详情 10 段)+Opportunity 集成；Demo 闭环 0 real calls。真实 ProjectMentor 实验 NOT_RUN（待用户批准）。",
-        "M7 —— 待用户正式验收（M7D 用 Demo/Mock 证明技术闭环，不证明真实 GEO 提升）。"
+        "M7A GEO Diagnosis Foundation —— DONE / FROZEN（同前）",
+        "M7B Optimization Recommendations —— DONE / FROZEN（同前）",
+        "M7C Content Opportunities —— DONE / FROZEN（同前）",
+        "M7D Experiment & Re-test —— DONE / ACCEPTED：OptimizationExperiment/Execution/Retest(多轮)/Evaluation(immutable v1) 模型+migration；geo-core 纯函数 evaluation engine（37 单测）；frozen snapshot re-run（startRunFromSnapshot 复用既有 pipeline，杜绝 Query Drift + SHA-256 query fingerprint）；compat/metric(pp·位·count)/query delta(outcome + failed≠absent)/coverage/timing guard；API+e2e(16)；中文 UI /app/experiments(+详情 10 段)+Opportunity 集成；Demo 闭环 0 real calls（M7D acceptance 期间 Real AI Calls = 0）。",
+        "M7 —— DONE / ACCEPTED（用户 2026-09-07 正式验收，验收基线 ae9a32d）。闭环：Benchmark→Evidence→Report→Diagnosis→Recommendation→Content Opportunity→Experiment→Execution→Frozen Re-test→Evaluation。"
       ],
       "gates": {
         "implementation": {
@@ -614,7 +614,7 @@
         },
         "demo": {
           "status": "DONE",
-          "detail": "geo_dev Demo（0 real calls）：Opportunity→Experiment→Execution→Frozen Retest→Evaluation 闭环（demo INCONCLUSIVE 因本地队列竞争致 1 run FAILED → coverage guard；同逻辑 geo_test e2e 确定性验证 IMPROVED_SIGNALS 3 gained visibility）。REAL_EXPERIMENT=NOT_RUN"
+          "detail": "M7D Demo 闭环（0 real calls）+ 用户正式验收。REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN（保留独立事实：未在真实业务环境验证 GEO 提升）"
         }
       },
       "checkpoints": [
@@ -632,14 +632,14 @@
         },
         {
           "name": "M7D Experiment & Re-test",
-          "status": "IMPLEMENTATION_DONE"
+          "status": "DONE"
         }
       ],
       "verification": {
-        "method": "migrate dev(geo_dev) + migrate deploy(geo_test) + api e2e + worker/queue/llm/core test + web tsc/build + check-ui-zh",
+        "method": "用户正式验收（技术闭环 + Demo/Mock 验证）",
         "command": "pnpm --filter @geo/core test && pnpm --filter @geo/llm test && pnpm --filter @geo/queue test && pnpm --filter @geolens/api test:e2e && pnpm --filter @geolens/worker test && tsc -p database/web && check-ui-zh",
-        "lastRunAt": "2026-09-06T13:40:00.000Z",
-        "result": "PASS"
+        "lastRunAt": "2026-09-07T09:22:00+08:00",
+        "result": "ACCEPTED —— M7 技术闭环完成并验收；真实业务 GEO 提升未经真实 Experiment 验证（REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN）"
       },
       "tests": [
         {
@@ -668,5 +668,9 @@
         }
       ]
     }
-  ]
+  ],
+  "realOptimizationExperiment": {
+    "status": "NOT_RUN",
+    "note": "尚未执行 ProjectMentor 的真实 Optimization Experiment（Before→真实内容修改→Frozen Re-test→真实 After）。技术闭环已用 Demo/Mock 验证并验收；真实业务 GEO 提升未经实验验证。"
+  }
 }

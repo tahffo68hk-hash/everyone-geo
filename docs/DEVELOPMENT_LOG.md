@@ -746,3 +746,22 @@ M7D 实现完成：Before→执行记录→Frozen Re-test→After→评估 的�
   Overall 8/9 ≈89%（不自动写 9/9）。
 - REAL_EXPERIMENT：NOT_RUN —— 真实 ProjectMentor 内容优化实验须用户批准后再跑。
 - M8/Preference：本轮不训练模型、不导出数据集。
+
+
+## 2026-09-07 — M7 ACCEPTED（用户正式验收）
+
+用户正式验收 M7（验收基线 ae9a32d，workspace clean 起步）。仅做验收状态收尾，
+未进入新 milestone、未新增功能、未真实调用 DeepSeek/Qwen、未修改外部网站、未 push。
+
+- 验收内容：M7 = DONE / ACCEPTED；M7A / M7B / M7C / M7D 均 DONE。
+- 技术闭环（M7 全线）：
+  Benchmark → Evidence → Report → Diagnosis → Recommendation → Content Opportunity
+  → Experiment → Execution → Frozen Re-test → Evaluation。
+- M7D acceptance 期间 Real AI Calls during M7D acceptance = 0。
+- 独立事实保留：REAL_OPTIMIZATION_EXPERIMENT = NOT_RUN —— M7 的技术闭环已由
+  Demo/Mock 验证并正式验收；尚未执行 ProjectMentor 的真实 Optimization Experiment
+  （Before → 真实内容修改 → Frozen Re-test → 真实 After），因此不能声称已经验证
+  真实业务环境中的 GEO 提升。
+- Control Center 更新：overallStatus = DONE（9/9 DONE · 100%）；M7D checkpoint
+  IMPLEMENTATION_DONE → DONE；M7 verification.result = ACCEPTED；
+  nextUp = NONE（M8 未定义，不自动进入）。
