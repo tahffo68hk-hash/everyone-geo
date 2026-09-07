@@ -527,9 +527,11 @@ describe("Benchmark M6A e2e", () => {
     expect(body.byQuery.every((row: { status: string }) => row.status === "SUCCEEDED")).toBe(true);
   });
 
-  it("DTO 校验：空 queries / 非法 runType / 非法 engine → 400", async () => {
-    await owner.post(`/projects/${ids.projectA}/benchmark-suites`)
-      .send({ name: "Bad", version: "1", queries: [] }).expect(400);
+  it("DTO 语义：空 queries 允许（空问题集稍后补）；非法 runType / 非法 engine → 400", async () => {
+    // M8 General Onboarding：空 Query Set（稍后创建/生成器补题）是合法产品状态。
+    const empty = await owner.post(`/projects/${ids.projectA}/benchmark-suites`)
+      .send({ name: `Empty ${suffix}`, version: "1" }).expect(201);
+    expect(empty.body.queryCount ?? 0).toBe(0);
     await owner.post(`/benchmark-suites/${ids.seededSuiteId}/runs`)
       .send({ engineId: ids.engines[0], runType: "not-a-type" }).expect(400);
     await owner.post(`/benchmark-suites/${ids.seededSuiteId}/runs`)
