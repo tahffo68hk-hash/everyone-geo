@@ -5,6 +5,8 @@ node_modules/
 dist/
 build/
 .next/
+.next-m8/
+.next-m8e/
 out/
 
 # env

@@ -123,10 +123,15 @@ model Brand {
   description String?
   products    String[] // 品牌产品列表，PostgreSQL text[]；决策见 D-010
   aliases     String[] // 用于未来 Mention Detection 的低配品牌别名，如 ["Project Mentor","项目导师","PMentor"]
+  // M8E Target Profile 语义扩展：monitored entity 仍 = project 首个 Brand（worker
+  // snapshotEntities 读取），此处只补产品语义字段，不新增第二套 target 数据。
+  entityType       String   @default("BRAND") // BRAND / PRODUCT / SERVICE / ORGANIZATION / OTHER
+  productCategory  String?  // 如「大学生创新创业 AI 工具」「CRM SaaS」——自由文本，非固定 taxonomy
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  aliasesDetailed TargetEntityAlias[]
   // 策略：Brand 从属于 Project，项目删除即删除品牌（级联，理由充分：品牌数据不脱离项目独立存在）
 }
 
@@ -449,13 +454,19 @@ model BenchmarkQuery {
   // 执行镜像：对应项目 Query 行（source=IMPORTED / status=PAUSED，避免污染手动监测 UI）
   projectQueryId String?  @unique @db.Uuid
   queryText      String
-  category       String   // kebab 意图类目：tool-discovery / comparison / workflow / recommendation / pain-point / competition
+  category       String   // kebab 意图类目：tool-discovery / comparison / workflow / recommendation / pain-point / competition（用户可自定义）
   intent         String   // 人类可读意图说明
   locale         String   @default("zh-CN")
   weight         Float    @default(1)
   enabled        Boolean  @default(true)
   sortOrder      Int      @default(0)
   sanity         Boolean  @default(false) // branded sanity query：不计入主要 Visibility Benchmark
+  // M8E：queryType 显式语义（DISCOVERY=自然可见度主口径 / BRANDED_SANITY=品牌认知测试，
+  // 不计入主 metrics / CUSTOM=用户自定义，含品牌名时警告）。null=历史遗留（按 sanity 兼容解释）。
+  queryType      String?  // DISCOVERY / BRANDED_SANITY / CUSTOM / null
+  source         String?  // MANUAL / BUILDER / IMPORT / SEED / null
+  builderMetadata Json?   // Query Builder provenance（category/scenario/intent/audience/modifier 等组合输入）
+  contamination  Json?    // target contamination 检查快照 { status, matchedAlias, checkedTargetVersion }（新建/导入时确定性检查）
   metadata       Json     @default("{}")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -475,6 +486,9 @@ model BenchmarkRun {
   // 版本快照：suite 被编辑/更名不影响历史 Run 的解释
   suiteName      String
   suiteVersion   String
+  // M8E：目标实体快照（canonicalName/aliases/entityType/productCategory/website）——
+  // 本次测试监测谁。来源：项目 primary Brand（或未来 Target Profile）；在 Run 创建时冻结。
+  targetSnapshot Json?
   runType        BenchmarkRunType @default(DEMO)
   provider       String           // engine.provider 快照（mock | deepseek）
   engineId       String           @db.Uuid
@@ -521,6 +535,11 @@ model BenchmarkRunQuery {
   weight           Float    @default(1)
   sortOrder        Int
   sanity           Boolean  @default(false)
+  // M8E：queryType 快照（DISCOVERY/BRANDED_SANITY/CUSTOM；null=历史遗留按 sanity 解释）。
+  // 运行后源行 queryType 被改不影响本快照（与 sanity 语义一致）。
+  queryType        String?
+  // M8E：目标污染检查快照（保存时确定性检查；DISCOVERY 且含目标 → 应被拒，记录留档）
+  contamination    Json?
 
   benchmarkRun BenchmarkRun @relation(fields: [benchmarkRunId], references: [id], onDelete: Cascade)
 
@@ -1410,4 +1429,28 @@ model PilotReview {
 
   @@index([experimentId, generatedAt])
   @@index([experimentId, reviewVersion])
+}
+
+// ============================================================
+// M8E - Target Entity Profile（通用监测对象）
+// ============================================================
+// 设计决定（M8E Gate A）：
+//   - 1 Project = 1 Primary Target：监测对象 = project 的 primary Brand（worker
+//     snapshotEntities 已取 brands[0] 为 brand entity；M8E 在其上补 entityType /
+//     productCategory）。不新增第二套 target 主表 —— Brand 即 Target Profile 载体。
+//   - TargetEntityAlias：提供按 alias 粒度的 aliasType + enabled 管理；历史 / 只读
+//     兼容保留 Brand.aliases（快照式）。读取合并逻辑在服务层确定性完成。
+model TargetEntityAlias {
+  id            String   @id @default(uuid()) @db.Uuid
+  brandId       String   @db.Uuid
+  alias         String
+  aliasType     String   @default("CUSTOM") // OFFICIAL / PRODUCT / ABBREVIATION / LOCALIZED / CUSTOM
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, alias])
+  @@index([brandId, enabled])
 }
