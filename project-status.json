@@ -14,8 +14,8 @@
   "updatedNote": "M8 Real Optimization Pilot & Production Validation —— IMPLEMENTATION_DONE（M7 已验收 9/9 → 加入 M8 后 Overall 9/10 · ≈90%）。M8A 测量有效性框架（geo-core measurement/url-safety/pilot 引擎 + measurement guard）；M8B Site/SiteAsset/Snapshot/OpportunityAssetMapping + Change Plan；M8C Real Pilot（PilotReview/execution validity/attribution LOW·MEDIUM）；M8D PilotReview lessons。0 real AI calls、0 external writes。REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN —— 真实试点 PENDING_USER_APPROVAL；当前测量路径 api_plain（DeepSeek/Qwen）对网页变化 INVALID_FOR_WEB_CHANGE，需 manual_verified 或真实网页检索后才可执行真实试点。M8 最终验收待用户（不自动 10/10）。",
   "git": {
     "branch": "master",
-    "head": "ae9a32d",
-    "headLabel": "M7 正式验收基线（chore(m7): finalize project status after m7d）",
+    "head": "221b299",
+    "headLabel": "docs(m8): document real pilot and production validation",
     "baselineBeforeDX1": "1137d23"
   },
   "realRunEvidence": {
@@ -673,7 +673,7 @@
       "name": "Real Optimization Pilot & Production Validation",
       "status": "IN_PROGRESS",
       "completedAt": null,
-      "commit": null,
+      "commit": "221b299",
       "dataType": "mixed",
       "demoRoute": "/app/site-assets",
       "summary": [
