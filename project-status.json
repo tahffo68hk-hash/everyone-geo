@@ -14,8 +14,8 @@
   "updatedNote": "M8E Target Entity & Query Workspace —— DONE（作为 M8 产品基础增强并入 M8 里程碑）。Overall 仍 9/10 ≈90%；M8 仍 IN_PROGRESS（REAL_PILOT_PENDING_USER_APPROVAL / BLOCKED_BY_MEASUREMENT）。真实优化试点将使用用户自定义 Target+Query Set。",
   "git": {
     "branch": "master",
-    "head": "07f8c2a",
-    "headLabel": "docs(m8e): document target and query workspace",
+    "head": "4a56409",
+    "headLabel": "feat(ui): add Chinese manual web UI measurement workspace",
     "baselineBeforeDX1": "1137d23"
   },
   "realRunEvidence": {
