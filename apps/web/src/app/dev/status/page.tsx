@@ -525,7 +525,7 @@ export default async function DevStatusPage() {
             deepseek-api；模型 deepseek-v4-flash；Evidence sourceType=official_api / retrievalMode=api_plain，未伪造引用）。
           </p>
           <p className="mt-1 text-sm text-amber-900">
-            最新真实 GEO 样本：ProjectMentor · DeepSeek · 3 条测试问题 → 品牌提及{" "}
+            最新真实 GEO 样本（开发验证 fixture，非客户 Pilot）：DeepSeek · 3 条测试问题 → 品牌提及{" "}
             <b>{project?.realRunEvidence?.sample?.brandMentions ?? 0}/3</b>（品牌可见率 0%）。
           </p>
           <p className="mt-2 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">

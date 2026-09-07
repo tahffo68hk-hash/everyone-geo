@@ -117,7 +117,7 @@ function TargetInner() {
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="text-xs font-medium text-slate-600">{TARGET_NAV.canonicalName}</span>
-            <input value={form.canonicalName} onChange={e => setForm({ ...form, canonicalName: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="如：ProjectMentor / AcmeFlow" aria-label={TARGET_NAV.canonicalName} />
+            <input value={form.canonicalName} onChange={e => setForm({ ...form, canonicalName: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="如：AcmeFlow / CleanBot（虚构示例）" aria-label={TARGET_NAV.canonicalName} />
           </label>
           <label className="block">
             <span className="text-xs font-medium text-slate-600">{TARGET_NAV.entityType}</span>
@@ -162,7 +162,7 @@ function TargetInner() {
           ))}
         </ul>
         <div className="mt-3 flex flex-wrap gap-2">
-          <input value={newAlias.alias} onChange={e => setNewAlias({ ...newAlias, alias: e.target.value })} placeholder="新别名，如 Project Mentor" className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-64" aria-label="新别名" />
+          <input value={newAlias.alias} onChange={e => setNewAlias({ ...newAlias, alias: e.target.value })} placeholder="新别名，如 Acme Flow" className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-64" aria-label="新别名" />
           <select value={newAlias.aliasType} onChange={e => setNewAlias({ ...newAlias, aliasType: e.target.value })} className="rounded-lg border border-slate-300 px-2 py-2 text-sm" aria-label={TARGET_NAV.aliasType}>
             {Object.entries({ OFFICIAL: "官方", PRODUCT: "产品名", ABBREVIATION: "缩写", LOCALIZED: "本地化", CUSTOM: "自定义" }).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>

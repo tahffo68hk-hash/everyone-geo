@@ -902,3 +902,15 @@ M8 实现完成：把 M7 的优化闭环接到真实世界层（真实站点资�
   M8 仍 IN_PROGRESS（A/B DONE、C/D IMPLEMENTATION_DONE、E DONE、R0 DONE）；Overall 9/10。
 - Next：REAL BASELINE USER INPUT —— 用户在官方 AI Web UI 完成第一组真实 Discovery Query
   （真实站点/真实授权下）后才进入网站修改与 After；不进入 M9。
+
+## 2026-09-07 — 产品纠偏收尾：去 ProjectMentor 默认化
+
+- 定位声明：GeoLens = 通用 GEO SaaS（product-agnostic）；ProjectMentor 仅作历史
+  development seed / demo / test fixture（development validation dataset），
+  非默认项目、非生产客户 Pilot。
+- Production hardcode 清理：UI 默认值/示例文案移除 ProjectMentor 依赖
+  （competitor set 默认名、benchmark/站点/监测对象占位、别名示例、/dev/status 样例措辞）；
+  生产逻辑无 fallback（llm/worker/geo-core 均中性）。
+- 状态纠正：REAL_PILOT=NOT_SELECTED；REAL_CUSTOMER_VALIDATION=NOT_RUN；
+  overallStatus=IMPLEMENTATION_READY（project-status.json + productPositioning）。
+- 历史 ProjectMentor 数据完整保留（未删 Evidence/Report/Diagnosis/Opportunity）。

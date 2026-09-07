@@ -86,7 +86,7 @@ export default function CompetitorsPage() {
   const [approveType, setApproveType] = useState<string>("DIRECT");
 
   const [sets, setSets] = useState<CompetitorSet[]>([]);
-  const [newSetName, setNewSetName] = useState("ProjectMentor Competitor Set");
+  const [newSetName, setNewSetName] = useState("");
   const [newSetVersion, setNewSetVersion] = useState("1");
   const [sov, setSov] = useState<SovRow | null>(null);
   const [evidenceRunId, setEvidenceRunId] = useState<string | null>(null);
@@ -412,7 +412,7 @@ export default function CompetitorsPage() {
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                 <label className="text-xs text-slate-600">
                   名称（name）
-                  <input value={newSetName} onChange={e => setNewSetName(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                  <input value={newSetName} onChange={e => setNewSetName(e.target.value)} placeholder="如：AcmeFlow 竞品集" className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
                 </label>
                 <label className="text-xs text-slate-600">
                   版本（version）

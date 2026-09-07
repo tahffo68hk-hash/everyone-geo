@@ -229,7 +229,7 @@ export default function BenchmarkPage() {
           <Link href="/app" className="text-sm text-blue-700 hover:underline">← 返回工作台</Link>
           <h1 className="mt-3 text-2xl font-semibold">GEO 基准测试</h1>
           <p className="mt-2 text-sm text-slate-500">
-            ProjectMentor 自然可见度基准（M6A）。测试集版本化；每条结果可追溯到
+            GEO 可见度基准检测（通用：适用于任意监测品牌/产品）。测试集版本化；每条结果可追溯到
             测试问题 → 检测记录 → 原始证据 → 分析结果。「演示」为 Mock 模拟，「真实」才会产生真实模型服务调用。
           </p>
         </header>

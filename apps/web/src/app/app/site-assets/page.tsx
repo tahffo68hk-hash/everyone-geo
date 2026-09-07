@@ -126,7 +126,7 @@ function SiteAssetsInner() {
         <div className="flex flex-wrap items-center gap-2">
           <input
             value={newSite.name} onChange={e => setNewSite({ ...newSite, name: e.target.value })}
-            placeholder="站点名称（如 ProjectMentor 官网）"
+            placeholder="站点名称（如：你的品牌官网）"
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-56"
             aria-label="站点名称"
           />

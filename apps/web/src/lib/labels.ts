@@ -998,7 +998,7 @@ export const TARGET_NAV = {
   website: "官网地址",
   description: "简介（可选）",
   aliases: "品牌别名",
-  aliasesHint: "别名用于识别 AI 回答中出现的品牌（如 Project Mentor / 项目导师）。",
+  aliasesHint: "别名用于识别 AI 回答中出现的品牌（如 Acme Flow / AcmeFlow CRM）。",
   addAlias: "添加别名",
   aliasType: "别名类型",
   save: "保存监测对象",

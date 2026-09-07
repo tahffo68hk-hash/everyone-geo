@@ -91,3 +91,15 @@ AIGC:
 - 分析 Mention/Rank/Recommendation/Citation。
 - Dashboard 展示 Share of Voice，点任意数据可看到完整 Raw Response Evidence。
 *（内容由AI生成，仅供参考）*
+
+## 7. 产品定位声明（2026-09-07 更新）
+
+GeoLens is a product-agnostic GEO SaaS. ProjectMentor was used only as a historical
+development seed / demo / test fixture（development validation dataset），
+它不是默认项目，也不是生产客户 Pilot。
+
+正式产品流程与品牌无关：用户新建监测项目 → 设置任意 Target → 产品类别 → 别名 →
+问题集 → 运行检测 → Evidence / Metrics / Report → Diagnosis / Recommendation / Opportunity。
+
+No real customer optimization pilot has been completed yet. 真实 Pilot 目标品牌
+将由用户未来选定（真实存在、有真实网站、确实想做 GEO），再开始执行。
