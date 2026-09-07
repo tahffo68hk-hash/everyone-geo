@@ -817,3 +817,44 @@ M8 实现完成：把 M7 的优化闭环接到真实世界层（真实站点资�
   自动化测量路径（api_plain），真实试点需 manual_verified 或具备网页检索的 measurement 后再跑。
 - Known limitations：api_plain 不能验证公开网页变化；无自动 Web Retrieval（manual_verified 是 v1
   fallback）；无 crawler（manual+sitemap）；attribution LOW/MEDIUM；无因果证明。
+
+
+## 2026-09-07 — M8E Target Entity & Query Workspace（DONE，未 push，0 real AI calls）
+
+把 GeoLens 从「固定 ProjectMentor Benchmark」升级为「任意项目自定义监测对象 + 自定义问题集」。
+
+- 架构决定：复用 BenchmarkSuite/BenchmarkQuery 作为 Query Set（未建第二套）；监测对象 = 项目
+  primary Brand（worker snapshotEntities 原本 brands[0]）；新增 TargetEntityAlias(aliasType/
+  enabled) + Brand.entityType/productCategory；BenchmarkQuery/RunQuery 增 queryType/
+  source/contamination 快照；BenchmarkRun.targetSnapshot 冻结。migration m8e_target_and_query。
+- geo-core query-workspace.ts（30 新单测并入 242 全绿）：normalize NFKC+case+whitespace；
+  detectTargetContamination（拉丁词边界避免 substring 误报、中文子串、longest alias、
+  URL 内→POSSIBLE、matchedAlias）；guardQueryType（DISCOVERY+target 拒存，CUSTOM 警告，
+  SANITY 允许）；确定性 builder templates（RECOMMEND/HOW_TO/COMPARE/PROBLEM_SOLVING/
+  INFORMATIONAL，category 融入、target 不入模板、cap 100、dedup、stable ordering、0 LLM/0 net）；
+  computeMetricScope（DISCOVERY_ONLY，excluded sanity/contaminated）。
+- benchmark.service：createSuite 支持 queryType/source + DISCOVERY guard；startRun/
+  startRunFromSnapshot 快照 queryType/contamination + 冻结 targetSnapshot；getMetrics eligible
+  pool（修复 overall 混入 sanity 的潜在虚高）+ scope 元数据（metricQueryScope/metricScopeQuery
+  Count/excludedSanityCount/excludedContaminatedCount）；presentSuite 计数 discovery/sanity/custom。
+  overall.queryEligibleCount 保持 legacy=analyzedRuns（兼容 M6A e2e）。
+- reports.service：metricsSnapshot 冻结 scope 元数据（历史 report 不重算）。
+- worker snapshotEntities：enabled TargetEntityAlias 并入 brand aliases（冻结于新 Evidence）。
+- llm mock fallback 'ProjectMentor'→'TargetBrand'；recommendations 模板示例文案通用化。
+- prompt neutrality 单测（llm.test M8E-74）：DISCOVERY prompt 不含 canonical/alias。
+- API：query-workspace module —— target-profile GET/PUT、target-aliases POST/PATCH/DELETE、
+  query-builder/preview、queries/import-preview、benchmark-suites/:id/queries/batch、clone。
+- e2e query-workspace 7/7：AcmeFlow 全流程 + DISCOVERY 拒存 + SANITY 保存 + eligible 3 /
+  excludedSanity 1 / scope DISCOVERY_ONLY + visibility 不被品牌问题抬高 + clone v2 不改 v1 +
+  tenant/401；preview 无副作用。
+- UI 中文：/app/target（监测对象 + alias 管理 + “修改只影响新检测”提示）、/app/queries（列表）、
+  /app/queries/[id]（生成器预览→保存、批量导入预览、Query 表含 queryType/target check/启用，
+  检测前确认 modal、clone）；报告页核心指标 denominator 说明（DISCOVERY_ONLY N · 排除 sanity X）。
+- 回归：geo-core 242 / llm 38 / queue 15 / worker 31 / database 15 / API e2e 166（14 suites）/
+  web tsc + build(.next-m8e，gitignore) / check-ui-zh 31 —— 全绿；M3–M8B 无回归。
+- 0-cost 双 Demo（0 real calls / 0 external writes，跑后清理）：ProjectMentor + AcmeFlow(CRM
+  SaaS) 同代码：target 建立、DISCOVERY 含品牌 REJECTED、sanity 保存、builder preview、mock run
+  → report metricQueryScope=DISCOVERY_ONLY eligible=3 excludedSanity=1、targetSnapshot 冻结。
+- 数据事实迁移：ProjectMentor v1 suite 26 行 → 24 DISCOVERY + 2 BRANDED_SANITY（seed 可证）。
+- secret scan PASS。Control Center：M8E DONE；M8 仍 IN_PROGRESS（A/B DONE、C/D IMPLEMENTATION
+  _DONE、E DONE）；Overall 9/10 ≈90%（REAL_PILOT 待用户授权/测量路径）。
