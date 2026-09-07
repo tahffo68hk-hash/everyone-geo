@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleDestroy } from "@nestjs/common";
 import { createRunQueue, dispatchPendingRuns } from "@geo/queue";
-import { aggregateMetrics, METRIC_VERSION, type AnalysisOutput, type MetricsOutput, type Sentiment } from "@geo/core";
+import {
+  aggregateMetrics, METRIC_VERSION, computeMetricScope, isMetricEligible,
+  detectTargetContamination,
+  type AnalysisOutput, type MetricScopeResult, type MetricsOutput, type Sentiment,
+} from "@geo/core";
 import { enginePresentation, readRealProviderEnv } from "@geo/llm";
 import type { Prisma } from "@geo/database";
 import { PrismaService } from "../prisma.service";
@@ -46,6 +50,8 @@ interface MetricsPoolRun {
   queryText: string | null;
   sortOrder: number | null;
   sanity: boolean;
+  queryType: string | null;
+  contamination: { status?: string } | null;
   analysis: MetricsAnalysis | null;
 }
 
@@ -104,6 +110,25 @@ export class BenchmarkService implements OnModuleDestroy {
     if (existing) {
       throw new BadRequestException(`Benchmark Suite「${dto.name} v${dto.version}」已存在；请递增 version 或改名。`);
     }
+    // M8E：createSuite 也执行 Target Contamination Guard —— primary Brand 即监测对象；
+    // DISCOVERY query 含目标 ⇒ 400（会虚高自然可见度）。无 target 时跳过（无法判断）。
+    const primaryBrand = (await this.db.client.brand.findMany({
+      where: { projectId: project.id },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: 1,
+    }))[0] ?? null;
+    const targetIdentity = primaryBrand
+      ? { canonicalName: primaryBrand.name, aliases: primaryBrand.aliases }
+      : null;
+    for (const [index, query] of dto.queries.entries()) {
+      const queryType = query.queryType ?? (query.sanity === true ? "BRANDED_SANITY" : null);
+      if (queryType === "DISCOVERY" && targetIdentity) {
+        const c = detectTargetContamination(query.queryText, targetIdentity);
+        if (c.status === "TARGET_MENTIONED") {
+          throw new BadRequestException(`Query「${query.queryText.slice(0, 60)}…」含监测对象「${primaryBrand.name}」——自然发现问题不能包含品牌名（会虚高可见度）。请改为 BRANDED_SANITY（品牌认知测试）或移除品牌名。`);
+        }
+      }
+    }
     // 排序：显式 sortOrder 或按数组顺序；重复 sortOrder / queryText 直接拒绝。
     const byOrder = new Map<number, number>();
     const seenText = new Set<string>();
@@ -126,17 +151,27 @@ export class BenchmarkService implements OnModuleDestroy {
         data: {
           projectId: project.id, name: dto.name, version: dto.version,
           description: dto.description ?? null,
-          queries: { create: dto.queries.map((query, index) => ({
-            queryText: query.queryText, category: query.category, intent: query.intent,
-            locale: query.locale ?? "zh-CN", weight: query.weight ?? 1,
-            enabled: query.enabled ?? true, sanity: query.sanity ?? false,
-            sortOrder: query.sortOrder ?? index,
-            // 同步镜像一条项目 Query（PAUSED + IMPORTED），供既有 Run 管线引用。
-            projectQuery: { create: {
-              projectId: project.id, querySetId: querySet.id, text: query.queryText,
-              type: "CUSTOM", source: "IMPORTED", status: "PAUSED", language: query.locale ?? "zh-CN", region: "cn",
-            } },
-          })) },
+          queries: { create: dto.queries.map((query, index) => {
+            // M8E：queryType 显式语义（DISCOVERY / BRANDED_SANITY / CUSTOM）。
+            // legacy 兼容：不传 queryType 时按 sanity 推导（sanity=true ⇒ BRANDED_SANITY；
+            // 否则保持 null=legacy，由 metrics 端按 sanity 口径解释，避免历史语义漂移）。
+            const queryType = query.queryType
+              ?? (query.sanity === true ? "BRANDED_SANITY" : null);
+            const sanity = query.sanity ?? (queryType === "BRANDED_SANITY");
+            const source = query.source ?? "MANUAL";
+            return {
+              queryText: query.queryText, category: query.category, intent: query.intent,
+              locale: query.locale ?? "zh-CN", weight: query.weight ?? 1,
+              enabled: query.enabled ?? true, sanity,
+              sortOrder: query.sortOrder ?? index,
+              queryType, source,
+              // 同步镜像一条项目 Query（PAUSED + IMPORTED），供既有 Run 管线引用。
+              projectQuery: { create: {
+                projectId: project.id, querySetId: querySet.id, text: query.queryText,
+                type: "CUSTOM", source: "IMPORTED", status: "PAUSED", language: query.locale ?? "zh-CN", region: "cn",
+              } },
+            };
+          }) },
         },
         include: { queries: { orderBy: { sortOrder: "asc" } } },
       });
@@ -186,6 +221,23 @@ export class BenchmarkService implements OnModuleDestroy {
       }
     }
     const suiteProject = suite.project;
+    // M8E：冻结本次 Run 的 target 实体快照（canonicalName/aliases/entityType/
+    // productCategory/website）——来自项目 primary Brand。Evidence.entitySnapshot
+    // 另有同源冻结；此处供 Run/Report/Matrix 级追溯。
+    const primaryBrand = (await this.db.client.brand.findMany({
+      where: { projectId: suiteProject.id },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: 1,
+      select: { name: true, aliases: true, entityType: true, productCategory: true, website: true },
+    }))[0] ?? null;
+    const targetSnapshot = primaryBrand ? {
+      canonicalName: primaryBrand.name,
+      aliases: primaryBrand.aliases,
+      entityType: primaryBrand.entityType,
+      productCategory: primaryBrand.productCategory,
+      website: primaryBrand.website,
+    } : null;
+
     const created = await this.db.client.$transaction(async tx => {
       const monitorTask = await tx.monitorTask.create({
         data: {
@@ -202,14 +254,17 @@ export class BenchmarkService implements OnModuleDestroy {
           monitorTaskId: monitorTask.id, plannedRuns,
           status: "PENDING",
           metadata: { engineKey: engine.key } as JsonValue,
+          targetSnapshot: targetSnapshot ? JSON.parse(JSON.stringify(targetSnapshot)) as JsonValue : undefined,
           // 语义快照：复制每个启用 query 的完整语义（queryText/category/intent/
-          // locale/weight/sortOrder/sanity）。历史报告只读快照 → 未来编辑 Suite/
-          // Query 不影响已创建 Run 的语义与指标（版本化不可变性）。
+          // locale/weight/sortOrder/sanity + M8E queryType/contamination）。
+          // 历史报告只读快照 → 未来编辑 Suite/Query 不影响已创建 Run 的语义与指标。
           runQueries: { create: enabledQueries.map(query => ({
             benchmarkQueryId: query.id, projectQueryId: query.projectQueryId!,
             queryText: query.queryText, category: query.category, intent: query.intent,
             locale: query.locale, weight: query.weight,
             sortOrder: query.sortOrder, sanity: query.sanity,
+            queryType: query.queryType ?? null,
+            contamination: query.contamination ? JSON.parse(JSON.stringify(query.contamination)) as JsonValue : undefined,
           })) },
         },
       });
@@ -251,6 +306,7 @@ export class BenchmarkService implements OnModuleDestroy {
         queryId: runRow.queryId, queryText: bench?.queryText ?? runRow.query.text,
         benchmarkQueryId: bench?.benchmarkQueryId ?? null, category: bench?.category ?? null,
         intent: bench?.intent ?? null, sortOrder: bench?.sortOrder ?? null, sanity: bench?.sanity ?? false,
+        queryType: bench?.queryType ?? null,
       };
     });
     taskRuns.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
@@ -259,6 +315,7 @@ export class BenchmarkService implements OnModuleDestroy {
       id: run.id, runType: run.runType, provider: run.provider,
       suite: { id: run.suite.id, name: run.suiteName, version: run.suiteVersion },
       engine: run.engine,
+      targetSnapshot: (run.targetSnapshot ?? null) as Record<string, unknown> | null,
       status: task.status, plannedRuns: task.totalRuns,
       completedRuns: task.completedRuns, failedRuns: task.failedRuns,
       succeededRuns: taskRuns.filter(row => row.status === "SUCCEEDED").length,
@@ -303,6 +360,8 @@ export class BenchmarkService implements OnModuleDestroy {
         queryText: bench?.queryText ?? runRow.query.text,
         sortOrder: bench?.sortOrder ?? null,
         sanity: bench?.sanity ?? false,
+        queryType: bench?.queryType ?? null,
+        contamination: (bench?.contamination ?? null) as { status?: string } | null,
         analysis: analysis ? {
           analysisVersion: analysis.analysisVersion,
           brandMentioned: analysis.brandMentioned,
@@ -321,24 +380,27 @@ export class BenchmarkService implements OnModuleDestroy {
       : realRows.length === rows.length ? "real" : "mixed";
     const pool = realRows.length > 0 ? realRows : rows;
 
+    // M8E metrics scope：主指标只消费 DISCOVERY（+ 非品牌 CUSTOM），
+    // BRANDED_SANITY / 含目标的未确认 CUSTOM / legacy sanity 一律不入 denominator。
+    const eligiblePool = pool.filter(row => isMetricEligible(row));
+    const scope: MetricScopeResult = computeMetricScope(
+      snapRows.map(q => ({ queryType: q.queryType ?? null, sanity: q.sanity, contamination: q.contamination as { status?: string } | null })),
+    );
+
     const aggregate = (subset: MetricsPoolRun[]): MetricsOutput => aggregateMetrics({
       analysisVersion,
       runs: subset.map(row => ({ status: row.status, analysis: toAnalysisOutput(row.analysis) })),
     });
 
-    const overall = aggregate(pool);
-    const mentionedInPool = pool.filter(row => {
+    const overall = aggregate(eligiblePool);
+    const mentionedInPool = eligiblePool.filter(row => {
       const a = row.analysis;
       return row.status === "SUCCEEDED" && a?.analysisVersion === analysisVersion && a.brandMentioned;
     }).length;
 
     const categories = new Map<string, { eligible: number; mentioned: number }>();
-    const byQuery = pool
-      .filter(row => {
-        // sanity 以 Run 创建时的快照语义为准（不随当前 Suite 编辑漂移）
-        if (!row.benchmarkQueryId || row.sanity) return false;
-        return true;
-      })
+    const byQuery = eligiblePool
+      .filter(row => row.benchmarkQueryId)
       .map(row => {
         const eligible = row.status === "SUCCEEDED" && row.analysis?.analysisVersion === analysisVersion;
         const rowCategory = row.category;
@@ -355,6 +417,8 @@ export class BenchmarkService implements OnModuleDestroy {
           benchmarkQueryId: row.benchmarkQueryId, queryText: row.queryText,
           category: row.category, intent: row.intent,
           sortOrder: row.sortOrder,
+          queryType: row.queryType,
+          sanity: row.sanity,
           status: row.status,
           analyzed: eligible,
           brandMentioned: a?.brandMentioned ?? null,
@@ -366,7 +430,7 @@ export class BenchmarkService implements OnModuleDestroy {
       });
     const byCategory: Array<{ category: string; queryEligibleCount: number; queryMentionedCount: number; metrics: MetricsOutput }> = [];
     for (const [category, counts] of categories) {
-      const subset = pool.filter(row => row.category === category);
+      const subset = eligiblePool.filter(row => row.category === category);
       byCategory.push({
         category,
         queryEligibleCount: counts.eligible,
@@ -381,11 +445,21 @@ export class BenchmarkService implements OnModuleDestroy {
       analysisVersion,
       metricSource,
       suite: { id: run.suite.id, name: run.suiteName, version: run.suiteVersion },
+      targetSnapshot: (run.targetSnapshot ?? null) as Record<string, unknown> | null,
       // M6B 前竞对集为开发占位，SoV 不作对外结论。
       competitorScope: {
         status: "pending-m6b",
         note: "competitor set pending M6B — 当前竞对为开发占位，Share of Voice 仅限内部参考",
       },
+      // M8E：denominator 可审计 —— 核心 GEO 指标基于多少 eligible queries、排除多少 sanity。
+      // 顶层 metricQueryScope/eligibleQueryCount = 快照口径（enabled 非 sanity 的 query 数）；
+      // overall.queryEligibleCount 保持历史语义 = analyzedRuns（成功且已分析，含 demo/real 子集），
+      // 两者并存：scope 字段用于审计 denominator 构成，overall 字段用于历史兼容。
+      metricQueryScope: scope.metricQueryScope,
+      metricScopeQueryCount: scope.eligibleQueryCount,
+      excludedQueryCount: scope.excludedQueryCount,
+      excludedSanityCount: scope.excludedSanityCount,
+      excludedContaminatedCount: scope.excludedContaminatedCount,
       overall: { ...overall, queryEligibleCount: overall.analyzedRuns, queryMentionedCount: mentionedInPool },
       byCategory,
       byQuery,
@@ -413,24 +487,33 @@ export class BenchmarkService implements OnModuleDestroy {
   private presentSuite(suite: {
     id: string; name: string; version: string; description: string | null;
     status: string; createdAt: Date; updatedAt: Date;
-    queries: Array<{ id: string; queryText: string; category: string; intent: string; sortOrder: number; enabled: boolean; sanity: boolean }>;
+    queries: Array<{
+      id: string; queryText: string; category: string; intent: string; sortOrder: number;
+      enabled: boolean; sanity: boolean; queryType: string | null; source: string | null;
+      contamination: Prisma.JsonValue | null; locale: string;
+    }>;
   }) {
     const categoryCounts = new Map<string, number>();
     for (const query of suite.queries) {
       if (!query.enabled || query.sanity) continue;
       categoryCounts.set(query.category, (categoryCounts.get(query.category) ?? 0) + 1);
     }
+    const effectiveType = (q: { queryType: string | null; sanity: boolean }) => q.queryType ?? (q.sanity ? "BRANDED_SANITY" : null);
     const enabled = suite.queries.filter(query => query.enabled && !query.sanity).length;
     return {
       id: suite.id, name: suite.name, version: suite.version,
       description: suite.description, status: suite.status,
       queryCount: enabled,
-      sanityQueryCount: suite.queries.filter(query => query.sanity).length,
+      discoveryCount: suite.queries.filter(query => query.enabled && effectiveType(query) === "DISCOVERY").length,
+      sanityQueryCount: suite.queries.filter(query => query.sanity || effectiveType(query) === "BRANDED_SANITY").length,
+      customCount: suite.queries.filter(query => query.enabled && effectiveType(query) === "CUSTOM").length,
       categoryCounts: Object.fromEntries(categoryCounts),
       createdAt: suite.createdAt, updatedAt: suite.updatedAt,
       queries: suite.queries.map(query => ({
         id: query.id, queryText: query.queryText, category: query.category,
         intent: query.intent, sortOrder: query.sortOrder, enabled: query.enabled, sanity: query.sanity,
+        queryType: effectiveType(query), source: query.source,
+        contamination: query.contamination, locale: query.locale,
       })),
     };
   }
@@ -508,6 +591,21 @@ export class BenchmarkService implements OnModuleDestroy {
         },
       });
 
+      // M8E：frozen retest 冻结 target 快照（复测对象须与基线一致 —— 取当前 primary Brand）
+      const primaryBrand = (await this.db.client.brand.findMany({
+        where: { projectId: source.projectId },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: 1,
+        select: { name: true, aliases: true, entityType: true, productCategory: true, website: true },
+      }))[0] ?? null;
+      const targetSnapshot = primaryBrand ? {
+        canonicalName: primaryBrand.name,
+        aliases: primaryBrand.aliases,
+        entityType: primaryBrand.entityType,
+        productCategory: primaryBrand.productCategory,
+        website: primaryBrand.website,
+      } : null;
+
       const benchmarkRun = await tx.benchmarkRun.create({
         data: {
           organizationId: source.organizationId, projectId: source.projectId,
@@ -516,12 +614,15 @@ export class BenchmarkService implements OnModuleDestroy {
           monitorTaskId: monitorTask.id, plannedRuns,
           status: 'PENDING',
           metadata: { engineKey: engine.key, frozenFromRunId: source.id, frozenRetest: true } as JsonValue,
+          targetSnapshot: targetSnapshot ? JSON.parse(JSON.stringify(targetSnapshot)) as JsonValue : undefined,
           runQueries: { create: snapRows.map((row, index) => ({
             benchmarkQueryId: row.benchmarkQueryId,
             // projectQueryId 指向本复测新建的镜像 Query（getRun/metrics 经其对齐快照语义）
             projectQueryId: mirrorQueries[index].id,
             queryText: row.queryText, category: row.category, intent: row.intent,
             locale: row.locale, weight: row.weight, sortOrder: row.sortOrder, sanity: row.sanity,
+            queryType: row.queryType ?? null,
+            contamination: row.contamination ? JSON.parse(JSON.stringify(row.contamination)) as JsonValue : undefined,
           })) },
         },
       });

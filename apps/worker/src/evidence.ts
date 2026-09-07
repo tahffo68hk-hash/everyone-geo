@@ -5,11 +5,21 @@ import type { ProviderResponse } from '@geo/llm';
 
 export async function snapshotEntities(db: PrismaClient, projectId: string): Promise<Entity[]> {
   const [brands, competitors] = await Promise.all([
-    db.brand.findMany({ where: { projectId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
+    db.brand.findMany({
+      where: { projectId },
+      include: { aliasesDetailed: { where: { enabled: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    }),
     db.competitor.findMany({ where: { projectId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
   ]);
   return [
-    ...brands.slice(0, 1).map(row => ({ id: row.id, canonicalName: row.name, aliases: row.aliases, entityType: 'brand' as const })),
+    // M8E：enabled TargetEntityAlias 并入 brand aliases（禁用/删除的 alias 不进入
+    // 新 Evidence 的 entitySnapshot）；legacy brand.aliases 仍保留（历史兼容）。
+    ...brands.slice(0, 1).map(row => ({
+      id: row.id, canonicalName: row.name,
+      aliases: [...new Set([...row.aliases, ...row.aliasesDetailed.map(a => a.alias)])],
+      entityType: 'brand' as const,
+    })),
     ...competitors.map(row => ({ id: row.id, canonicalName: row.name, aliases: row.aliases, entityType: 'competitor' as const })),
   ];
 }

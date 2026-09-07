@@ -62,6 +62,15 @@ export class BenchmarkQueryDto {
   @IsOptional()
   @IsBoolean()
   sanity?: boolean;
+
+  // ---- M8E：Query 语义（DISCOVERY=自然可见度主口径 / BRANDED_SANITY=品牌认知测试 / CUSTOM）----
+  @IsOptional()
+  @IsIn(["DISCOVERY", "BRANDED_SANITY", "CUSTOM"], { message: "queryType 只允许 DISCOVERY / BRANDED_SANITY / CUSTOM" })
+  queryType?: string;
+
+  @IsOptional()
+  @IsIn(["MANUAL", "BUILDER", "IMPORT", "SEED"], { message: "source 只允许 MANUAL / BUILDER / IMPORT / SEED" })
+  source?: string;
 }
 
 export class CreateBenchmarkSuiteDto {

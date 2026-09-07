@@ -110,6 +110,11 @@ export class ReportsService {
       metricVersion: metrics.metricVersion,
       analysisVersion,
       metricSource: metrics.metricSource,
+      // M8E denominator scope：核心指标样本 = DISCOVERY_ONLY（排除 Branded Sanity / 含目标 CUSTOM）
+      metricQueryScope: metrics.metricQueryScope ?? null,
+      metricScopeQueryCount: metrics.metricScopeQueryCount ?? null,
+      excludedSanityCount: metrics.excludedSanityCount ?? null,
+      excludedContaminatedCount: metrics.excludedContaminatedCount ?? null,
       overall: metrics.overall,
       byCategory: metrics.byCategory,
       byQuery: metrics.byQuery,
