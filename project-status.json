@@ -2,16 +2,16 @@
   "schemaVersion": 1,
   "project": "GeoLens",
   "description": "GeoLens — AI Visibility Intelligence（GEO 监测数据平台）",
-  "currentMilestone": "M7",
-  "overallStatus": "DONE",
+  "currentMilestone": "M8",
+  "overallStatus": "IN_PROGRESS",
   "nextUp": {
-    "id": "NONE",
-    "name": "M8 未定义 —— 不自动进入新 milestone（等待用户决定）",
-    "status": "NONE"
+    "id": "M8",
+    "name": "Real Optimization Pilot & Production Validation —— IMPLEMENTATION_DONE；REAL_PILOT_PENDING_USER_APPROVAL（真实试点需授权；api_plain 测量无法验证网页变化 → REAL_PILOT_BLOCKED_BY_MEASUREMENT fallback）",
+    "status": "AWAITING_USER_ACCEPTANCE"
   },
-  "updatedAt": "2026-09-07T01:22:00.000Z",
+  "updatedAt": "2026-09-07T02:30:00.000Z",
   "updatedBy": "agent",
-  "updatedNote": "M7 已由用户正式验收（验收基线 ae9a32d）。M7=DONE / ACCEPTED，M7A-D DONE；Overall 9/9 DONE · 100%。独立事实保留：REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN —— 技术闭环已验证，但尚未在真实 ProjectMentor 业务环境执行优化实验，不声称验证了真实业务 GEO 提升。",
+  "updatedNote": "M8 Real Optimization Pilot & Production Validation —— IMPLEMENTATION_DONE（M7 已验收 9/9 → 加入 M8 后 Overall 9/10 · ≈90%）。M8A 测量有效性框架（geo-core measurement/url-safety/pilot 引擎 + measurement guard）；M8B Site/SiteAsset/Snapshot/OpportunityAssetMapping + Change Plan；M8C Real Pilot（PilotReview/execution validity/attribution LOW·MEDIUM）；M8D PilotReview lessons。0 real AI calls、0 external writes。REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN —— 真实试点 PENDING_USER_APPROVAL；当前测量路径 api_plain（DeepSeek/Qwen）对网页变化 INVALID_FOR_WEB_CHANGE，需 manual_verified 或真实网页检索后才可执行真实试点。M8 最终验收待用户（不自动 10/10）。",
   "git": {
     "branch": "master",
     "head": "ae9a32d",
@@ -667,6 +667,58 @@
           "lastRunAt": "2026-09-06T13:40:00.000Z"
         }
       ]
+    },
+    {
+      "id": "M8",
+      "name": "Real Optimization Pilot & Production Validation",
+      "status": "IN_PROGRESS",
+      "completedAt": null,
+      "commit": null,
+      "dataType": "mixed",
+      "demoRoute": "/app/site-assets",
+      "summary": [
+        "M8A Measurement Validity —— DONE：api_plain 不构成网页优化验证（DeepSeek/Qwen 均为 official_api/api_plain → INVALID_FOR_WEB_CHANGE）；geo-core measurement.ts 纯函数（12 单测，verdict 只依 retrievalMode/sourceType 不按 provider 猜）+ url-safety.ts（SSRF：loopback/私网/metadata/file/ftp/redirect/白名单）；OptimizationExperiment 冻结 measurement* 快照 + WEB_CONTENT target measurement guard（Evaluation 自动降级 INCONCLUSIVE + INVALID_MEASUREMENT warning）；manual_verified 作为严谨 fallback（Evidence 已支持 manual/manual_verified）。",
+        "M8B Site Asset & Change Planning —— DONE：Site/SiteAsset/SiteAssetSnapshot（contentHash+BEFORE/AFTER）/OpportunityAssetMapping（UPDATE_EXISTING/CREATE_NEW/UNKNOWN 人工确认）；GET-only 同源抓取 + DNS 复查 + 大小/超时限制；OptimizationChangePlan/Item（编辑说明，无 finalPublishedText，不自动发布，Evidence 回链）；e2e sites-pilot 10/10。",
+        "M8C/M8D Real Pilot —— IMPLEMENTATION_DONE：PilotReview（reviewVersion immutable、executionValidity CHANGE_VERIFIED/CHANGE_NOT_OBSERVED、observedOutcome 允许 INVALID_MEASUREMENT/CHANGE_NOT_VERIFIED、attributionConfidence LOW/MEDIUM、lessons）；0-cost Demo（geo_dev）全链 Site→Asset→BEFORE→Mapping→ChangePlan(APPROVED)→measurement-validity→AFTER(hash 变化)→PilotReview：INVALID_MEASUREMENT + CHANGE_VERIFIED + attribution LOW —— 诚实不伪装提升。REAL_PILOT_PENDING_USER_APPROVAL / BLOCKED_BY_MEASUREMENT（api_plain）。"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "feat(m8)：measurement validity framework(geo-core 引擎+guard) / site asset inventory+snapshots / opportunity asset mapping / change plans / real pilot workflow(pilot review) / 中文 UI(site-assets+change-plans+experiment M8 区块)"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "geo-core 216（M8 measurement 12+pilot 12）+ api e2e 159（13 suites，M8 10）+ llm 35 + queue 15 + worker 31 + database guard 15 + web tsc/build(.next-m8)+check-ui-zh(28 文件) PASS；M3–M7D 无回归"
+        },
+        "demo": {
+          "status": "DONE",
+          "detail": "geo_dev 0-cost Demo（0 real AI calls、0 external writes）：Site→Asset→BEFORE snapshot→Opportunity mapping(UPDATE_EXISTING)→ChangePlan(DRAFT→APPROVED)→Experiment measurement-validity→AFTER snapshot(contentHash 变化)→PilotReview（outcome=INVALID_MEASUREMENT、execution=CHANGE_VERIFIED、attribution=LOW、3 lessons）—— 诚实展示 api_plain/演示测量不能伪装网页优化验证"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "M8A Measurement Validity",
+          "status": "DONE"
+        },
+        {
+          "name": "M8B Site Asset & Change Planning",
+          "status": "DONE"
+        },
+        {
+          "name": "M8C Real Pilot（授权门控实现）",
+          "status": "IMPLEMENTATION_DONE"
+        },
+        {
+          "name": "M8D Production Validation & Learning",
+          "status": "IMPLEMENTATION_DONE"
+        }
+      ],
+      "verification": {
+        "method": "用户验收（真实试点需授权；技术闭环已用 Demo/Mock 验证）",
+        "command": "0-cost Demo + e2e + regression",
+        "lastRunAt": "2026-09-07T02:30:00.000Z",
+        "result": "IMPLEMENTATION_DONE —— REAL_PILOT_PENDING_USER_APPROVAL / REAL_PILOT_BLOCKED_BY_MEASUREMENT（api_plain）；M8 不自动 ACCEPTED"
+      }
     }
   ],
   "realOptimizationExperiment": {

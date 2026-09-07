@@ -765,3 +765,55 @@ M7D 实现完成：Before→执行记录→Frozen Re-test→After→评估 的�
 - Control Center 更新：overallStatus = DONE（9/9 DONE · 100%）；M7D checkpoint
   IMPLEMENTATION_DONE → DONE；M7 verification.result = ACCEPTED；
   nextUp = NONE（M8 未定义，不自动进入）。
+
+
+## 2026-09-07 — M8 Real Optimization Pilot & Production Validation（IMPLEMENTATION_DONE，未 push）
+
+M8 实现完成：把 M7 的优化闭环接到真实世界层（真实站点资产 / 变更计划 / 测量有效性 / 试点评审）。
+0 次真实 AI 调用、0 次外部写、未发布、未 push；REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN
+（真实试点 PENDING_USER_APPROVAL；api_plain 测量对网页变化 INVALID → 亦 BLOCKED_BY_MEASUREMENT）。
+
+- M8A Measurement audit：DeepSeek / Qwen 均为 official_api/api_plain —— 普通模型 API 不等价于
+  产品 Web Search/Retrieval，不能把“改了公开网页”与“api_plain 输出变化”当网页 GEO 实验。
+- measurement.ts（geo-core 纯函数，12 单测）：verdict 只依 Evidence.retrievalMode/sourceType
+  （api_plain→INVALID/MODEL_BEHAVIOR_ONLY；manual_verified→VALID；web 检索模式需 retrievalConfirmed；
+  mock/estimated 永不伪装真实）；聚合保守优先；measurementGuard：WEB_CONTENT 目标 + After 测量无效
+  ⇒ Evaluation 自动 INCONCLUSIVE + INVALID_MEASUREMENT warning（M7D experiments service 接入，
+  create 时冻结 baseline measurement* 快照，present 透出 measurementGuard）。
+- url-safety.ts（geo-core 纯函数 + API 复用）：只 http/https；禁 loopback/私网/link-local/metadata/
+  file/ftp；DNS 解析复查 + redirect 逐跳复查 + 白名单 + 3MB/10s/5 跳限制；canonicalAssetUrl。
+- M8B 数据模型（migration m8_site_and_pilot，dev+geo_test+generate，additive）：Site / SiteAsset
+  （@@unique site+canonical）/ SiteAssetSnapshot（contentHash+BEFORE/AFTER/OBSERVED/MANUAL_IMPORT）/
+  OpportunityAssetMapping（UPDATE_EXISTING/CREATE_NEW/UNKNOWN 人工确认）/
+  OptimizationChangePlan+Item（无 finalPublishedText，状态 DRAFT→APPROVED→EXECUTED_MANUALLY/CANCELLED）/
+  PilotReview（reviewVersion、executionValidity、observedOutcome 含 INVALID_MEASUREMENT/CHANGE_NOT_VERIFIED、
+  attributionConfidence LOW/MEDIUM、lessons）+ OptimizationExperiment.measurement* 列。
+- Change plan 生成：geo-core pilot.ts blocksToChangeItems（block title/purpose → section/changeType/
+  instruction/reason 编辑说明，回链 source Recommendation，不写正文）。
+- M8C Pilot 工作流 API：POST sites/assets/snapshots/manual|capture、sitemap 受限导入、
+  content-opportunities/:id/asset-mappings、change-plans(+items/status)、experiments/:id/
+  measurement-validity + measurement-target(WEB_CONTENT/MODEL_BEHAVIOR)、pilot-review(+list/get)。
+  e2e sites-pilot 10/10（SSRF 阻断由 geo-core 单测 + DTO 校验覆盖；snapshot/plan/review 全链 +
+  measurement guard + tenant/401）。
+- UI（中文）：/app/site-assets（登记站点/页面/人工快照/列表 Table）+ /app/site-assets/:id（快照历史/
+  BEFORE·AFTER/关联机会）+ /app/change-plans/:id（编辑项/状态流转/“不自动发布”说明）+ 内容机会详情
+  目标站点资产与变更计划区块 + 实验详情 M8 测量有效性与 Pilot Review 区块；check-ui-zh 28 文件 PASS。
+- 回归：geo-core 216（M8 24）/ llm 35 / queue 15 / worker 31 / database guard 15 / api e2e 159
+  （13 suites，M8 10）/ web tsc + next build（.next-m8）+ check-ui-zh 全绿；M3–M7D 无回归。
+- 0-cost Demo（geo_dev，0 real calls，0 external writes）：Site(ProjectMentor 官网 Demo)→Asset(overview)
+  →BEFORE manual snapshot→Opportunity mapping UPDATE_EXISTING→ChangePlan DRAFT→APPROVED（4 items 确定性
+  编辑说明）→Experiment measurement-validity（UNKNOWN → 复用 M7D demo baseline 无冻结时如实显示）
+  →AFTER manual snapshot（contentHash 变化 verified）→PilotReview：observedOutcome=INVALID_MEASUREMENT
+  （demo/mock 测量诚实不可作网页验证）、executionValidity=CHANGE_VERIFIED、attribution=LOW、3 lessons。
+  演示数据保留（M7D Demo project 下）。
+- 环境修复（非代码）：宿主 5432 落入 Windows 保留端口段（WinError 10013，任何进程无法 bind）→
+  .env POSTGRES_PORT/DATABASE_URL/TEST_DATABASE_URL 切到 15432（.env 已 gitignored，不入库；容器重建
+  named volume 数据完好）；Docker Desktop 由 sandbox 缺 ProgramData env 导致 backend 崩溃 → 带
+  ProgramData=C://ProgramData 启动恢复。geo-redis 早已用 16379 同理规避。
+- secret 扫描 PASS；无外部网站读/写/CMS/发布；无 destructive migration（additive）。
+- Control Center：M8=IN_PROGRESS（M8A/B DONE、M8C/D IMPLEMENTATION_DONE）；Overall 9/10 · ≈90%
+  （M7 已验收 9/9；加入 M8 后 10 里程碑中 9 完成 —— 不自动 10/10，M8 待用户验收）。
+- REAL_EXPERIMENT：NOT_RUN —— REAL_PILOT_PENDING_USER_APPROVAL；当前无 VALID_FOR_WEB_CHANGE
+  自动化测量路径（api_plain），真实试点需 manual_verified 或具备网页检索的 measurement 后再跑。
+- Known limitations：api_plain 不能验证公开网页变化；无自动 Web Retrieval（manual_verified 是 v1
+  fallback）；无 crawler（manual+sitemap）；attribution LOW/MEDIUM；无因果证明。
