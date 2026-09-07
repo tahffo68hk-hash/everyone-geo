@@ -367,3 +367,34 @@ test('secret 保护：错误消息与 ProviderResponse 均不含 API Key / Autho
   assert.ok((response.rawProviderPayload as Record<string, unknown>).id, 'rawProviderPayload 保留 id');
   assert.ok((response.rawProviderPayload as Record<string, unknown>).usage, 'rawProviderPayload 保留 usage');
 });
+
+// ---------------------------------------------------------------- M8E prompt neutrality
+
+test('M8E-74: Discovery provider prompt 不含 target canonical/alias（中性 prompt）', async () => {
+  const { fetch, calls } = capturingFetch();
+  const provider = new DeepSeekProvider({ fetch, env: env() });
+  await provider.execute(baseRequest({ queryText: '大学生参加创新创业比赛可以使用哪些 AI 工具？' }));
+  assert.equal(calls.length, 1);
+  const body = JSON.parse((calls[0].init!.body as string) ?? '');
+  const sent = JSON.stringify(body.messages);
+  assert.ok(sent.includes('大学生参加创新创业比赛可以使用哪些 AI 工具？'), '用户 query 必须原样发送');
+  assert.ok(!sent.includes('ProjectMentor'), 'target canonical 不得泄漏进 prompt');
+  assert.ok(!sent.includes('项目导师'), 'target alias 不得泄漏进 prompt');
+});
+
+test('M8E-74b: BRANDED_SANITY query 本身含 target 时允许（用户明示问题）', async () => {
+  const { fetch, calls } = capturingFetch();
+  const provider = new DeepSeekProvider({ fetch, env: env() });
+  await provider.execute(baseRequest({ queryText: 'ProjectMentor 是什么？' }));
+  const body = JSON.parse((calls[0].init!.body as string) ?? '');
+  const sent = JSON.stringify(body.messages);
+  assert.ok(sent.includes('ProjectMentor'), '品牌认知测试的 query 本身可含品牌');
+});
+
+test('M8E-74c: systemPrompt（若配置）不自动包含 target', async () => {
+  const { fetch, calls } = capturingFetch();
+  const provider = new DeepSeekProvider({ fetch, env: env() });
+  await provider.execute(baseRequest({ engineConfig: { systemPrompt: '请直接回答用户问题。' } }));
+  const body = JSON.parse((calls[0].init!.body as string) ?? '');
+  assert.ok(!JSON.stringify(body.messages).includes('ProjectMentor'));
+});

@@ -14,7 +14,7 @@ import type { LLMProvider, LlmEntity, ProviderRequest, ProviderResponse, Structu
 
 /** Versioned deterministic demo sentences. No external provider is contacted. */
 export function mockScenarioText(scenario: string, engineKey: string, queryText: string, entities: LlmEntity[]): string {
-  const brand = entities.find(e => e.entityType === 'brand')?.canonicalName ?? 'ProjectMentor';
+  const brand = entities.find(e => e.entityType === 'brand')?.canonicalName ?? 'TargetBrand';
   const competitors = entities.filter(e => e.entityType === 'competitor').map(e => e.canonicalName);
   const [a = 'A', b = 'B', c = 'C'] = competitors;
   switch (scenario) {

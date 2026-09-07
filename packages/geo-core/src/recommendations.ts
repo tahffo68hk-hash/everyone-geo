@@ -136,7 +136,7 @@ const FINDING_TO_STRATEGY: Record<RecommendationFindingType, MappingEntry[]> = {
 // 各类型行动项模板（checklist，不直接执行；sortOrder 确定性）
 const ACTION_TEMPLATES: Record<RecommendationType, Array<{ actionType: ActionType; title: string; description: string; effortLevel: EffortLevel }>> = {
   ENTITY_CLARITY: [
-    { actionType: 'UPDATE_PRODUCT_DEFINITION', title: '明确产品一句话定义', description: '让 AI 可稳定获取「ProjectMentor 是什么」的明确表述（品牌实体与类别归属）。', effortLevel: 'LOW' },
+    { actionType: 'UPDATE_PRODUCT_DEFINITION', title: '明确产品一句话定义', description: '让 AI 可稳定获取「目标品牌是什么」的明确表述（品牌实体与类别归属）。', effortLevel: 'LOW' },
     { actionType: 'CLARIFY_TARGET_AUDIENCE', title: '明确目标用户', description: '说明主要服务对象与适用人群边界。', effortLevel: 'LOW' },
     { actionType: 'CLARIFY_CORE_USE_CASES', title: '明确 3–5 个核心使用场景', description: '覆盖可完成的任务类型，帮助模型建立场景-品牌映射。', effortLevel: 'LOW' },
     { actionType: 'ADD_ENTITY_CONSISTENCY', title: '保证关键页面实体描述一致', description: '首页/产品页/功能页复用一致的品牌全称、类别词与能力表述。', effortLevel: 'LOW' },
