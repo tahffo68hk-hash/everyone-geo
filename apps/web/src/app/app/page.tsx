@@ -199,7 +199,7 @@ export default function AppPage() {
                   >
                     <span className="block font-medium">{org.name}</span>
                     <span className="block text-xs text-slate-400">
-                      {org.slug} · {org._count.projects} 个项目 · 角色
+                      {org._count.projects} 个项目 · 角色
                       {formatRole(org.role)}
                     </span>
                   </button>

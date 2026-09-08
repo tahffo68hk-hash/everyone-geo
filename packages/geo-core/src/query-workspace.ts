@@ -28,9 +28,14 @@ export interface ContaminationResult {
 export type QuerySemanticType = 'DISCOVERY' | 'BRANDED_SANITY' | 'CUSTOM';
 export const QUERY_SEMANTIC_TYPES: QuerySemanticType[] = ['DISCOVERY', 'BRANDED_SANITY', 'CUSTOM'];
 
-/** NFKC + lowercase + 空白折叠（query 去重/匹配用；保留原文用于展示）。 */
+/**
+ * NFKC + lowercase + separator 折叠（query 去重/匹配用；保留原文用于展示）。
+ * 空格 / hyphen / underscore 被视为“品牌 token separator”等价物：
+ *   Nova Flow / Nova-Flow / Nova_Flow / nova flow 归一为同 token 序列，
+ * 但仍保留 token boundary —— 绝不把 'workflow' 拆成 'work flow'，杜绝 substring 误报。
+ */
 export function normalizeQueryText(text: string): string {
-  return text.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase();
+  return text.normalize('NFKC').trim().replace(/[\s_-]+/gu, ' ').toLowerCase();
 }
 
 /**
@@ -50,6 +55,24 @@ export function detectTargetContamination(queryText: string, target: TargetIdent
   const urlStripped = normalizedQuery.replace(/https?:\/\/[^\s]+/gu, '');
   const urlHadMatch = urlStripped !== normalizedQuery;
 
+  // token 化：normalize 已将 空格/hyphen/underscore 统一折叠为空格，
+  // 多词候选按 token 精确序列比对（保留 token boundary），单词候选走 word-boundary 子串。
+  const queryTokens = normalizedQuery.split(/\s+/u).filter(Boolean);
+  const urlTokens = urlStripped.split(/\s+/u).filter(Boolean);
+  const tokensOf = (text: string) => text.split(/\s+/u).filter(Boolean);
+  const hasTokenSequence = (haystackTokens: string[], needleTokens: string[]) => {
+    if (needleTokens.length === 0 || haystackTokens.length < needleTokens.length) return false;
+    for (let i = 0; i + needleTokens.length <= haystackTokens.length; i++) {
+      let ok = true;
+      for (let j = 0; j < needleTokens.length; j++) {
+        if (haystackTokens[i + j] !== needleTokens[j]) { ok = false; break; }
+      }
+      if (ok) return true;
+    }
+    return false;
+  };
+  const isLatinText = (text: string) => /^[\p{Script=Latin}\p{N}_\s]+$/u.test(text);
+
   const candidates = [
     ...(target.aliases ?? []).map(alias => ({ alias, text: normalizeQueryText(alias) })),
     { alias: target.canonicalName, text: normalizeQueryText(target.canonicalName) },
@@ -58,27 +81,48 @@ export function detectTargetContamination(queryText: string, target: TargetIdent
     .sort((a, b) => b.text.length - a.text.length); // longest first（确定性）
 
   for (const candidate of candidates) {
-    const isLatinWord = /^[\p{Script=Latin}\p{N}_]+$/u.test(candidate.text);
-    // 词边界检查（仅拉丁/数字类词）：左侧/右侧不能是 latin 词字符，避免 substring 误报
-    const pattern = isLatinWord
-      ? new RegExp(`(^|[^\\p{Script=Latin}\\p{N}_])${candidate.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\p{Script=Latin}\\p{N}_]|$)`, 'u')
-      : null;
+    const cTokens = tokensOf(candidate.text);
+    const singleWord = cTokens.length === 1;
 
-    if (pattern) {
-      if (pattern.test(urlStripped)) {
-        return { status: 'TARGET_MENTIONED', matchedAlias: candidate.alias };
-      }
-      if (urlHadMatch && pattern.test(normalizedQuery)) {
-        // 仅在 URL 内出现（或无法判断 URL 内外时）→ POSSIBLE
-        return { status: 'POSSIBLE_TARGET_MENTION', matchedAlias: candidate.alias };
+    if (singleWord) {
+      // 单 token 拉丁词：strict word-boundary，杜绝 substring 误报（"workflow" 不命中 "Flow"）
+      const isLatinWord = /^[\p{Script=Latin}\p{N}_]+$/u.test(candidate.text);
+      const pattern = isLatinWord
+        ? new RegExp(`(^|[^\\p{Script=Latin}\\p{N}_])${candidate.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\p{Script=Latin}\\p{N}_]|$)`, 'u')
+        : null;
+      if (pattern) {
+        if (pattern.test(urlStripped)) {
+          return { status: 'TARGET_MENTIONED', matchedAlias: candidate.alias };
+        }
+        if (urlHadMatch && pattern.test(normalizedQuery)) {
+          // 仅在 URL 内出现（或无法判断 URL 内外时）→ POSSIBLE
+          return { status: 'POSSIBLE_TARGET_MENTION', matchedAlias: candidate.alias };
+        }
+      } else {
+        // 中文/无空格语言：直接子串；仍做基础归一。若只在 URL 段落内算 POSSIBLE。
+        if (urlStripped.includes(candidate.text)) {
+          return { status: 'TARGET_MENTIONED', matchedAlias: candidate.alias };
+        }
+        if (urlHadMatch && normalizedQuery.includes(candidate.text)) {
+          return { status: 'POSSIBLE_TARGET_MENTION', matchedAlias: candidate.alias };
+        }
       }
     } else {
-      // 中文/无空格语言：直接子串；仍做基础归一。若只在 URL 段落内算 POSSIBLE。
-      if (urlStripped.includes(candidate.text)) {
+      // 多 token 候选：token 精确序列匹配（Latin 可靠分词；Nova Flow / Nova-Flow / Nova_Flow 变体等价）
+      if (hasTokenSequence(urlTokens, cTokens)) {
         return { status: 'TARGET_MENTIONED', matchedAlias: candidate.alias };
       }
-      if (urlHadMatch && normalizedQuery.includes(candidate.text)) {
+      if (urlHadMatch && hasTokenSequence(queryTokens, cTokens)) {
         return { status: 'POSSIBLE_TARGET_MENTION', matchedAlias: candidate.alias };
+      }
+      // 含 CJK 的多词候选无法可靠分词：仅当整体非纯 Latin 时回退子串，避免拉丁 substring 误报
+      if (!isLatinText(candidate.text)) {
+        if (urlStripped.includes(candidate.text)) {
+          return { status: 'TARGET_MENTIONED', matchedAlias: candidate.alias };
+        }
+        if (urlHadMatch && normalizedQuery.includes(candidate.text)) {
+          return { status: 'POSSIBLE_TARGET_MENTION', matchedAlias: candidate.alias };
+        }
       }
     }
   }

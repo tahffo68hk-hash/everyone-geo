@@ -1,9 +1,24 @@
-import { Body, ConflictException, Controller, Get, HttpCode, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { AuthGuard, JwtUserPayload } from "../common/auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { TenantService } from "../common/tenant.service";
 import { PrismaService } from "../prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
+import { composeTargetAliases } from "../query-workspace/query-workspace.service";
+
+/** R1-D3：“最近一次有意义检测”筛选。终态（出了结果）优先且取最近；仅当无任何终态时回退到活跃度最高的任务（running > queued > pending）。 */
+const RUN_TERMINAL = new Set(["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"]);
+const RUN_ACTIVE_RANK: Record<string, number> = { RUNNING: 3, AWAITING_MANUAL_INPUT: 3, RETRYING: 2, QUEUED: 2, PENDING: 1 };
+function pickMeaningfulRun(runs: Array<{ id: string; status: string; runType: string; createdAt: Date }>) {
+  const byNewest = runs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  const terminal = byNewest.find(r => RUN_TERMINAL.has(r.status));
+  if (terminal) return [terminal];
+  const active = byNewest.slice().sort(
+    (a, b) => (RUN_ACTIVE_RANK[b.status] ?? 0) - (RUN_ACTIVE_RANK[a.status] ?? 0)
+      || (a.createdAt < b.createdAt ? 1 : -1),
+  );
+  return active[0] ? [active[0]] : [];
+}
 
 /**
  * 组织与项目端点（多租户隔离）：
@@ -71,30 +86,46 @@ export class OrganizationsController {
     @Param("id") id?: string,
   ) {
     await this.tenant.assertUserInOrganization(user!.sub, id!);
-    return this.prisma.client.organization.findUnique({
+    const org = await this.prisma.client.organization.findUnique({
       where: { id: id! },
       include: {
         members: {
           include: { user: { select: { id: true, email: true, name: true } } },
         },
         projects: {
-          // 工作台项目卡片所需摘要：监测对象(brand) + 产品类别 + 问题集数 + 最近一次检测。
+          // 工作台项目卡片所需摘要：监测对象(brand) + 产品类别 + 问题集数 + 最近一次有意义检测。
           include: {
             brands: {
               select: { id: true, name: true, entityType: true, productCategory: true, website: true },
               orderBy: { createdAt: "asc" as const },
             },
             _count: { select: { benchmarkSuites: true } },
+            // R1-D3：取最近批量（≤100）而非仅 1 条，按「最近一次有意义检测」筛选，
+            // 避免“最新一条永远是旧的自动 PENDING/queued 任务”盖过手动 completed 结果。
             benchmarkRuns: {
               orderBy: { createdAt: "desc" as const },
-              take: 1,
+              take: 100,
               select: { id: true, status: true, runType: true, createdAt: true },
+            },
+            reports: {
+              orderBy: { generatedAt: "desc" as const },
+              take: 1,
+              select: { id: true },
             },
           },
           orderBy: { createdAt: "asc" as const },
         },
       },
     });
+    if (!org) throw new NotFoundException("Organization 不存在");
+    return {
+      ...org,
+      projects: org.projects.map(p => ({
+        ...p,
+        benchmarkRuns: pickMeaningfulRun(p.benchmarkRuns),
+        latestReportId: p.reports[0]?.id ?? null,
+      })),
+    };
   }
 
   @Get("projects/:id")
@@ -104,13 +135,29 @@ export class OrganizationsController {
     @Param("id") id?: string,
   ) {
     const project = await this.tenant.assertUserInProject(user!.sub, id!);
-    return this.prisma.client.project.findUnique({
+    const row = await this.prisma.client.project.findUnique({
       where: { id: project.id },
       include: {
-        brands: true,
+        brands: { include: { aliasesDetailed: { orderBy: { createdAt: "asc" as const } } } },
         competitors: true,
         querySets: { include: { queries: true } },
       },
     });
+    if (!row) throw new NotFoundException("Project 不存在");
+    // R1-D1：GET /projects/:id 序列化品牌 aliases（启用/禁用 + legacy 低配），
+    // 与 Target Profile（GET /target）同源组合，不再缺 aliases 字段。
+    return {
+      ...row,
+      brands: row.brands.map(b => {
+        const { aliasesDetailed, ...rest } = b;
+        return {
+          ...rest,
+          aliases: composeTargetAliases(
+            rest.aliases ?? [],
+            (aliasesDetailed ?? []).map(r => ({ id: r.id, alias: r.alias, aliasType: r.aliasType, enabled: r.enabled })),
+          ),
+        };
+      }),
+    };
   }
 }

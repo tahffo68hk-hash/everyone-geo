@@ -110,6 +110,10 @@ export class ReportsService {
       metricVersion: metrics.metricVersion,
       analysisVersion,
       metricSource: metrics.metricSource,
+      // R1-D2：SOV 可用性标记冻结（无 competitorSet → NOT_APPLICABLE → UI 显示 “—”）。
+      // R1-D5：plannedRuns 作为冻结的计划分母，避免因 skip 改写。
+      shareOfVoiceStatus: metrics.shareOfVoiceStatus ?? null,
+      plannedRuns: run.plannedRuns ?? null,
       // M8E denominator scope：核心指标样本 = DISCOVERY_ONLY（排除 Branded Sanity / 含目标 CUSTOM）
       metricQueryScope: metrics.metricQueryScope ?? null,
       metricScopeQueryCount: metrics.metricScopeQueryCount ?? null,

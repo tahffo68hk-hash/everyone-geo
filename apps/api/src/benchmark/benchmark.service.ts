@@ -40,6 +40,8 @@ interface MetricsCitation { url: string; domain: string; title: string | null; p
 interface MetricsAnalysis {
   analysisVersion: string; brandMentioned: boolean; mentionPosition: number | null;
   recommended: boolean; sentiment: string; mentions: MetricsMention[]; citations: MetricsCitation[];
+  /** 分析时冻结的竞品集合（分析产物字段）；null = 该行未配置竞对集 → SOV 不适用 */
+  competitorSetId: string | null;
 }
 interface MetricsPoolRun {
   status: string;
@@ -372,6 +374,7 @@ export class BenchmarkService implements OnModuleDestroy {
           sentiment: analysis.sentiment,
           mentions: analysis.mentions,
           citations: analysis.citations,
+          competitorSetId: analysis.competitorSetId,
         } : null,
       };
     });
@@ -403,6 +406,10 @@ export class BenchmarkService implements OnModuleDestroy {
       const a = row.analysis;
       return row.status === "SUCCEEDED" && a?.analysisVersion === analysisVersion && a.brandMentioned;
     }).length;
+
+    // R1-D2：SOV 无竞品误导。确认：无 competitorSet 时 shareOfVoice 必须为 N/A（null），
+    // 不得用 100% / 0% 等误导性数值；frozen report（createReport 冻结本字段）与实时均判 N/A。
+    const shareOfVoiceAvailable = eligiblePool.some(row => row.analysis?.competitorSetId != null);
 
     const categories = new Map<string, { eligible: number; mentioned: number }>();
     const byQuery = eligiblePool
@@ -452,11 +459,12 @@ export class BenchmarkService implements OnModuleDestroy {
       metricSource,
       suite: { id: run.suite.id, name: run.suiteName, version: run.suiteVersion },
       targetSnapshot: (run.targetSnapshot ?? null) as Record<string, unknown> | null,
-      // M6B 前竞对集为开发占位，SoV 不作对外结论。
-      competitorScope: {
-        status: "pending-m6b",
-        note: "competitor set pending M6B — 当前竞对为开发占位，Share of Voice 仅限内部参考",
-      },
+      // R1-D2：无竞品集合（competitorSet）时 SOV 不适用（N/A），不得显示误导性份额。
+      competitorScope: shareOfVoiceAvailable
+        ? { status: "ready", note: "基于已分析的竞品集合（competitorSet）计算 Share of Voice。" }
+        : { status: "pending-m6b", note: "未配置竞品集合（competitorSet），Share of Voice 不适用（N/A）。" },
+      // R1-D2：frozen report 与实时均以此为 SOV 可用性判据；NOT_APPLICABLE → 前端与历史报告显示 “—”。
+      shareOfVoiceStatus: shareOfVoiceAvailable ? "AVAILABLE" : "NOT_APPLICABLE_NO_COMPETITOR_SET",
       // M8E：denominator 可审计 —— 核心 GEO 指标基于多少 eligible queries、排除多少 sanity。
       // 顶层 metricQueryScope/eligibleQueryCount = 快照口径（enabled 非 sanity 的 query 数）；
       // overall.queryEligibleCount 保持历史语义 = analyzedRuns（成功且已分析，含 demo/real 子集），
@@ -466,7 +474,12 @@ export class BenchmarkService implements OnModuleDestroy {
       excludedQueryCount: scope.excludedQueryCount,
       excludedSanityCount: scope.excludedSanityCount,
       excludedContaminatedCount: scope.excludedContaminatedCount,
-      overall: { ...overall, queryEligibleCount: overall.analyzedRuns, queryMentionedCount: mentionedInPool },
+      overall: {
+        ...overall,
+        queryEligibleCount: overall.analyzedRuns,
+        queryMentionedCount: mentionedInPool,
+        shareOfVoice: shareOfVoiceAvailable ? overall.shareOfVoice : null,
+      },
       byCategory,
       byQuery,
     };

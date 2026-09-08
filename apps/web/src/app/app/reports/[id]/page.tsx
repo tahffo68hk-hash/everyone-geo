@@ -25,6 +25,7 @@ type Report = {
   generatedAt: string;
   metricsSnapshot: {
     metricVersion: string;
+    plannedRuns: number | null;
     metricQueryScope?: string | null;
     metricScopeQueryCount?: number | null;
     excludedSanityCount?: number | null;
@@ -85,7 +86,7 @@ export default function ReportDetailPage() {
           <h1 className="mt-3 text-2xl font-semibold">GEO 基准测试报告</h1>
           {report.completion.partial && (
             <p className="mt-2 inline-block rounded bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
-              ⚠️ 部分完成 —— 本报告不代表完整测试集（成功 {report.completion.succeededRuns} / 总计划 {report.completion.completedRuns + report.completion.failedRuns} 条）
+              ⚠️ 部分完成 —— 本报告不代表完整测试集（成功 {report.completion.succeededRuns} / 总计划 {snap.plannedRuns ?? report.completion.completedRuns + report.completion.failedRuns} 条）
             </p>
           )}
         </header>
@@ -189,13 +190,24 @@ export default function ReportDetailPage() {
           </section>
         )}
 
+        {competitor?.status !== "ready" && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <h2 className="text-lg font-semibold">竞品表现（AI 声量份额 · Share of Voice）</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              {competitor === null
+                ? "该报告生成时未绑定竞品集合，SOV（AI 声量份额）不适用，核心指标中 AI 声量份额显示 “—”。为项目绑定竞品集合后重新生成报告，即可查看竞品 SOV。"
+                : `该报告竞品分析尚未就绪（状态：${competitor.status}），SOV 暂不可用。`}
+            </p>
+          </section>
+        )}
+
         {/* 问题级结果 */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-semibold">问题级结果（点击可下钻到原始证据）</h2>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
-                <tr><th className="p-2">检测问题</th><th className="p-2">场景分类</th><th className="p-2">是否提及品牌</th><th className="p-2">是否被推荐</th><th className="p-2">提及位置</th><th className="p-2">引用数</th><th className="p-2">状态</th><th className="p-2">原始证据</th></tr>
+                <tr><th className="p-2">检测问题</th><th className="p-2">场景分类</th><th className="p-2">是否提及品牌</th><th className="p-2">是否被推荐</th><th className="p-2" title="品牌首次出现在模型回答中的位次（第 1 位 = 首个回答）；与『AI 推荐排名』含义不同">首次提及位次</th><th className="p-2">引用数</th><th className="p-2">状态</th><th className="p-2">原始证据</th></tr>
               </thead>
               <tbody>
                 {snap.byQuery.map(row => (
@@ -204,7 +216,7 @@ export default function ReportDetailPage() {
                     <td className="p-2 whitespace-nowrap text-slate-600">{row.category ? formatCategory(row.category) : "—"}</td>
                     <td className="p-2">{row.analyzed ? (row.brandMentioned ? "是" : "否") : "—"}</td>
                     <td className="p-2">{row.analyzed ? (row.recommended ? "是" : "否") : "—"}</td>
-                    <td className="p-2">{row.analyzed ? row.mentionPosition ?? "—" : "—"}</td>
+                    <td className="p-2">{row.analyzed ? (row.mentionPosition == null ? "—" : `第 ${row.mentionPosition} 位`) : "—"}</td>
                     <td className="p-2">{row.analyzed ? row.citationCount ?? "—" : "—"}</td>
                     <td className="p-2 whitespace-nowrap">{formatStatus(row.status)}</td>
                     <td className="p-2">

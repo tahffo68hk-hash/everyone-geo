@@ -188,3 +188,46 @@ test('73d. all sanity → no misleading visibility denominator', () => {
   assert.equal(s.excludedSanityCount, 2);
   assert.equal(s.totalRows, 2);
 });
+
+// ---- R1-D10: kebab/snake/space separator 等价 + token boundary（防止 substring 误报）----
+const NOVA_TARGET: TargetIdentity = { canonicalName: 'NovaFlow', aliases: ['Nova Flow', 'NovaFlow CRM'] };
+
+test('R1-D10. kebab-case separator 等价命中（nova-flow）', () => {
+  const r = detectTargetContamination('nova-flow 有哪些功能', NOVA_TARGET);
+  assert.equal(r.status, 'TARGET_MENTIONED');
+});
+
+test('R1-D10. snake_case separator 等价命中（nova_flow）', () => {
+  const r = detectTargetContamination('nova_flow 怎么样', NOVA_TARGET);
+  assert.equal(r.status, 'TARGET_MENTIONED');
+});
+
+test('R1-D10. 大小写 + 连字符混合命中（Nova-Flow）', () => {
+  const r = detectTargetContamination('Nova-Flow 好用吗', NOVA_TARGET);
+  assert.equal(r.status, 'TARGET_MENTIONED');
+});
+
+test('R1-D10. kebab 完整品牌别名（novaflow-crm）', () => {
+  const r = detectTargetContamination('novaflow-crm 哪个好', NOVA_TARGET);
+  assert.equal(r.status, 'TARGET_MENTIONED');
+});
+
+test('R1-D10. 复合前缀不误伤（nova workflow 应为 CLEAN）', () => {
+  const r = detectTargetContamination('nova workflow 软件有哪些', NOVA_TARGET);
+  assert.equal(r.status, 'CLEAN');
+});
+
+test('R1-D10. 子串前缀不误伤（innovation-flow / innova flow）', () => {
+  assert.equal(detectTargetContamination('innovation-flow 有什么推荐', NOVA_TARGET).status, 'CLEAN');
+  assert.equal(detectTargetContamination('innova flow 工具', NOVA_TARGET).status, 'CLEAN');
+});
+
+test('R1-D10. 词中变体不误伤（workflow 不命中 NovaFlow）', () => {
+  const r = detectTargetContamination('workflow 软件最佳实践', NOVA_TARGET);
+  assert.equal(r.status, 'CLEAN');
+});
+
+test('R1-D10. 连续 kebab 品牌保持命中（nova-flow-crm 同时含别名与品牌拼接）', () => {
+  const r = detectTargetContamination('nova-flow-crm 对比评测', NOVA_TARGET);
+  assert.equal(r.status, 'TARGET_MENTIONED');
+});

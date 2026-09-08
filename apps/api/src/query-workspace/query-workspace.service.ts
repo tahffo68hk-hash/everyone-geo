@@ -37,6 +37,19 @@ export interface TargetProfileView {
   status: string;
 }
 
+/** 共享的 alias 视图组合器：alias 表（enabled/disabled）+ legacy Brand.aliases（视为启用）。 */
+export function composeTargetAliases(
+  brandAliases: string[],
+  rows: Array<{ id: string; alias: string; aliasType: string; enabled: boolean }>,
+): Array<{ id: string | null; alias: string; aliasType: string; enabled: boolean }> {
+  const enabled = rows.filter(r => r.enabled).map(r => ({ id: r.id, alias: r.alias, aliasType: r.aliasType, enabled: true }));
+  const disabled = rows.filter(r => !r.enabled).map(r => ({ id: r.id, alias: r.alias, aliasType: r.aliasType, enabled: false }));
+  // legacy brand.aliases 中未在 alias 表出现的 → 视为启用（历史兼容）
+  const legacyEnabled = brandAliases.filter(a => !rows.some(r => normalizeQueryText(r.alias) === normalizeQueryText(a)))
+    .map(alias => ({ id: null, alias, aliasType: "CUSTOM" as const, enabled: true }));
+  return [...enabled, ...legacyEnabled, ...disabled];
+}
+
 @Injectable()
 export class QueryWorkspaceService {
   constructor(
@@ -71,11 +84,6 @@ export class QueryWorkspaceService {
     const brand = await this.primaryBrand(userId, projectId);
     if (!brand) return null;
     const rows = await this.aliasesFor(brand.id);
-    const enabled = rows.filter(r => r.enabled).map(r => ({ id: r.id, alias: r.alias, aliasType: r.aliasType, enabled: true }));
-    const disabled = rows.filter(r => !r.enabled).map(r => ({ id: r.id, alias: r.alias, aliasType: r.aliasType, enabled: false }));
-    // legacy brand.aliases 中未在 alias 表出现的 → 视为启用（历史兼容）
-    const legacyEnabled = brand.aliases.filter(a => !rows.some(r => normalizeQueryText(r.alias) === normalizeQueryText(a)))
-      .map(alias => ({ id: null, alias, aliasType: "CUSTOM" as const, enabled: true }));
     return {
       projectId,
       brandId: brand.id,
@@ -84,9 +92,17 @@ export class QueryWorkspaceService {
       productCategory: brand.productCategory,
       website: brand.website,
       description: brand.description,
-      aliases: [...enabled, ...legacyEnabled, ...disabled],
+      aliases: composeTargetAliases(brand.aliases ?? [], rows),
       status: brand.entityType ? "ACTIVE" : "UNKNOWN",
     };
+  }
+
+  /** 汇总监测目标启用的别名（alias 表 + legacy Brand.aliases），供竞品集合快照/序列化复用。 */
+  private async aliasesForTarget(brand: { id: string; aliases: string[] }): Promise<string[]> {
+    const rows = await this.aliasesFor(brand.id);
+    return composeTargetAliases(brand.aliases ?? [], rows)
+      .filter(a => a.enabled)
+      .map(a => a.alias);
   }
 
   async getTarget(userId: string, projectId: string) {
