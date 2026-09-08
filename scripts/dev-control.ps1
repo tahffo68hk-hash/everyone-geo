@@ -86,8 +86,16 @@ function Write-PidFile([string]$Path, [int]$ProcessId) {
 function Remove-IfExists([string]$Path) {
   # 尽力删除：失败静默忽略（重定向文件会被 PS 1>/2> 覆盖写；pid/dist 删不掉
   # 不影响主流程，避免个别环境把删除错误升级成启动中断）。
+  # 目录必须 -Recurse：否则 PowerShell 会交互式询问
+  # 「具有子项，并且未指定 Recurse」，阻塞无人值守启动（如 apps\worker\dist）。
   if (-not (Test-Path -LiteralPath $Path)) { return }
-  try { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop } catch {}
+  try {
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+      Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+    } else {
+      Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+    }
+  } catch {}
 }
 
 function Get-DotEnvValue([string]$Path, [string]$Key) {
