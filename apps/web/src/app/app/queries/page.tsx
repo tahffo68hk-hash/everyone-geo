@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useProjectContext } from "@/components/project-context";
 import { api } from "@/lib/api";
 import {
   formatQueryType, friendlyError, formatTargetEntityType, QUERY_WORKSPACE_NAV,
 } from "@/lib/labels";
 
-type Project = { id: string; name: string };
 type TargetBrief = {
   brandId: string | null; canonicalName: string; entityType: string;
   productCategory: string | null; aliases: Array<{ alias: string; enabled: boolean }>;
@@ -19,40 +18,31 @@ type Suite = {
   createdAt: string;
 };
 
-function QueriesInner() {
-  const params = useSearchParams();
-  const projectParam = params.get("project");
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectId, setProjectId] = useState("");
+export default function QueriesPage() {
+  const { projectId } = useProjectContext();
   const [target, setTarget] = useState<TargetBrief | null>(null);
   const [suites, setSuites] = useState<Suite[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [newSuite, setNewSuite] = useState({ name: "", version: "1" });
 
-  useEffect(() => {
-    api<{ projects: Project[] }>("/monitor-tasks/options")
-      .then(d => {
-        setProjects(d.projects);
-        const requested = projectParam ? d.projects.find(p => p.id === projectParam) : undefined;
-        setProjectId((requested ?? d.projects[0])?.id ?? "");
-      })
-      .catch(e => setError(friendlyError(e)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function load() {
+  async function load(signal?: AbortSignal) {
     if (!projectId) return;
     setError("");
     try {
       const [t, s] = await Promise.all([
-        api<TargetBrief | null>(`/projects/${encodeURIComponent(projectId)}/target-profile`),
-        api<Suite[]>(`/projects/${encodeURIComponent(projectId)}/benchmark-suites`),
+        api<TargetBrief | null>(`/projects/${encodeURIComponent(projectId)}/target-profile`, { signal }),
+        api<Suite[]>(`/projects/${encodeURIComponent(projectId)}/benchmark-suites`, { signal }),
       ]);
       setTarget(t); setSuites(s);
-    } catch (e) { setError(friendlyError(e)); }
+    } catch (e) { if (!signal?.aborted) setError(friendlyError(e)); }
   }
-  useEffect(() => { void load(); }, [projectId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   async function createSuite() {
     if (!newSuite.name.trim() || !projectId) return;
@@ -70,15 +60,12 @@ function QueriesInner() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-800">{QUERY_WORKSPACE_NAV.title}</h1>
           <p className="mt-1 text-xs text-slate-500">{QUERY_WORKSPACE_NAV.pageHint}</p>
         </div>
-        <select value={projectId} onChange={e => setProjectId(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" aria-label="选择项目">
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
       </div>
       {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
@@ -148,15 +135,5 @@ function QueriesInner() {
         </div>
       )}
     </div>
-  );
-}
-
-export default function QueriesPage() {
-  return (
-    <Suspense fallback={<div className="mx-auto max-w-5xl px-4 py-6"><p className="text-sm text-slate-500">正在加载问题集…</p></div>}>
-      <div className="mx-auto max-w-5xl px-4 py-6">
-        <QueriesInner />
-      </div>
-    </Suspense>
   );
 }

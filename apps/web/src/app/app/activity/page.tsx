@@ -2,31 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/labels";
 import {
   ACTIVITY_NAV, ACTIVITY_TYPE_OPTIONS, ACTIVITY_STATUS_OPTIONS, formatActivityType,
 } from "@/lib/labels";
+import {
+  listActivity,
+  type ActivityItem,
+  type ActivityType,
+} from "@/lib/r2-api";
 import { useProjectContext } from "@/components/project-context";
 import { PageHeader, FilterBar, StatusBadge, EmptyState, ErrorState, LoadingSkeleton, Pagination } from "@/components/ui";
-
-type ActivityItem = {
-  id: string;
-  type: string;
-  projectId: string;
-  projectName: string;
-  suiteId: string | null;
-  suiteName: string | null;
-  suiteVersion: string | null;
-  engineLabel: string | null;
-  status: string;
-  progress: { completed: number | null; total: number | null; label: string | null } | null;
-  createdAt: string;
-  completedAt: string | null;
-  startable: boolean;
-  resultUrl: string;
-};
-type ActivityResult = { items: ActivityItem[]; page: number; pageSize: number; total: number };
 
 const PAGE_SIZE = 20;
 
@@ -35,14 +21,6 @@ const fmtTime = (iso: string): string =>
     month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
   });
 
-/** 结果入口文案：按任务状态给出下一步动作动词，避免空泛的“查看”。 */
-const resultLabel = (status: string): string => {
-  if (status === "AWAITING_MANUAL_INPUT") return ACTIVITY_NAV.result.continueInput;
-  if (status === "PARTIAL") return ACTIVITY_NAV.result.viewMissing;
-  if (status === "SUCCEEDED" || status === "EVALUATED") return ACTIVITY_NAV.result.viewResult;
-  return ACTIVITY_NAV.result.view;
-};
-
 function ActivityInner() {
   const { projectId } = useProjectContext();
   const [items, setItems] = useState<ActivityItem[]>([]);
@@ -50,7 +28,7 @@ function ActivityInner() {
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
   const [qApplied, setQApplied] = useState("");
-  const [type, setType] = useState("");
+  const [type, setType] = useState<ActivityType | "">("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -60,15 +38,14 @@ function ActivityInner() {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({
+      const data = await listActivity({
         projectId,
-        page: String(page),
-        pageSize: String(PAGE_SIZE),
+        page,
+        pageSize: PAGE_SIZE,
+        q: qApplied,
+        type,
+        status,
       });
-      if (qApplied) params.set("q", qApplied);
-      if (type) params.set("type", type);
-      if (status) params.set("status", status);
-      const data = await api<ActivityResult>(`/activity?${params.toString()}`);
       setItems(data.items);
       setTotal(data.total);
     } catch (cause) {
@@ -93,7 +70,7 @@ function ActivityInner() {
         title={ACTIVITY_NAV.title}
         description={ACTIVITY_NAV.pageHint}
         actions={
-          <button type="button" className="ui-button" onClick={() => { setQApplied(q.trim()); void load(); }} disabled={loading}>
+          <button type="button" className="ui-button" onClick={() => void load()} disabled={loading}>
             {ACTIVITY_NAV.refresh}
           </button>
         }
@@ -113,7 +90,7 @@ function ActivityInner() {
         </button>
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <span>{ACTIVITY_NAV.type}</span>
-          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" aria-label={ACTIVITY_NAV.type} value={type} onChange={e => { setType(e.target.value); setPage(1); }}>
+          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" aria-label={ACTIVITY_NAV.type} value={type} onChange={e => { setType(e.target.value as ActivityType | ""); setPage(1); }}>
             <option value="">{ACTIVITY_NAV.all}</option>
             {ACTIVITY_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -167,12 +144,16 @@ function ActivityInner() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{item.engineLabel ?? <span className="text-slate-400">—</span>}</td>
                     <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
-                    <td className="px-4 py-3 text-slate-600">{item.progress?.label ?? <span className="text-slate-400">—</span>}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {item.progress?.label ?? (item.completed != null && item.total != null ? `${item.completed} / ${item.total}` : <span className="text-slate-400">—</span>)}
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-500">{fmtTime(item.createdAt)}</td>
                     <td className="px-4 py-3">
-                      <Link href={item.resultUrl} className="text-blue-700 hover:underline">
-                        {resultLabel(item.status)} →
-                      </Link>
+                      {item.resultUrl ? (
+                        <Link href={item.resultUrl} className="text-blue-700 hover:underline">
+                          {ACTIVITY_NAV.result.viewResult} →
+                        </Link>
+                      ) : <span className="text-slate-400">—</span>}
                     </td>
                   </tr>
                 ))}

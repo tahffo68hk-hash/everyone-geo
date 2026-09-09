@@ -8,17 +8,33 @@ import {
   formatQuerySource, formatQueryType, formatTargetCheck, friendlyError,
   MANUAL_NAV, QUERY_WORKSPACE_NAV, TARGET_NAV, QUERY_INTENT_LABEL,
 } from "@/lib/labels";
+import {
+  clearProcessedSelection,
+  formatPreflightCost,
+  getPreflightBlockedReason,
+  isBackendCapabilityPending,
+  listProjectSuites,
+  listQueries,
+  loadRunPreflight,
+  runQueryBatch,
+  togglePageSelection,
+  type BatchOperation,
+  type ProjectSuiteOption,
+  type QueryContaminationStatus,
+  type QueryListItem,
+  type QuerySemanticType,
+  type QuerySort,
+  type QueryStatusFilter,
+  type RunPreflight,
+  type SortOrder,
+} from "@/lib/r2-api";
+import { ErrorState, LoadingSkeleton, Pagination } from "@/components/ui";
 
 type Project = { id: string; name: string };
 type TargetBrief = { canonicalName: string; productCategory: string | null };
 type Suite = {
   id: string; projectId: string; name: string; version: string; description: string | null;
   queryCount: number; discoveryCount: number; sanityQueryCount: number; customCount: number;
-  queries: Array<{
-    id: string; queryText: string; category: string; intent: string; enabled: boolean;
-    queryType: string | null; source: string | null; locale: string;
-    contamination: { status: string; matchedAlias: string | null } | null;
-  }>;
 };
 type Engine = { id: string; key: string; name: string; provider: string; configured: boolean };
 type PreviewRow = { text: string; category: string; intent: string; queryType: string; targetCheck: string; matchedAlias: string | null };
@@ -37,13 +53,27 @@ function SuiteInner() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [checkFilter, setCheckFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [sort, setSort] = useState("original");
+  const [searchApplied, setSearchApplied] = useState("");
+  const [typeFilter, setTypeFilter] = useState<QuerySemanticType | "">("");
+  const [checkFilter, setCheckFilter] = useState<QueryContaminationStatus | "">("");
+  const [statusFilter, setStatusFilter] = useState<QueryStatusFilter | "">("");
+  const [sort, setSort] = useState<QuerySort>("createdAt");
+  const [order, setOrder] = useState<SortOrder>("asc");
   const [page, setPage] = useState(1);
   const pageSize = 20;
-  const resetFilters = () => { setSearch(""); setTypeFilter(""); setCheckFilter(""); setStatusFilter(""); setSort("original"); setPage(1); };
+  const [queryItems, setQueryItems] = useState<QueryListItem[]>([]);
+  const [queryTotal, setQueryTotal] = useState(0);
+  const [queryLoading, setQueryLoading] = useState(true);
+  const [queryError, setQueryError] = useState("");
+  const [queryRevision, setQueryRevision] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveSuites, setMoveSuites] = useState<ProjectSuiteOption[]>([]);
+  const [moveSuiteId, setMoveSuiteId] = useState("");
+  const [moveLoading, setMoveLoading] = useState(false);
+  const [moveError, setMoveError] = useState("");
+  const resetFilters = () => { setSearch(""); setSearchApplied(""); setTypeFilter(""); setCheckFilter(""); setStatusFilter(""); setSort("createdAt"); setOrder("asc"); setPage(1); };
 
   // 生成器输入
   const [bCategory, setBCategory] = useState("");
@@ -62,6 +92,10 @@ function SuiteInner() {
   const [runOpen, setRunOpen] = useState(false);
   const [engineId, setEngineId] = useState("");
   const [runType, setRunType] = useState<"demo" | "real">("demo");
+  const [preflight, setPreflight] = useState<RunPreflight | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [preflightPending, setPreflightPending] = useState("");
+  const [preflightError, setPreflightError] = useState("");
   // M8C-R0：人工 Web UI 检测
   const [manualOpen, setManualOpen] = useState(false);
   const [manualProduct, setManualProduct] = useState("qwen-web");
@@ -99,6 +133,85 @@ function SuiteInner() {
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!suiteProjectId) return;
+    const controller = new AbortController();
+    setQueryLoading(true);
+    setQueryError("");
+    listQueries(suiteProjectId, {
+      suiteId: id,
+      q: searchApplied,
+      status: statusFilter,
+      type: typeFilter,
+      contamination: checkFilter,
+      sort,
+      order,
+      page,
+      pageSize,
+    }, controller.signal)
+      .then(result => {
+        if (result.items.length === 0 && result.total > 0 && page > 1) {
+          setPage(page - 1);
+          return;
+        }
+        setQueryItems(result.items);
+        setQueryTotal(result.total);
+      })
+      .catch(cause => {
+        if (!controller.signal.aborted) setQueryError(friendlyError(cause));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setQueryLoading(false);
+      });
+    return () => controller.abort();
+  }, [suiteProjectId, id, searchApplied, statusFilter, typeFilter, checkFilter, sort, order, page, queryRevision]);
+
+  async function applyBatch(operation: BatchOperation, targetSuiteId?: string) {
+    if (!suiteProjectId || selectedIds.size === 0) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await runQueryBatch(suiteProjectId, {
+        operation,
+        queryIds: [...selectedIds],
+        ...(targetSuiteId ? { targetSuiteId } : {}),
+      });
+      setSelectedIds(current => clearProcessedSelection(current, result.queryIds));
+      setNotice(`已${operation === "enable" ? "启用" : operation === "disable" ? "停用" : operation === "archive" ? "归档" : "移动"} ${result.affected} 条问题。`);
+      setArchiveOpen(false); setMoveOpen(false);
+      setQueryRevision(value => value + 1);
+      await load();
+    } catch (cause) {
+      setError(friendlyError(cause));
+    } finally { setBusy(false); }
+  }
+
+  async function openMoveDialog() {
+    if (!suiteProjectId) return;
+    setMoveOpen(true); setMoveLoading(true); setMoveError(""); setMoveSuiteId("");
+    try {
+      const suites = (await listProjectSuites(suiteProjectId)).filter(option => option.id !== id);
+      setMoveSuites(suites);
+      setMoveSuiteId(suites[0]?.id ?? "");
+    } catch (cause) {
+      setMoveError(friendlyError(cause));
+    } finally { setMoveLoading(false); }
+  }
+
+  useEffect(() => {
+    if (!runOpen || !suiteProjectId || !engineId) return;
+    let active = true;
+    setPreflightLoading(true); setPreflight(null); setPreflightPending(""); setPreflightError("");
+    loadRunPreflight(suiteProjectId, { suiteId: id, engineIds: [engineId], runType })
+      .then(result => { if (active) setPreflight(result); })
+      .catch(cause => {
+        if (!active) return;
+        if (isBackendCapabilityPending(cause)) setPreflightPending(cause.message);
+        else setPreflightError(friendlyError(cause));
+      })
+      .finally(() => { if (active) setPreflightLoading(false); });
+    return () => { active = false; };
+  }, [runOpen, suiteProjectId, id, engineId, runType]);
 
   const split = (s: string) => s.split(/[,，\n]/).map(x => x.trim()).filter(Boolean);
 
@@ -203,20 +316,10 @@ function SuiteInner() {
     finally { setBusy(false); }
   }
 
-  const effectiveType = (q: Suite["queries"][number]) => q.queryType ?? (q.enabled && q.category !== "sanity-control" ? "DISCOVERY" : "CUSTOM");
-
-  const filteredQueries = (suite?.queries ?? []).filter(q =>
-    q.queryText.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()) &&
-    (!typeFilter || effectiveType(q) === typeFilter) &&
-    (!checkFilter || (q.contamination?.status ?? "UNCHECKED") === checkFilter) &&
-    (!statusFilter || q.enabled === (statusFilter === "enabled"))
-  );
-  if (sort !== "original") filteredQueries.sort((a, b) => sort === "text"
-    ? a.queryText.localeCompare(b.queryText, "zh-CN")
-    : effectiveType(a).localeCompare(effectiveType(b)));
-  const pageCount = Math.max(1, Math.ceil(filteredQueries.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const visibleQueries = filteredQueries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const effectiveType = (q: QueryListItem): QuerySemanticType => q.queryType ?? (q.sanity ? "BRANDED_SANITY" : "DISCOVERY");
+  const pageIds = queryItems.map(query => query.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every(queryId => selectedIds.has(queryId));
+  const preflightBlockedReason = preflight ? getPreflightBlockedReason(preflight) : null;
 
   if (!suite && !error) return <div className="space-y-2" aria-busy="true">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-8 animate-pulse rounded-lg bg-slate-100" />)}</div>;
 
@@ -251,36 +354,47 @@ function SuiteInner() {
 
       <section aria-label="问题列表" className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4">
-          <input aria-label="搜索问题" placeholder="搜索问题内容" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="min-w-48 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <select aria-label="问题类型筛选" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <input aria-label="搜索问题" placeholder="搜索问题内容" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { setSearchApplied(search.trim()); setPage(1); } }} className="min-w-48 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <button type="button" onClick={() => { setSearchApplied(search.trim()); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">搜索</button>
+          <select aria-label="问题类型筛选" value={typeFilter} onChange={e => { setTypeFilter(e.target.value as QuerySemanticType | ""); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
             <option value="">全部类型</option>{["DISCOVERY", "BRANDED_SANITY", "CUSTOM"].map(v => <option key={v} value={v}>{formatQueryType(v)}</option>)}
           </select>
-          <select aria-label="品牌检查筛选" value={checkFilter} onChange={e => { setCheckFilter(e.target.value); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value="">全部品牌检查</option>{["CLEAN", "TARGET_MENTIONED", "POSSIBLE_TARGET_MENTION"].map(v => <option key={v} value={v}>{formatTargetCheck(v)}</option>)}<option value="UNCHECKED">未检查</option>
+          <select aria-label="品牌检查筛选" value={checkFilter} onChange={e => { setCheckFilter(e.target.value as QueryContaminationStatus | ""); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">全部品牌检查</option>{["CLEAN", "TARGET_MENTIONED", "POSSIBLE_TARGET_MENTION"].map(v => <option key={v} value={v}>{formatTargetCheck(v)}</option>)}
           </select>
-          <select aria-label="问题状态筛选" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
-          <select aria-label="问题排序" value={sort} onChange={e => { setSort(e.target.value); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="original">默认顺序</option><option value="text">按问题文字</option><option value="type">按问题类型</option></select>
+          <select aria-label="问题状态筛选" value={statusFilter} onChange={e => { setStatusFilter(e.target.value as QueryStatusFilter | ""); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+          <select aria-label="问题排序" value={sort} onChange={e => { setSort(e.target.value as QuerySort); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="createdAt">按创建时间</option><option value="queryText">按问题文字</option><option value="queryType">按问题类型</option><option value="status">按启用状态</option></select>
+          <select aria-label="排序方向" value={order} onChange={e => { setOrder(e.target.value as SortOrder); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="asc">升序</option><option value="desc">降序</option></select>
           <button type="button" onClick={resetFilters} className="px-2 py-2 text-sm text-teal-700 hover:underline">重置</button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500"><tr>{["问题", "类型", "品牌检查", "来源", "状态"].map(label => <th key={label} scope="col" className="px-4 py-3 font-medium">{label}</th>)}</tr></thead>
+        {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b border-teal-100 bg-teal-50 px-4 py-3 text-sm">
+          <span className="font-medium text-teal-900">已选 {selectedIds.size} 条</span>
+          <button type="button" className="ui-button" disabled={busy} onClick={() => void applyBatch("enable")}>批量启用</button>
+          <button type="button" className="ui-button" disabled={busy} onClick={() => void applyBatch("disable")}>批量停用</button>
+          <button type="button" className="ui-button" disabled={busy} onClick={() => setArchiveOpen(true)}>归档</button>
+          <button type="button" className="ui-button" disabled={busy} onClick={() => void openMoveDialog()}>移动到其他问题集</button>
+          <button type="button" className="ml-auto text-teal-700 underline" onClick={() => setSelectedIds(new Set())}>清空选择</button>
+        </div>}
+        {queryError ? <div className="p-4"><ErrorState title="问题列表加载失败" error={queryError} retry={() => setQueryRevision(value => value + 1)} /></div> : queryLoading ? <div className="p-4"><LoadingSkeleton rows={6} /></div> : <div className="overflow-x-auto">
+          <table className="w-full min-w-[780px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-500"><tr>
+              <th scope="col" className="w-12 px-4 py-3"><input type="checkbox" aria-label="选择当前页全部问题" checked={allPageSelected} onChange={event => setSelectedIds(current => togglePageSelection(current, pageIds, event.target.checked))} /></th>
+              {["问题", "类型", "品牌检查", "来源", "状态"].map(label => <th key={label} scope="col" className="px-4 py-3 font-medium">{label}</th>)}
+            </tr></thead>
             <tbody>
-              {visibleQueries.map(q => <tr key={q.id} className="h-12 border-t border-slate-100 align-top hover:bg-slate-50/70">
+              {queryItems.map(q => <tr key={q.id} className="h-12 border-t border-slate-100 align-top hover:bg-slate-50/70">
+                <td className="px-4 py-3"><input type="checkbox" aria-label={`选择问题：${q.queryText}`} checked={selectedIds.has(q.id)} onChange={event => setSelectedIds(current => togglePageSelection(current, [q.id], event.target.checked))} /></td>
                 <td className="max-w-lg px-4 py-3"><div className="break-words text-slate-800">{q.queryText}</div><details className="mt-1 text-xs text-slate-500"><summary className="w-fit cursor-pointer hover:text-teal-700">问题详情</summary><div className="mt-2 space-y-1 break-all"><div>问题编号：{q.id}</div><div>分类：{q.category}</div><div>意图：{q.intent}</div><div>语言：{q.locale}</div><div>原始类型：{q.queryType ?? "未设置"}</div><div>原始来源：{q.source ?? "未设置"}</div></div></details></td>
                 <td className="px-4 py-3"><span className={`inline-block whitespace-nowrap rounded px-2 py-1 text-xs ${TYPE_BADGE[effectiveType(q)] ?? "bg-slate-100 text-slate-600"}`}>{formatQueryType(effectiveType(q))}</span></td>
                 <td className="max-w-64 px-4 py-3"><details className="text-xs"><summary className="cursor-pointer text-teal-700 underline decoration-dotted underline-offset-4">{q.contamination ? formatTargetCheck(q.contamination.status) : "未检查"}</summary><div className="mt-2 space-y-1 leading-5 text-slate-500"><p>{q.contamination?.status === "CLEAN" ? "按当前检查结果，问题没有包含目标品牌别名。" : q.contamination?.status === "TARGET_MENTIONED" ? "问题直接提及目标品牌，可能引导回答；这类问题不应作为自然发现问题。" : q.contamination?.status === "POSSIBLE_TARGET_MENTION" ? "链接中可能包含目标品牌，请检查问题原文。" : "尚无可解释的品牌检查结果。"}</p>{q.contamination?.matchedAlias && <p>匹配别名：{q.contamination.matchedAlias}</p>}<p>原始状态：{q.contamination?.status ?? "未检查"}</p></div></details></td>
                 <td className="px-4 py-3 text-xs text-slate-600">{q.source ? formatQuerySource(q.source.toUpperCase()) : "—"}</td>
                 <td className="px-4 py-3"><span className={`whitespace-nowrap rounded px-2 py-1 text-xs ${q.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{q.enabled ? "启用" : "停用"}</span></td>
               </tr>)}
-              {visibleQueries.length === 0 && <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-500">{suite?.queries.length ? <>没有符合筛选条件的问题。<button type="button" onClick={resetFilters} className="ml-2 text-teal-700 underline">清除筛选</button></> : "还没有问题。展开下方「创建监测问题」或「批量导入」添加。"}</td></tr>}
+              {queryItems.length === 0 && <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-500">{suite.queryCount > 0 ? <>没有符合筛选条件的问题。<button type="button" onClick={resetFilters} className="ml-2 text-teal-700 underline">清除筛选</button></> : "还没有问题。展开下方「创建监测问题」或「批量导入」添加。"}</td></tr>}
             </tbody>
           </table>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500" aria-label="问题分页">
-          <span aria-live="polite">共 {filteredQueries.length} 条 · 每页 {pageSize} 条</span>
-          <div className="flex items-center gap-3"><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} className="rounded border border-slate-300 px-3 py-1.5 disabled:opacity-40">上一页</button><span>{currentPage} / {pageCount}</span><button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)} className="rounded border border-slate-300 px-3 py-1.5 disabled:opacity-40">下一页</button></div>
-        </div>
+        </div>}
+        {!queryError && !queryLoading && <div className="border-t border-slate-200 px-4 py-3"><Pagination page={page} pageSize={pageSize} total={queryTotal} onChange={setPage} /></div>}
       </section>
 
       {/* 问题生成器 */}
@@ -350,6 +464,37 @@ function SuiteInner() {
         )}
       </details>
 
+      {archiveOpen && (
+        <div role="dialog" aria-modal="true" aria-labelledby="archive-heading" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setArchiveOpen(false)}>
+          <div className="mt-20 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={event => event.stopPropagation()}>
+            <h2 id="archive-heading" className="text-lg font-semibold text-slate-900">归档所选问题</h2>
+            <p className="mt-2 text-sm text-slate-600">将归档 {selectedIds.size} 条问题。归档只影响未来执行，不会修改历史运行、报告或 Evidence。</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="ui-button" onClick={() => setArchiveOpen(false)}>取消</button>
+              <button type="button" disabled={busy} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40" onClick={() => void applyBatch("archive")}>确认归档</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveOpen && (
+        <div role="dialog" aria-modal="true" aria-labelledby="move-heading" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setMoveOpen(false)}>
+          <div className="mt-20 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={event => event.stopPropagation()}>
+            <h2 id="move-heading" className="text-lg font-semibold text-slate-900">移动到其他问题集</h2>
+            <p className="mt-1 text-xs text-slate-500">只显示当前项目下的其他问题集。</p>
+            {moveLoading ? <div className="mt-4"><LoadingSkeleton rows={3} /></div> : moveError ? <div className="mt-4"><ErrorState title="问题集加载失败" error={moveError} retry={() => void openMoveDialog()} /></div> : moveSuites.length === 0 ? <p className="mt-4 rounded-lg bg-slate-50 px-3 py-4 text-sm text-slate-600">当前项目没有其他可移动的问题集。</p> : <label className="mt-4 block text-sm text-slate-700">目标问题集
+              <select value={moveSuiteId} onChange={event => setMoveSuiteId(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2" aria-label="目标问题集">
+                {moveSuites.map(option => <option key={option.id} value={option.id}>{option.name} v{option.version}</option>)}
+              </select>
+            </label>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="ui-button" onClick={() => setMoveOpen(false)}>取消</button>
+              <button type="button" disabled={busy || moveLoading || !moveSuiteId} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40" onClick={() => void applyBatch("move", moveSuiteId)}>确认移动</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 运行前确认 */}
       {runOpen && suite && (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setRunOpen(false)}>
@@ -358,8 +503,6 @@ function SuiteInner() {
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-slate-500">监测对象</dt><dd className="font-medium">{target?.canonicalName ?? "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">问题集</dt><dd className="font-medium">{suite.name} v{suite.version}</dd></div>
-              <div className="flex justify-between"><dt className="text-slate-500">自然发现 / 品牌认知</dt><dd className="font-medium">{suite.discoveryCount} / {suite.sanityQueryCount}</dd></div>
-              <div className="flex justify-between"><dt className="text-slate-500">可用问题</dt><dd className="font-medium">{suite.queryCount}</dd></div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-slate-500">AI 模型</dt>
                 <select value={engineId} onChange={e => setEngineId(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" aria-label="AI 模型">
@@ -373,11 +516,23 @@ function SuiteInner() {
                   <option value="real">真实</option>
                 </select>
               </div>
+              <div className="flex justify-between"><dt className="text-slate-500">运行类型</dt><dd className="font-medium">{runType === "demo" ? "演示" : "真实"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">问题数</dt><dd className="font-medium">{preflight?.queryCount ?? "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">引擎数</dt><dd className="font-medium">{preflight?.engineCount ?? "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">预计调用次数</dt><dd className="font-medium">{preflight?.estimatedCalls ?? "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">预计费用</dt><dd className="font-medium">{preflight ? formatPreflightCost(preflight).replace("预计费用：", "") : "—"}</dd></div>
             </dl>
+            <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${runType === "demo" ? "bg-teal-50 text-teal-800" : "bg-amber-50 text-amber-800"}`}>
+              {runType === "demo" ? "演示运行不会产生真实 Provider 调用。" : "真实运行将调用后端确认已启用的 Provider。"}
+            </p>
+            {preflightLoading && <div className="mt-3"><LoadingSkeleton rows={3} /></div>}
+            {preflightPending && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">{preflightPending}。当前无法安全确认调用范围与 Provider 可用性，已阻止提交。</p>}
+            {preflightError && <div className="mt-3"><ErrorState title="运行预检失败" error={preflightError} retry={() => { setRunOpen(false); queueMicrotask(() => setRunOpen(true)); }} /></div>}
+            {preflightBlockedReason && <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">{preflightBlockedReason}</p>}
             <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">{QUERY_WORKSPACE_NAV.preflightNote}</p>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setRunOpen(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">取消</button>
-              <button type="button" disabled={busy || !engineId} onClick={() => void startRun()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">开始 GEO 检测</button>
+              <button type="button" disabled={busy || !engineId || preflightLoading || !preflight || Boolean(preflightBlockedReason)} onClick={() => void startRun()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">开始 GEO 检测</button>
             </div>
           </div>
         </div>

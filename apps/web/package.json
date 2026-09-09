@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "check:zh": "node scripts/check-ui-zh.mjs",
+    "test:r2": "node --no-warnings --test scripts/r2-api.test.mjs",
     "smoke:pages": "node scripts/smoke-pages.mjs"
   },
   "dependencies": {
