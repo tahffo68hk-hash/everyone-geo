@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import {
   formatQuerySource, formatQueryType, formatTargetCheck, friendlyError,
-  MANUAL_NAV, QUERY_WORKSPACE_NAV, TARGET_NAV,
+  MANUAL_NAV, QUERY_WORKSPACE_NAV, TARGET_NAV, QUERY_INTENT_LABEL,
 } from "@/lib/labels";
 
 type Project = { id: string; name: string };
@@ -36,6 +36,14 @@ function SuiteInner() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [checkFilter, setCheckFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sort, setSort] = useState("original");
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const resetFilters = () => { setSearch(""); setTypeFilter(""); setCheckFilter(""); setStatusFilter(""); setSort("original"); setPage(1); };
 
   // 生成器输入
   const [bCategory, setBCategory] = useState("");
@@ -59,7 +67,6 @@ function SuiteInner() {
   const [manualProduct, setManualProduct] = useState("qwen-web");
   const [manualRunType, setManualRunType] = useState<"demo" | "real">("real");
   const [manualDisplayedModel, setManualDisplayedModel] = useState("");
-  const [manualTarget, setManualTarget] = useState<TargetBrief | null>(null);
 
   const load = useCallback(async () => {
     setError("");
@@ -198,13 +205,28 @@ function SuiteInner() {
 
   const effectiveType = (q: Suite["queries"][number]) => q.queryType ?? (q.enabled && q.category !== "sanity-control" ? "DISCOVERY" : "CUSTOM");
 
+  const filteredQueries = (suite?.queries ?? []).filter(q =>
+    q.queryText.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()) &&
+    (!typeFilter || effectiveType(q) === typeFilter) &&
+    (!checkFilter || (q.contamination?.status ?? "UNCHECKED") === checkFilter) &&
+    (!statusFilter || q.enabled === (statusFilter === "enabled"))
+  );
+  if (sort !== "original") filteredQueries.sort((a, b) => sort === "text"
+    ? a.queryText.localeCompare(b.queryText, "zh-CN")
+    : effectiveType(a).localeCompare(effectiveType(b)));
+  const pageCount = Math.max(1, Math.ceil(filteredQueries.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visibleQueries = filteredQueries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   if (!suite && !error) return <div className="space-y-2" aria-busy="true">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-8 animate-pulse rounded-lg bg-slate-100" />)}</div>;
+
+  if (!suite) return <div role="alert" className="rounded-xl border border-rose-200 bg-white p-6"><h1 className="text-lg font-semibold text-slate-800">问题集加载失败</h1><p className="mt-2 text-sm text-rose-700">{error}</p><button type="button" onClick={() => void load()} className="mt-4 rounded-lg bg-teal-700 px-4 py-2 text-sm text-white">重试</button></div>;
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href={`/app/queries?project=${suiteProjectId}`} className="text-xs text-blue-700 hover:underline">← 返回问题集</Link>
+          <Link href={`/app/queries?project=${suiteProjectId}`} className="text-xs text-teal-700 hover:underline">← 返回问题集</Link>
           <h1 className="mt-1 text-xl font-semibold text-slate-800">{suite?.name} <span className="text-slate-400">v{suite?.version}</span></h1>
           {suite && (
             <p className="mt-1 text-xs text-slate-500">
@@ -214,23 +236,56 @@ function SuiteInner() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void cloneSuite()} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">{QUERY_WORKSPACE_NAV.cloneVersion}</button>
           <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => { setManualProduct("qwen-web"); setManualRunType("real"); setManualDisplayedModel(""); setManualOpen(true); }} className="rounded-lg border border-teal-600 bg-white px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-40" title={MANUAL_NAV.entryHint}>
             {MANUAL_NAV.entry}
           </button>
-          <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => setRunOpen(true)} className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800 disabled:opacity-40">
+          <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => setRunOpen(true)} className="rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800 disabled:opacity-40">
             {QUERY_WORKSPACE_NAV.runBenchmark}
           </button>
         </div>
       </div>
 
       {!target?.canonicalName && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">请先在「{TARGET_NAV.title}」页设置监测对象，才能开始检测。</p>}
-      {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+      {error && <div role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">重新加载问题集</button></div>}
       {notice && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
 
+      <section aria-label="问题列表" className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4">
+          <input aria-label="搜索问题" placeholder="搜索问题内容" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="min-w-48 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <select aria-label="问题类型筛选" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">全部类型</option>{["DISCOVERY", "BRANDED_SANITY", "CUSTOM"].map(v => <option key={v} value={v}>{formatQueryType(v)}</option>)}
+          </select>
+          <select aria-label="品牌检查筛选" value={checkFilter} onChange={e => { setCheckFilter(e.target.value); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">全部品牌检查</option>{["CLEAN", "TARGET_MENTIONED", "POSSIBLE_TARGET_MENTION"].map(v => <option key={v} value={v}>{formatTargetCheck(v)}</option>)}<option value="UNCHECKED">未检查</option>
+          </select>
+          <select aria-label="问题状态筛选" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+          <select aria-label="问题排序" value={sort} onChange={e => { setSort(e.target.value); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="original">默认顺序</option><option value="text">按问题文字</option><option value="type">按问题类型</option></select>
+          <button type="button" onClick={resetFilters} className="px-2 py-2 text-sm text-teal-700 hover:underline">重置</button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-500"><tr>{["问题", "类型", "品牌检查", "来源", "状态"].map(label => <th key={label} scope="col" className="px-4 py-3 font-medium">{label}</th>)}</tr></thead>
+            <tbody>
+              {visibleQueries.map(q => <tr key={q.id} className="h-12 border-t border-slate-100 align-top hover:bg-slate-50/70">
+                <td className="max-w-lg px-4 py-3"><div className="break-words text-slate-800">{q.queryText}</div><details className="mt-1 text-xs text-slate-500"><summary className="w-fit cursor-pointer hover:text-teal-700">问题详情</summary><div className="mt-2 space-y-1 break-all"><div>问题编号：{q.id}</div><div>分类：{q.category}</div><div>意图：{q.intent}</div><div>语言：{q.locale}</div><div>原始类型：{q.queryType ?? "未设置"}</div><div>原始来源：{q.source ?? "未设置"}</div></div></details></td>
+                <td className="px-4 py-3"><span className={`inline-block whitespace-nowrap rounded px-2 py-1 text-xs ${TYPE_BADGE[effectiveType(q)] ?? "bg-slate-100 text-slate-600"}`}>{formatQueryType(effectiveType(q))}</span></td>
+                <td className="max-w-64 px-4 py-3"><details className="text-xs"><summary className="cursor-pointer text-teal-700 underline decoration-dotted underline-offset-4">{q.contamination ? formatTargetCheck(q.contamination.status) : "未检查"}</summary><div className="mt-2 space-y-1 leading-5 text-slate-500"><p>{q.contamination?.status === "CLEAN" ? "按当前检查结果，问题没有包含目标品牌别名。" : q.contamination?.status === "TARGET_MENTIONED" ? "问题直接提及目标品牌，可能引导回答；这类问题不应作为自然发现问题。" : q.contamination?.status === "POSSIBLE_TARGET_MENTION" ? "链接中可能包含目标品牌，请检查问题原文。" : "尚无可解释的品牌检查结果。"}</p>{q.contamination?.matchedAlias && <p>匹配别名：{q.contamination.matchedAlias}</p>}<p>原始状态：{q.contamination?.status ?? "未检查"}</p></div></details></td>
+                <td className="px-4 py-3 text-xs text-slate-600">{q.source ? formatQuerySource(q.source.toUpperCase()) : "—"}</td>
+                <td className="px-4 py-3"><span className={`whitespace-nowrap rounded px-2 py-1 text-xs ${q.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{q.enabled ? "启用" : "停用"}</span></td>
+              </tr>)}
+              {visibleQueries.length === 0 && <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-500">{suite?.queries.length ? <>没有符合筛选条件的问题。<button type="button" onClick={resetFilters} className="ml-2 text-teal-700 underline">清除筛选</button></> : "还没有问题。展开下方「创建监测问题」或「批量导入」添加。"}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500" aria-label="问题分页">
+          <span aria-live="polite">共 {filteredQueries.length} 条 · 每页 {pageSize} 条</span>
+          <div className="flex items-center gap-3"><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} className="rounded border border-slate-300 px-3 py-1.5 disabled:opacity-40">上一页</button><span>{currentPage} / {pageCount}</span><button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)} className="rounded border border-slate-300 px-3 py-1.5 disabled:opacity-40">下一页</button></div>
+        </div>
+      </section>
+
       {/* 问题生成器 */}
-      <section className="rounded-xl border border-violet-200 bg-violet-50/30 p-4">
-        <h2 className="text-sm font-semibold text-slate-700">{QUERY_WORKSPACE_NAV.queryBuilder}</h2>
+      <details className="rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer text-base font-semibold text-slate-700">创建监测问题</summary>
         <p className="text-xs text-slate-500">{QUERY_WORKSPACE_NAV.builderNote}</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <label className="block"><span className="text-[11px] text-slate-500">产品类别</span>
@@ -239,16 +294,14 @@ function SuiteInner() {
           <label className="block"><span className="text-[11px] text-slate-500">场景（逗号分隔）</span>
             <input value={bScenario} onChange={e => setBScenario(e.target.value)} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="如 销售团队选型,创业初期" aria-label="场景" />
           </label>
-          <label className="block"><span className="text-[11px] text-slate-500">意图（逗号分隔）</span>
-            <input value={bIntents} onChange={e => setBIntents(e.target.value)} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" aria-label="意图" />
-          </label>
+          <fieldset className="sm:col-span-3"><legend className="text-xs text-slate-500">希望了解什么（可多选）</legend><div className="mt-2 flex flex-wrap gap-4">{Object.entries(QUERY_INTENT_LABEL).map(([value, label]) => <label key={value} className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={split(bIntents).includes(value)} onChange={e => setBIntents(e.target.checked ? [...split(bIntents), value].join(",") : split(bIntents).filter(v => v !== value).join(","))} />{label}</label>)}</div></fieldset>
           <label className="block"><span className="text-[11px] text-slate-500">人群（可选）</span>
             <input value={bAudience} onChange={e => setBAudience(e.target.value)} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="如 小团队" aria-label="人群" />
           </label>
           <label className="block"><span className="text-[11px] text-slate-500">条件（可选）</span>
             <input value={bModifiers} onChange={e => setBModifiers(e.target.value)} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="如 免费,5000 元以内" aria-label="条件" />
           </label>
-          <button type="button" onClick={() => void previewBuilder()} disabled={busy || !bCategory.trim()} className="self-end rounded-lg bg-violet-800 px-3 py-2 text-sm font-medium text-white hover:bg-violet-900 disabled:opacity-40">预览问题</button>
+          <button type="button" onClick={() => void previewBuilder()} disabled={busy || !bCategory.trim() || split(bIntents).length === 0} className="self-end rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">预览问题</button>
         </div>
         {builderMeta && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -268,11 +321,12 @@ function SuiteInner() {
             ))}
           </div>
         )}
-      </section>
+      </details>
 
       {/* 批量导入 */}
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-slate-700">{QUERY_WORKSPACE_NAV.importText}</h2>
+      <details className="rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer text-base font-semibold text-slate-700">批量导入与版本操作</summary>
+        <button type="button" onClick={() => void cloneSuite()} disabled={busy} className="my-3 rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">{QUERY_WORKSPACE_NAV.cloneVersion}</button>
         <p className="text-xs text-slate-500">{QUERY_WORKSPACE_NAV.importNote}</p>
         <textarea value={importText} onChange={e => setImportText(e.target.value)} rows={3} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder={"每行一个问题，例如：\n适合小型销售团队的 CRM 有哪些？\n销售团队怎么选 CRM？"} aria-label="批量导入文本" />
         <div className="mt-2 flex items-center gap-2">
@@ -294,42 +348,7 @@ function SuiteInner() {
             ))}
           </div>
         )}
-      </section>
-
-      {/* Query 表格 */}
-      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
-              <th className="px-3 py-2 font-medium">{QUERY_WORKSPACE_NAV.tableColumns.query}</th>
-              <th className="px-3 py-2 font-medium">{QUERY_WORKSPACE_NAV.tableColumns.type}</th>
-              <th className="px-3 py-2 font-medium">{QUERY_WORKSPACE_NAV.tableColumns.category}</th>
-              <th className="px-3 py-2 font-medium">{QUERY_WORKSPACE_NAV.tableColumns.targetCheck}</th>
-              <th className="px-3 py-2 font-medium">{QUERY_WORKSPACE_NAV.tableColumns.source}</th>
-              <th className="px-3 py-2 font-medium">状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            {suite?.queries.map(q => (
-              <tr key={q.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="max-w-md px-3 py-2"><span className="line-clamp-2 break-words text-slate-800">“{q.queryText}”</span></td>
-                <td className="px-3 py-2">
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${TYPE_BADGE[effectiveType(q)] ?? ""}`}>{formatQueryType(effectiveType(q))}</span>
-                </td>
-                <td className="px-3 py-2 text-xs text-slate-500">{q.category}</td>
-                <td className="px-3 py-2">
-                  <span className="text-xs">{q.contamination ? formatTargetCheck(q.contamination.status) : "—"}</span>
-                </td>
-                <td className="px-3 py-2 text-xs">{q.source ? formatQuerySource(q.source) : "—"}</td>
-                <td className="px-3 py-2 text-xs">{q.enabled ? <span className="text-emerald-700">启用</span> : <span className="text-slate-400">停用</span>}</td>
-              </tr>
-            ))}
-            {(suite?.queries.length ?? 0) === 0 && (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">还没有问题 —— 使用上方生成器或批量导入添加。</td></tr>
-            )}
-          </tbody>
-        </table>
-      </section>
+      </details>
 
       {/* 运行前确认 */}
       {runOpen && suite && (
@@ -358,7 +377,7 @@ function SuiteInner() {
             <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">{QUERY_WORKSPACE_NAV.preflightNote}</p>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setRunOpen(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">取消</button>
-              <button type="button" disabled={busy || !engineId} onClick={() => void startRun()} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-40">开始 GEO 检测</button>
+              <button type="button" disabled={busy || !engineId} onClick={() => void startRun()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">开始 GEO 检测</button>
             </div>
           </div>
         </div>
@@ -406,7 +425,7 @@ function SuiteInner() {
 
 export default function QuerySuiteDetailPage() {
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
+    <div className="w-full">
       <SuiteInner />
     </div>
   );

@@ -1097,3 +1097,74 @@ export const MANUAL_NAV = {
 
 export const formatManualProduct = (value: string | null | undefined): string =>
   fallback(lookup(MANUAL_NAV.products, value), value ?? "");
+
+/* ---------------------------------------------------------------
+ * R2 — 统一任务中心（Activity Center）
+ * 类型 / 状态的 UI 中文映射（DB 与 API 保持英文原值，仅在 UI 层转中文）。
+ * ---------------------------------------------------------------- */
+export const ACTIVITY_TYPE_LABEL: Dict = {
+  MONITOR: "监测",
+  BENCHMARK: "基准测试",
+  MANUAL: "手动测量",
+  EXPERIMENT: "实验",
+  RETEST: "复测",
+};
+export const formatActivityType = (value: string | null | undefined): string =>
+  fallback(lookup(ACTIVITY_TYPE_LABEL, value), value ?? "未知");
+
+export const ACTIVITY_TYPE_OPTIONS = [
+  { value: "MONITOR", label: "监测" },
+  { value: "BENCHMARK", label: "基准测试" },
+  { value: "MANUAL", label: "手动测量" },
+  { value: "EXPERIMENT", label: "实验" },
+  { value: "RETEST", label: "复测" },
+] as const;
+
+/** 任务中心状态筛选（Run / Experiment 两级状态机的并集，与后端 ACTIVITY 聚合语义一致） */
+export const ACTIVITY_STATUS_OPTIONS = [
+  { value: "PENDING", label: "等待中" },
+  { value: "QUEUED", label: "排队中" },
+  { value: "RUNNING", label: "运行中" },
+  { value: "SUCCEEDED", label: "已完成" },
+  { value: "PARTIAL", label: "部分完成" },
+  { value: "FAILED", label: "失败" },
+  { value: "CANCELLED", label: "已取消" },
+  { value: "AWAITING_MANUAL_INPUT", label: "等待人工录入" },
+  { value: "SKIPPED", label: "已跳过" },
+  { value: "PLANNED", label: "已规划" },
+  { value: "EXECUTION_RECORDED", label: "已记录执行" },
+  { value: "RETEST_READY", label: "待复测" },
+  { value: "RETEST_RUNNING", label: "复测中" },
+  { value: "READY_FOR_EVALUATION", label: "待评估" },
+  { value: "EVALUATED", label: "已评估" },
+] as const;
+
+export const ACTIVITY_NAV = {
+  title: "任务中心",
+  pageHint: "统一查看监测、基准测试、手动测量、实验与复测的执行状态与结果入口。",
+  refresh: "刷新",
+  searchPlaceholder: "搜索任务 / 项目 / 问题集…",
+  search: "搜索",
+  type: "类型",
+  status: "状态",
+  all: "全部",
+  columns: {
+    task: "任务",
+    project: "项目",
+    suite: "问题集",
+    engine: "AI 方式",
+    status: "状态",
+    progress: "进度",
+    time: "时间",
+    result: "结果",
+  },
+  emptyTitle: "暂无任务记录",
+  emptyHint: "切换筛选条件，或先在「GEO 基准测试」「监测」「手动测量」「优化实验」中创建任务，这里会汇总展示。",
+  result: {
+    continueInput: "继续录入",
+    viewMissing: "查看缺失项",
+    viewResult: "查看结果",
+    view: "查看",
+  },
+  loadError: "任务中心加载失败",
+} as const;
