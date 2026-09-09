@@ -189,7 +189,8 @@ export class BenchmarkService implements OnModuleDestroy {
 
   async startRun(userId: string, suiteId: string, dto: StartBenchmarkRunDto) {
     const suite = await this.suiteForUser(userId, suiteId);
-    const enabledQueries = suite.queries.filter(query => query.enabled && query.projectQueryId);
+    // R2：archive 软删除只影响未来执行（运行/计数/详情均剔除已归档 query）
+    const enabledQueries = suite.queries.filter(query => query.enabled && query.projectQueryId && !query.archived);
     if (enabledQueries.length === 0) {
       throw new BadRequestException("该 Suite 没有可执行的启用查询（缺少 projectQueryId 镜像）");
     }
@@ -509,30 +510,34 @@ export class BenchmarkService implements OnModuleDestroy {
     queries: Array<{
       id: string; queryText: string; category: string; intent: string; sortOrder: number;
       enabled: boolean; sanity: boolean; queryType: string | null; source: string | null;
-      contamination: Prisma.JsonValue | null; locale: string;
+      contamination: Prisma.JsonValue | null; locale: string; archived: boolean;
     }>;
   }) {
+    const archivedRows = suite.queries.filter(q => q.archived);
+    const active = suite.queries.filter(q => !q.archived);
     const categoryCounts = new Map<string, number>();
-    for (const query of suite.queries) {
+    for (const query of active) {
       if (!query.enabled || query.sanity) continue;
       categoryCounts.set(query.category, (categoryCounts.get(query.category) ?? 0) + 1);
     }
     const effectiveType = (q: { queryType: string | null; sanity: boolean }) => q.queryType ?? (q.sanity ? "BRANDED_SANITY" : null);
-    const enabled = suite.queries.filter(query => query.enabled && !query.sanity).length;
+    const enabled = active.filter(query => query.enabled && !query.sanity).length;
     return {
       projectId: suite.projectId, id: suite.id, name: suite.name, version: suite.version,
       description: suite.description, status: suite.status,
       queryCount: enabled,
-      discoveryCount: suite.queries.filter(query => query.enabled && effectiveType(query) === "DISCOVERY").length,
-      sanityQueryCount: suite.queries.filter(query => query.sanity || effectiveType(query) === "BRANDED_SANITY").length,
-      customCount: suite.queries.filter(query => query.enabled && effectiveType(query) === "CUSTOM").length,
+      discoveryCount: active.filter(query => query.enabled && effectiveType(query) === "DISCOVERY").length,
+      sanityQueryCount: active.filter(query => query.sanity || effectiveType(query) === "BRANDED_SANITY").length,
+      customCount: active.filter(query => query.enabled && effectiveType(query) === "CUSTOM").length,
+      archivedCount: archivedRows.length,
       categoryCounts: Object.fromEntries(categoryCounts),
       createdAt: suite.createdAt, updatedAt: suite.updatedAt,
-      queries: suite.queries.map(query => ({
+      // 归档 query 不进详情列表（已软删除；历史 Run/Report 快照不受影响）
+      queries: active.map(query => ({
         id: query.id, queryText: query.queryText, category: query.category,
         intent: query.intent, sortOrder: query.sortOrder, enabled: query.enabled, sanity: query.sanity,
         queryType: effectiveType(query), source: query.source,
-        contamination: query.contamination, locale: query.locale,
+        contamination: query.contamination, locale: query.locale, archived: query.archived,
       })),
     };
   }

@@ -1,5 +1,22 @@
 # GeoLens 开发日志（DEVELOPMENT_LOG）
 
+## 2026-09-09 — R2 统一任务中心 + Query 运营地基（后端收尾）
+
+- Activity Center（统一任务中心后端）：apps/api/src/activity/* ——
+  GET /activity 聚合 BENCHMARK/MANUAL/MONITOR/RETEST 四类任务的最近活动，按
+  tenant/project 隔离，支持 type/status/q 筛选、分页；app.module.ts 注册
+  ActivityModule。
+- Query 运营（R2）：query-workspace list/batch/cost-preflight 端点落地 —— 服务端
+  分页/搜索/过滤/排序；批量 enable/disable/archive(软删)/move(同项目跨 Query Set)；
+  Cost Preflight 纯占位（不调真实 Provider、不读价格表，pricing=null、demo=true）。
+- BenchmarkQuery.archived 软删除标志（schema + additive migration
+  m8f_query_archive）；startRun/presentSuite 剔除已归档 query，仅影响未来执行，
+  历史 Run/Report/Evidence 快照不受影响。
+- 归档修复：list 回收站视图 archived=true 只返回已归档行。
+- e2e（geo_test，--runInBand）：activity 13/13、query-workspace-r2 6/6、
+  query-workspace(既有) 7/7 —— 全绿。API 全量 e2e 19 suites / 204 tests 全过；
+  API tsc 通过。Real Provider Calls=0，External Writes=0，未改 apps/web。
+
 ## 2026-09-05 — M0 环境与骨架
 
 - 环境确认：Node v25.8.2（>=20 ✓）、pnpm 11.1.0、git 2.54.0、V 盘 345GB 可用。

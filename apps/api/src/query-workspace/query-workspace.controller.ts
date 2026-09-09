@@ -1,9 +1,10 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { AuthGuard, JwtUserPayload } from "../common/auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { QueryWorkspaceService } from "./query-workspace.service";
 import {
-  AddAliasDto, BuilderPreviewDto, CloneSuiteDto, ImportPreviewDto, SaveQueriesDto,
+  AddAliasDto, BuilderPreviewDto, CloneSuiteDto, CostPreflightDto, ImportPreviewDto,
+  QueryListDto, BatchQueriesDto, SaveQueriesDto,
   UpdateAliasDto, UpsertTargetDto,
 } from "./dto/query-workspace.dto";
 
@@ -64,5 +65,21 @@ export class QueryWorkspaceController {
   @HttpCode(201)
   cloneSuite(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string, @Body() dto: CloneSuiteDto) {
     return this.workspace.cloneSuite(u.sub, id, dto.version);
+  }
+
+  // ---- R2 · Query 运营（分页列表 / 批量启停移 / Cost Preflight 占位） ----
+  @Get("projects/:id/queries")
+  listQueries(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string, @Query() dto: QueryListDto) {
+    return this.workspace.listQueries(u.sub, id, dto);
+  }
+
+  @Post("projects/:id/queries/batch")
+  batchQueries(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string, @Body() dto: BatchQueriesDto) {
+    return this.workspace.batchQueries(u.sub, id, dto);
+  }
+
+  @Post("projects/:id/queries/cost-preflight")
+  costPreflight(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string, @Body() dto: CostPreflightDto) {
+    return this.workspace.costPreflight(u.sub, id, dto);
   }
 }

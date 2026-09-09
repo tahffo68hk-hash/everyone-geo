@@ -464,6 +464,9 @@ model BenchmarkQuery {
   locale         String   @default("zh-CN")
   weight         Float    @default(1)
   enabled        Boolean  @default(true)
+  // R2：统一任务中心/Query 运营 —— 软删除归档标记。archive/停用只影响未来执行，
+  // 不影响历史 BenchmarkRun/Report/Evidence 快照（保证历史 immutability）。
+  archived       Boolean  @default(false)
   sortOrder      Int      @default(0)
   sanity         Boolean  @default(false) // branded sanity query：不计入主要 Visibility Benchmark
   // M8E：queryType 显式语义（DISCOVERY=自然可见度主口径 / BRANDED_SANITY=品牌认知测试，

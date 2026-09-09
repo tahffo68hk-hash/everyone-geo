@@ -339,11 +339,13 @@ export class QueryWorkspaceService {
         update: {},
         create: { projectId: suite.projectId, name: `Benchmark Auto: ${suite.name} v${newVersion}`, description: "Benchmark 自动镜像查询" },
       });
+      // R2：归档（软删除）query 不进入克隆副本——克隆即重建工作副本，只带活跃 query
+      const cloneable = suite.queries.filter(q => !q.archived);
       return tx.benchmarkSuite.create({
         data: {
           projectId: suite.projectId, name: suite.name, version: newVersion,
           description: suite.description ? `${suite.description}（${suite.version} → ${newVersion} 复制）` : `${suite.version} → ${newVersion} 复制`,
-          queries: { create: suite.queries.map(q => ({
+          queries: { create: cloneable.map(q => ({
             queryText: q.queryText, category: q.category, intent: q.intent,
             locale: q.locale, weight: q.weight, enabled: q.enabled, sanity: q.sanity,
             sortOrder: q.sortOrder,
@@ -360,5 +362,192 @@ export class QueryWorkspaceService {
       });
     });
     return { clonedId: cloned.id, name: cloned.name, version: cloned.version, queryCount: cloned.queries.length };
+  }
+
+  // ---------------------------------------------------------------
+  // R2 · Query 运营（服务端分页 / 搜索 / 筛选 / 排序 + 批量启停移 + Cost Preflight 占位）
+  // ---------------------------------------------------------------
+
+  /**
+   * 服务端分页查询当前项目 Query 集。默认隐藏已归档（软删除）行；
+   * archived=true 时仅返回已归档行（用于「回收站」视图）。全部条件服务端重新校验租户。
+   */
+  async listQueries(userId: string, projectId: string, filters: {
+    q?: string; status?: "enabled" | "disabled"; type?: "DISCOVERY" | "BRANDED_SANITY" | "CUSTOM";
+    contamination?: "CLEAN" | "TARGET_MENTIONED" | "POSSIBLE_TARGET_MENTION";
+    suiteId?: string; archived?: boolean;
+    sort?: "createdAt" | "queryText" | "queryType" | "status"; order?: "asc" | "desc";
+    page?: number; pageSize?: number;
+  }) {
+    await this.tenant.assertUserInProject(userId, projectId);
+    if (filters.suiteId) {
+      const suite = await this.db.client.benchmarkSuite.findFirst({ where: { id: filters.suiteId, projectId } });
+      if (!suite) throw new NotFoundException("Query Set 不存在或不属于该项目");
+    }
+
+    const where: Prisma.BenchmarkQueryWhereInput = {
+      suite: { projectId },
+      ...(filters.suiteId ? { suiteId: filters.suiteId } : {}),
+      ...(filters.archived === true
+        ? { archived: true } // 回收站视图：只返回已归档（软删除）行
+        : { archived: false }),
+      ...(filters.q?.trim() ? { queryText: { contains: filters.q.trim(), mode: "insensitive" } } : {}),
+    };
+    if (filters.status === "enabled") where.enabled = true;
+    else if (filters.status === "disabled") where.enabled = false;
+    if (filters.type) where.queryType = filters.type;
+    if (filters.contamination) where.contamination = { path: ["status"], equals: filters.contamination };
+
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? 20));
+    const order: "asc" | "desc" = filters.order === "desc" ? "desc" : "asc";
+    const orderBy: Prisma.BenchmarkQueryOrderByWithRelationInput[] =
+      filters.sort === "queryText" ? [{ queryText: order }, { createdAt: "desc" }, { id: "asc" }]
+        : filters.sort === "queryType" ? [{ queryType: order }, { createdAt: "desc" }, { id: "asc" }]
+          : filters.sort === "status" ? [{ enabled: order }, { createdAt: "desc" }, { id: "asc" }]
+            : [{ createdAt: order }, { id: "asc" }];
+
+    const [total, rows] = await Promise.all([
+      this.db.client.benchmarkQuery.count({ where }),
+      this.db.client.benchmarkQuery.findMany({
+        where, orderBy,
+        skip: (page - 1) * pageSize, take: pageSize,
+        include: { suite: { select: { id: true, name: true, version: true, projectId: true } } },
+      }),
+    ]);
+
+    return {
+      page, pageSize, total,
+      items: rows.map(q => ({
+        id: q.id,
+        suiteId: q.suiteId,
+        suiteName: q.suite.name,
+        suiteVersion: q.suite.version,
+        queryText: q.queryText,
+        category: q.category,
+        intent: q.intent,
+        locale: q.locale,
+        enabled: q.enabled,
+        archived: q.archived,
+        sanity: q.sanity,
+        queryType: q.queryType ?? (q.sanity ? "BRANDED_SANITY" : null),
+        source: q.source ?? "MANUAL",
+        contamination: q.contamination,
+        sortOrder: q.sortOrder,
+        createdAt: q.createdAt,
+        updatedAt: q.updatedAt,
+      })),
+    };
+  }
+
+  /**
+   * 批量操作：enable / disable / archive（软删）/ move（移动至同项目另一 Query Set）。
+   * - 跨 Project 的 query 一律视为无权访问（404），不泄露存在性。
+   * - archive 只置 archived=true，不影响历史 Run/Report/Evidence 快照（immutability）。
+   * - 兼容历史调用：body 含 rows 时退化为 saveQueries 语义（批量新增到 targetSuiteId）。
+   */
+  async batchQueries(userId: string, projectId: string, dto: {
+    operation?: "enable" | "disable" | "archive" | "move";
+    queryIds?: string[]; targetSuiteId?: string;
+    rows?: Array<{ text: string; category?: string; intent?: string; queryType: QuerySemanticType; locale?: string; enabled?: boolean }>;
+  }) {
+    await this.tenant.assertUserInProject(userId, projectId);
+
+    // 历史调用形态：rows → 批量新增（退化到 saveQueries）
+    if (dto.rows && dto.rows.length > 0) {
+      if (!dto.targetSuiteId) throw new BadRequestException("rows 批量新增必须指定 targetSuiteId");
+      const suite = await this.db.client.benchmarkSuite.findFirst({ where: { id: dto.targetSuiteId, projectId } });
+      if (!suite) throw new NotFoundException("Query Set 不存在或不属于该项目");
+      const added = await this.saveQueries(userId, suite.id, { rows: dto.rows });
+      return { operation: "save", suiteId: suite.id, added: added.added, addedQueries: added.addedQueries };
+    }
+
+    const operation = dto.operation;
+    const queryIds = dto.queryIds ?? [];
+    if (!operation || !["enable", "disable", "archive", "move"].includes(operation)) {
+      throw new BadRequestException("operation 必填：enable / disable / archive / move");
+    }
+    if (operation === "move" && !dto.targetSuiteId) {
+      throw new BadRequestException("move 操作必须指定 targetSuiteId");
+    }
+    if (queryIds.length === 0) throw new BadRequestException("queryIds 不能为空");
+
+    const queries = await this.db.client.benchmarkQuery.findMany({
+      where: { id: { in: queryIds }, suite: { projectId } },
+      select: { id: true, suiteId: true, sortOrder: true, enabled: true, archived: true },
+    });
+    const found = new Set(queries.map(q => q.id));
+    const missing = queryIds.filter(id => !found.has(id));
+    if (missing.length > 0) {
+      throw new NotFoundException(`部分 query 不存在或无权访问（${missing.length} 个）；跨项目一律按 404 处理`);
+    }
+
+    await this.db.client.$transaction(async tx => {
+      switch (operation) {
+        case "enable":
+          await tx.benchmarkQuery.updateMany({ where: { id: { in: queryIds }, suite: { projectId } }, data: { enabled: true } });
+          break;
+        case "disable":
+          await tx.benchmarkQuery.updateMany({ where: { id: { in: queryIds }, suite: { projectId } }, data: { enabled: false } });
+          break;
+        case "archive":
+          // 软删除：只影响未来执行；历史 Run/Report/Evidence 快照 immutability 不变
+          await tx.benchmarkQuery.updateMany({ where: { id: { in: queryIds }, suite: { projectId } }, data: { archived: true } });
+          break;
+        case "move": {
+          const target = await tx.benchmarkSuite.findFirst({ where: { id: dto.targetSuiteId, projectId } });
+          if (!target) throw new NotFoundException("目标 Query Set 不存在或不属于该项目");
+          const max = await tx.benchmarkQuery.aggregate({ where: { suiteId: target.id }, _max: { sortOrder: true } });
+          let next = (max._max.sortOrder ?? -1) + 1;
+          // 逐条搬家，避免 [suiteId, sortOrder] 唯一冲突；保留同一 queryType/enabled 语义
+          for (const q of queries) {
+            await tx.benchmarkQuery.update({ where: { id: q.id }, data: { suiteId: target.id, sortOrder: next++ } });
+          }
+          break;
+        }
+      }
+    });
+
+    return {
+      operation,
+      affected: queries.length,
+      queryIds: queries.map(q => q.id),
+      ...(operation === "move" ? {
+        fromSuites: [...new Set(queries.map(q => q.suiteId))],
+        toSuiteId: dto.targetSuiteId,
+      } : {}),
+      ...(operation === "archive" ? { note: "已软删除（归档）：仅影响未来执行，历史快照不变" } : {}),
+    };
+  }
+
+  /**
+   * R2 · Cost Preflight（纯占位）。不调真实 Provider、不读价格表：
+   * 只回显 启用 query × 启用 engine 的估算调用次数；pricing/currency 恒为 null，
+   * 前端显示「暂不可估算」，严禁硬编码价格。
+   */
+  async costPreflight(userId: string, projectId: string, dto: { queryIds?: string[]; engineIds?: string[] }) {
+    await this.tenant.assertUserInProject(userId, projectId);
+    const queryIds = dto.queryIds ?? [];
+    const engineIds = dto.engineIds ?? [];
+    const queryBase: Prisma.BenchmarkQueryWhereInput = { suite: { projectId }, enabled: true, archived: false };
+    const [queryCount, engineCount] = await Promise.all([
+      queryIds.length > 0
+        ? this.db.client.benchmarkQuery.count({ where: { ...queryBase, id: { in: queryIds } } })
+        : this.db.client.benchmarkQuery.count({ where: queryBase }),
+      engineIds.length > 0
+        ? this.db.client.engine.count({ where: { id: { in: engineIds }, enabled: true } })
+        : this.db.client.engine.count({ where: { enabled: true } }),
+    ]);
+    return {
+      queryIds: queryIds.length > 0 ? queryIds : undefined,
+      engineIds: engineIds.length > 0 ? engineIds : undefined,
+      queryCount,
+      engineCount,
+      estimatedCalls: queryCount * engineCount,
+      pricing: null,
+      currency: null,
+      note: "暂不可估算（未接入价格表）",
+      demo: true,
+    };
   }
 }

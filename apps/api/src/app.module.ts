@@ -17,9 +17,10 @@ import { ChangePlansModule } from "./change-plans/change-plans.module";
 import { PilotReviewsModule } from "./pilot-reviews/pilot-reviews.module";
 import { QueryWorkspaceModule } from "./query-workspace/query-workspace.module";
 import { ManualMeasurementsModule } from "./manual-measurements/manual-measurements.module";
+import { ActivityModule } from "./activity/activity.module";
 
 @Module({
-  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule, ExperimentsModule, SitesModule, ChangePlansModule, PilotReviewsModule, QueryWorkspaceModule, ManualMeasurementsModule],
+  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule, ExperimentsModule, SitesModule, ChangePlansModule, PilotReviewsModule, QueryWorkspaceModule, ManualMeasurementsModule, ActivityModule],
   controllers: [HealthController],
 })
 export class AppModule {}

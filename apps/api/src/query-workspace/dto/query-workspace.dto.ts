@@ -1,5 +1,6 @@
 import {
-  ArrayMaxSize, IsArray, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateNested,
+  ArrayMaxSize, IsArray, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID,
+  Length, Max, MaxLength, Min, ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -144,4 +145,104 @@ export class CloneSuiteDto {
   @Length(1, 32)
   @IsNotEmpty()
   version!: string;
+}
+
+/**
+ * R2 · Query 表格查询（服务端分页 / 搜索 / 筛选 / 排序）。
+ * 全部为可选条件；服务端重新校验 tenant + project + suite ownership，
+ * 不信任前端传入的过滤范围。
+ */
+export class QueryListDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
+
+  @IsOptional()
+  @IsIn(["enabled", "disabled"])
+  status?: "enabled" | "disabled";
+
+  @IsOptional()
+  @IsIn(["DISCOVERY", "BRANDED_SANITY", "CUSTOM"])
+  type?: "DISCOVERY" | "BRANDED_SANITY" | "CUSTOM";
+
+  @IsOptional()
+  @IsIn(["CLEAN", "TARGET_MENTIONED", "POSSIBLE_TARGET_MENTION"])
+  contamination?: "CLEAN" | "TARGET_MENTIONED" | "POSSIBLE_TARGET_MENTION";
+
+  @IsOptional()
+  @IsIn(["createdAt", "queryText", "queryType", "status"])
+  sort?: "createdAt" | "queryText" | "queryType" | "status";
+
+  @IsOptional()
+  @IsIn(["asc", "desc"])
+  order?: "asc" | "desc";
+
+  @IsOptional()
+  @IsUUID("4")
+  suiteId?: string;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  archived?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  pageSize?: number;
+}
+
+/**
+ * R2 · Query 批量操作。
+ * operation = enable | disable | archive | move；move 需 targetSuiteId。
+ * 兼容历史调用：body 含 rows 时退化为原有 saveQueries 语义（批量新增）。
+ */
+export class BatchQueriesDto {
+  @IsOptional()
+  @IsIn(["enable", "disable", "archive", "move"])
+  operation?: "enable" | "disable" | "archive" | "move";
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @IsUUID("4", { each: true })
+  queryIds?: string[];
+
+  @IsOptional()
+  @IsUUID("4")
+  targetSuiteId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => SaveRowDto)
+  rows?: SaveRowDto[];
+}
+
+/**
+ * R2 · Cost Preflight（纯占位，不调真实 Provider / 不读价格表）。
+ * 只回显 queryIds × engineIds 的估算调用次数；pricing/currency 恒为 null，
+ * 前端必须显示「暂不可估算」，严禁硬编码任何价格。
+ */
+export class CostPreflightDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @IsUUID("4", { each: true })
+  queryIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID("4", { each: true })
+  engineIds?: string[];
 }
