@@ -12,7 +12,6 @@ import {
   clearProcessedSelection,
   formatPreflightCost,
   getPreflightBlockedReason,
-  isBackendCapabilityPending,
   listProjectSuites,
   listQueries,
   loadRunPreflight,
@@ -25,7 +24,7 @@ import {
   type QuerySemanticType,
   type QuerySort,
   type QueryStatusFilter,
-  type RunPreflight,
+  type RunPreflightResponse,
   type SortOrder,
 } from "@/lib/r2-api";
 import { ErrorState, LoadingSkeleton, Pagination } from "@/components/ui";
@@ -92,9 +91,8 @@ function SuiteInner() {
   const [runOpen, setRunOpen] = useState(false);
   const [engineId, setEngineId] = useState("");
   const [runType, setRunType] = useState<"demo" | "real">("demo");
-  const [preflight, setPreflight] = useState<RunPreflight | null>(null);
+  const [preflight, setPreflight] = useState<RunPreflightResponse | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
-  const [preflightPending, setPreflightPending] = useState("");
   const [preflightError, setPreflightError] = useState("");
   // M8C-R0：人工 Web UI 检测
   const [manualOpen, setManualOpen] = useState(false);
@@ -201,14 +199,10 @@ function SuiteInner() {
   useEffect(() => {
     if (!runOpen || !suiteProjectId || !engineId) return;
     let active = true;
-    setPreflightLoading(true); setPreflight(null); setPreflightPending(""); setPreflightError("");
+    setPreflightLoading(true); setPreflight(null); setPreflightError("");
     loadRunPreflight(suiteProjectId, { suiteId: id, engineIds: [engineId], runType })
       .then(result => { if (active) setPreflight(result); })
-      .catch(cause => {
-        if (!active) return;
-        if (isBackendCapabilityPending(cause)) setPreflightPending(cause.message);
-        else setPreflightError(friendlyError(cause));
-      })
+      .catch(cause => { if (active) setPreflightError(friendlyError(cause)); })
       .finally(() => { if (active) setPreflightLoading(false); });
     return () => { active = false; };
   }, [runOpen, suiteProjectId, id, engineId, runType]);
@@ -523,16 +517,15 @@ function SuiteInner() {
               <div className="flex justify-between"><dt className="text-slate-500">预计费用</dt><dd className="font-medium">{preflight ? formatPreflightCost(preflight).replace("预计费用：", "") : "—"}</dd></div>
             </dl>
             <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${runType === "demo" ? "bg-teal-50 text-teal-800" : "bg-amber-50 text-amber-800"}`}>
-              {runType === "demo" ? "演示运行不会产生真实 Provider 调用。" : "真实运行将调用后端确认已启用的 Provider。"}
+              {runType === "demo" ? "演示运行不会产生真实 Provider 调用。" : "真实运行将调用已启用 Provider。"}
             </p>
             {preflightLoading && <div className="mt-3"><LoadingSkeleton rows={3} /></div>}
-            {preflightPending && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">{preflightPending}。当前无法安全确认调用范围与 Provider 可用性，已阻止提交。</p>}
             {preflightError && <div className="mt-3"><ErrorState title="运行预检失败" error={preflightError} retry={() => { setRunOpen(false); queueMicrotask(() => setRunOpen(true)); }} /></div>}
             {preflightBlockedReason && <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">{preflightBlockedReason}</p>}
             <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">{QUERY_WORKSPACE_NAV.preflightNote}</p>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setRunOpen(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">取消</button>
-              <button type="button" disabled={busy || !engineId || preflightLoading || !preflight || Boolean(preflightBlockedReason)} onClick={() => void startRun()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">开始 GEO 检测</button>
+              <button type="button" disabled={busy || !engineId || preflightLoading || !preflight || preflight.blocked} onClick={() => void startRun()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">开始 GEO 检测</button>
             </div>
           </div>
         </div>

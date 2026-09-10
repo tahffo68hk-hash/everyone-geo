@@ -5,6 +5,7 @@ import {
   buildActivityPath,
   buildBatchRequest,
   buildQueryListPath,
+  buildRunPreflightRequest,
   clearProcessedSelection,
   formatPreflightCost,
   getActivityActions,
@@ -95,6 +96,77 @@ test("Activity 旧字段不会被推断成 capability", () => {
       resultUrl: "/app/monitor?task=activity-1",
     }),
     [],
+  );
+});
+
+test("Activity 只消费后端明确提供的 R2 actions", () => {
+  assert.deepEqual(
+    getActivityActions({
+      id: "activity-2",
+      type: "MANUAL",
+      projectId: "project-1",
+      projectName: "NovaFlow",
+      status: "AWAITING_MANUAL_INPUT",
+      createdAt: "2026-09-09T00:00:00.000Z",
+      availableActions: ["VIEW_RESULT", "CONTINUE_MANUAL_INPUT"],
+      resultType: "RUN",
+      resultId: "run-1",
+      resultUrl: "/app/manual-runs/run-1",
+    }),
+    ["VIEW_RESULT", "CONTINUE_MANUAL_INPUT"],
+  );
+});
+
+test("Activity 不把未知 action 映射成已有 CTA", () => {
+  assert.deepEqual(
+    getActivityActions({
+      id: "activity-3",
+      type: "BENCHMARK",
+      projectId: "project-1",
+      projectName: "NovaFlow",
+      status: "FAILED",
+      createdAt: "2026-09-09T00:00:00.000Z",
+      availableActions: ["RETRY"],
+      resultType: null,
+      resultId: null,
+      resultUrl: null,
+    }),
+    [],
+  );
+});
+
+test("Suite Preflight 只发送 suiteId、engineIds 和 runType", () => {
+  assert.deepEqual(
+    buildRunPreflightRequest("project/1", {
+      suiteId: "suite-1",
+      engineIds: ["engine-1"],
+      runType: "real",
+    }),
+    {
+      path: "/projects/project%2F1/queries/cost-preflight",
+      body: {
+        suiteId: "suite-1",
+        engineIds: ["engine-1"],
+        runType: "real",
+      },
+    },
+  );
+});
+
+test("Preflight 仅在 blocked=true 时展示后端原因", () => {
+  assert.equal(
+    getPreflightBlockedReason({
+      queryCount: 10,
+      engineCount: 1,
+      estimatedCalls: 10,
+      estimatedCost: null,
+      pricing: null,
+      currency: null,
+      blocked: false,
+      blockedReasonCode: "REAL_PROVIDER_UNAVAILABLE",
+      blockedReason: "不应展示",
+    }),
+    null,
   );
 });
 

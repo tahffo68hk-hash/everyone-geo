@@ -12,7 +12,8 @@ export type ActivityStatus =
   | "SKIPPED"
   | string;
 
-export type ActivityAvailableAction = "CANCEL" | "RERUN" | "CONTINUE_INPUT";
+export type ActivityAction = "VIEW_RESULT" | "CONTINUE_MANUAL_INPUT";
+export type ActivityResultType = "RUN" | "MONITOR" | "EXPERIMENT";
 
 export type ActivityItem = {
   id: string;
@@ -29,11 +30,11 @@ export type ActivityItem = {
   progress?: { completed: number | null; total: number | null; label: string | null } | null;
   createdAt: string;
   completedAt?: string | null;
-  startable?: boolean;
-  resultUrl?: string | null;
-  resultType?: string | null;
-  resultId?: string | null;
-  availableActions?: ActivityAvailableAction[] | null;
+  startable: boolean;
+  resultUrl: string | null;
+  resultType: ActivityResultType | null;
+  resultId: string | null;
+  availableActions?: ActivityAction[] | null;
 };
 
 export type ActivityResponse = {
@@ -122,37 +123,31 @@ export type ProjectSuiteOption = {
 
 export type RunType = "demo" | "real";
 
-export type RunPreflightRequest = {
-  suiteId: string;
+type RunPreflightScope =
+  | { suiteId: string; queryIds?: never }
+  | { queryIds: string[]; suiteId?: never };
+
+export type RunPreflightRequest = RunPreflightScope & {
   engineIds: string[];
   runType: RunType;
 };
 
-export type RunPreflight = {
+export type RunPreflightResponse = {
   suiteId?: string;
+  queryIds?: string[];
+  engineIds?: string[];
   queryCount: number;
   engineCount: number;
   estimatedCalls: number;
-  runType?: RunType;
-  estimatedCost?: number | null;
-  pricing?: number | null;
-  currency?: string | null;
-  providerDisabled?: boolean;
-  providerUnavailable?: boolean;
-  blocked?: boolean;
-  blockedReason?: string | null;
-  reason?: string | null;
-  note?: string | null;
+  runType: RunType;
+  estimatedCost: number | null;
+  pricing: number | null;
+  currency: string | null;
+  blocked: boolean;
+  blockedReasonCode: "NO_ENGINE_AVAILABLE" | "REAL_PROVIDER_UNAVAILABLE" | string | null;
+  blockedReason: string | null;
+  note: string | null;
 };
-
-export const RUN_PREFLIGHT_PENDING_MESSAGE = "后端服务暂未提供当前问题集的运行预检能力";
-
-export class BackendCapabilityPendingError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BackendCapabilityPendingError";
-  }
-}
 
 function appendDefined(params: URLSearchParams, key: string, value: string | number | undefined): void {
   if (value === undefined || value === "") return;
@@ -209,8 +204,10 @@ export function listActivity(filters: ActivityFilters, signal?: AbortSignal): Pr
   return request<ActivityResponse>(buildActivityPath(filters), { signal });
 }
 
-export function getActivityActions(item: ActivityItem): ActivityAvailableAction[] {
-  return item.availableActions ? [...item.availableActions] : [];
+export function getActivityActions(item: ActivityItem): ActivityAction[] {
+  return item.availableActions?.filter(
+    action => action === "VIEW_RESULT" || action === "CONTINUE_MANUAL_INPUT",
+  ) ?? [];
 }
 
 export function listQueries(projectId: string, filters: QueryListFilters, signal?: AbortSignal): Promise<QueryListResponse> {
@@ -226,30 +223,32 @@ export function listProjectSuites(projectId: string): Promise<ProjectSuiteOption
   return request<ProjectSuiteOption[]>(`/projects/${encodeURIComponent(projectId)}/benchmark-suites`);
 }
 
-/**
- * The observed endpoint is not suite-scoped yet. Do not call it with a guessed
- * compatibility payload; update only this adapter when the real contract lands.
- */
-export async function loadRunPreflight(_projectId: string, _input: RunPreflightRequest): Promise<RunPreflight> {
-  throw new BackendCapabilityPendingError(RUN_PREFLIGHT_PENDING_MESSAGE);
+export function buildRunPreflightRequest(
+  projectId: string,
+  input: RunPreflightRequest,
+): { path: string; body: RunPreflightRequest } {
+  return {
+    path: `/projects/${encodeURIComponent(projectId)}/queries/cost-preflight`,
+    body: input.suiteId !== undefined
+      ? { suiteId: input.suiteId, engineIds: [...input.engineIds], runType: input.runType }
+      : { queryIds: [...input.queryIds], engineIds: [...input.engineIds], runType: input.runType },
+  };
 }
 
-export function isBackendCapabilityPending(cause: unknown): cause is BackendCapabilityPendingError {
-  return cause instanceof BackendCapabilityPendingError;
+export function loadRunPreflight(projectId: string, input: RunPreflightRequest): Promise<RunPreflightResponse> {
+  const { path, body } = buildRunPreflightRequest(projectId, input);
+  return request<RunPreflightResponse>(path, { method: "POST", body: JSON.stringify(body) });
 }
 
-export function formatPreflightCost(preflight: RunPreflight): string {
+export function formatPreflightCost(preflight: RunPreflightResponse): string {
   const amount = preflight.estimatedCost ?? preflight.pricing;
   if (amount === null || amount === undefined) return "预计费用：暂不可估算";
   return `预计费用：${preflight.currency ? `${preflight.currency} ` : ""}${amount}`;
 }
 
-export function getPreflightBlockedReason(preflight: RunPreflight): string | null {
-  if (!preflight.blocked && !preflight.providerDisabled && !preflight.providerUnavailable) return null;
+export function getPreflightBlockedReason(preflight: RunPreflightResponse): string | null {
+  if (!preflight.blocked) return null;
   if (preflight.blockedReason?.trim()) return preflight.blockedReason.trim();
-  if (preflight.reason?.trim()) return preflight.reason.trim();
-  if (preflight.providerDisabled) return "所选 Provider 未启用";
-  if (preflight.providerUnavailable) return "所选 Provider 当前不可用";
   return "当前运行条件不允许提交";
 }
 

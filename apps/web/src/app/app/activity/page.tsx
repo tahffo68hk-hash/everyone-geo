@@ -8,6 +8,7 @@ import {
 } from "@/lib/labels";
 import {
   listActivity,
+  getActivityActions,
   type ActivityItem,
   type ActivityType,
 } from "@/lib/r2-api";
@@ -149,10 +150,14 @@ function ActivityInner() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-500">{fmtTime(item.createdAt)}</td>
                     <td className="px-4 py-3">
-                      {item.resultUrl ? (
-                        <Link href={item.resultUrl} className="text-blue-700 hover:underline">
-                          {ACTIVITY_NAV.result.viewResult} →
-                        </Link>
+                      {item.resultUrl && getActivityActions(item).length > 0 ? (
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          {getActivityActions(item).map(action => (
+                            <Link key={action} href={item.resultUrl!} className="text-blue-700 hover:underline">
+                              {action === "VIEW_RESULT" ? "查看结果" : "继续录入"} →
+                            </Link>
+                          ))}
+                        </div>
                       ) : <span className="text-slate-400">—</span>}
                     </td>
                   </tr>
