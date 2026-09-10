@@ -243,4 +243,98 @@ describe("R2 Query 运营 e2e", () => {
     expect(all.body.engineCount).toBeGreaterThan(0);
     expect(all.body.pricing).toBeNull();
   });
+
+  it("7. cost-preflight suite-scoped：enabled+非归档计数，disabled/archived 不计，pricing/estimatedCost null", async () => {
+    // 新 suite：3 条启用 + 1 条禁用
+    const s = await mkSuite("QsPf", [
+      { queryText: "suite pf a", category: "workflow", intent: "x", queryType: "CUSTOM" },
+      { queryText: "suite pf b", category: "workflow", intent: "x", queryType: "CUSTOM" },
+      { queryText: "suite pf c", category: "workflow", intent: "x", queryType: "CUSTOM" },
+      { queryText: "suite pf disabled", category: "workflow", intent: "x", queryType: "CUSTOM" },
+    ], { 3: false });
+    const engine = await prisma.engine.create({
+      data: { key: `r2-pf-suite-${suffix}`, name: "R2 PF Suite", provider: "mock", config: { delayMs: 0 } as never },
+    });
+    const ids2 = await listIds(s.id);
+    expect(ids2.length).toBe(4);
+    // 归档其中 1 条 enabled → 剩余 2 条 enabled + 1 禁用（不计）
+    const dbBefore = await prisma.benchmarkQuery.groupBy({ by: ["enabled", "archived"], where: { suiteId: s.id }, _count: { _all: true } });
+    expect(dbBefore.find(r => r.enabled && !r.archived)?._count._all).toBe(3);
+    const ar = await owner.post(`/projects/${ids.projectA}/queries/batch`)
+      .send({ operation: "archive", queryIds: [ids2[0]] }).expect(201);
+    const dbAfter = await prisma.benchmarkQuery.groupBy({ by: ["enabled", "archived"], where: { suiteId: s.id }, _count: { _all: true } });
+    const enNonAr = dbAfter.find(r => r.enabled && !r.archived)?._count._all ?? -1;
+    expect(enNonAr).toBe(2);
+    expect(ar.body.operation).toBe("archive");
+
+    const pf = await owner.post(`/projects/${ids.projectA}/queries/cost-preflight`)
+      .send({ suiteId: s.id, engineIds: [engine.id], runType: "demo" }).expect(201);
+    expect(pf.body.suiteId).toBe(s.id);
+    expect(pf.body.runType).toBe("demo");
+    expect(pf.body.queryCount).toBe(2);     // 4 - 1 archived - 1 disabled
+    expect(pf.body.engineCount).toBe(1);
+    expect(pf.body.estimatedCalls).toBe(2);
+    expect(pf.body.blocked).toBe(false);
+    expect(pf.body.pricing).toBeNull();
+    expect(pf.body.estimatedCost).toBeNull();
+    expect(pf.body.currency).toBeNull();
+    expect(pf.body.demo).toBe(true);
+  });
+
+  it("8. cost-preflight：engine 全禁用/不匹配 → blocked=NO_ENGINE_AVAILABLE；suite 无可用 query 不计 blocked", async () => {
+    // suiteB 为空 suite：无 enabled query → queryCount=0，但 engine 存在时按 demo 不放行估算为 0
+    const engine = await prisma.engine.create({
+      data: { key: `r2-pf-b-${suffix}`, name: "R2 PF B", provider: "mock", config: { delayMs: 0 } as never },
+    });
+    const emptyS = await mkSuite("QsPfE", []);
+    const pfEmpty = await owner.post(`/projects/${ids.projectA}/queries/cost-preflight`)
+      .send({ suiteId: emptyS.id, engineIds: [engine.id] }).expect(201);
+    expect(pfEmpty.body.queryCount).toBe(0);
+    expect(pfEmpty.body.engineCount).toBe(1);
+    expect(pfEmpty.body.estimatedCalls).toBe(0);
+    expect(pfEmpty.body.blocked).toBe(false);
+
+    // engineIds 指向不存在的 engine → enabled 引擎为 0 → blocked
+    const noEngine = await owner.post(`/projects/${ids.projectA}/queries/cost-preflight`)
+      .send({ suiteId: emptyS.id, engineIds: [randomUUID()] }).expect(201);
+    expect(noEngine.body.engineCount).toBe(0);
+    expect(noEngine.body.blocked).toBe(true);
+    expect(noEngine.body.blockedReasonCode).toBe("NO_ENGINE_AVAILABLE");
+    expect(noEngine.body.blockedReason).toContain("AI 引擎");
+  });
+
+  it("9. cost-preflight：runType=real + provider 不可用 → blocked=REAL_PROVIDER_UNAVAILABLE（0 真实调用）", async () => {
+    // 本套件 ENABLE_REAL_PROVIDERS=false 且无 key → deepseek/qwen 未配置
+    const s = await mkSuite("QsPfR", [{ queryText: "real pf", category: "workflow", intent: "x", queryType: "CUSTOM" }]);
+    const engine = await prisma.engine.create({
+      data: { key: `r2-pf-ds-${suffix}`, name: "R2 PF DS", provider: "deepseek", config: { model: "deepseek-chat" } as never },
+    });
+    const pf = await owner.post(`/projects/${ids.projectA}/queries/cost-preflight`)
+      .send({ suiteId: s.id, engineIds: [engine.id], runType: "real" }).expect(201);
+    expect(pf.body.runType).toBe("real");
+    expect(pf.body.queryCount).toBe(1);
+    expect(pf.body.engineCount).toBe(1);
+    expect(pf.body.blocked).toBe(true);
+    expect(pf.body.blockedReasonCode).toBe("REAL_PROVIDER_UNAVAILABLE");
+    expect(pf.body.blockedReason).toContain("Provider");
+  });
+
+  it("10. cost-preflight：queryIds × suiteId 冲突 → 400；跨 project / 跨 tenant → 404；runType 非法 → 400", async () => {
+    const s = await mkSuite("QsPfX", [{ queryText: "x", category: "workflow", intent: "x", queryType: "CUSTOM" }]);
+    const qids = await listIds(s.id);
+    const both = await owner.post(`/projects/${ids.projectA}/queries/cost-preflight`)
+      .send({ suiteId: s.id, queryIds: qids }).expect(400);
+    expect(both.body.message).toContain("不能同时指定");
+
+    // suiteC 属于 orgA 的另一个项目 → 404
+    await owner.post(`/projects/${ids.projectA}/queries/cost-preflight`)
+      .send({ suiteId: ids.suiteC }).expect(404);
+    // cross-tenant：outsider（orgB）访问 orgA 的 suite（挂在 orgA 的 project id 下）→ 404
+    await outsider.post(`/projects/${ids.projectA}/queries/cost-preflight`)
+      .send({ suiteId: ids.suiteA }).expect(404);
+
+    // runType 非法 → 400
+    await owner.post(`/projects/${ids.projectA}/queries/cost-preflight`)
+      .send({ suiteId: s.id, runType: "nope" }).expect(400);
+  });
 });

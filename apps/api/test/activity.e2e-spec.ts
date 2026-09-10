@@ -235,4 +235,43 @@ describe("Activity Center R2 e2e", () => {
     const res = await owner.get("/activity").query({ status: "BOGUS" }).expect(400);
     expect(res.body.message).toContain("未知状态");
   });
+
+  test("Activity contract：resultUrl/resultType/resultId/availableActions 语义", async () => {
+    const res = await owner.get("/activity").query({ pageSize: 50 }).expect(200);
+    const items = res.body.items as Array<Record<string, unknown>>;
+
+    // BENCHMARK：结果是 BenchmarkRun → RUN + run.id
+    const auto = items.find(it => it.id === ids.autoRunId) as Record<string, any>;
+    expect(auto).toBeTruthy();
+    expect(auto.resultUrl).toContain("/app/benchmark");
+    expect(auto.resultType).toBe("RUN");
+    expect(auto.resultId).toBe(ids.autoRunId);
+    expect(auto.availableActions).toContain("VIEW_RESULT");
+
+    // MANUAL：结果也是 BenchmarkRun（manual-runs 详情）→ RUN；AWAITING_MANUAL_INPUT 有真实录入入口
+    const manual = items.find(it => it.id === ids.manualRunId) as Record<string, any>;
+    expect(manual).toBeTruthy();
+    expect(manual.status).toBe("AWAITING_MANUAL_INPUT");
+    expect(manual.resultType).toBe("RUN");
+    expect(manual.resultId).toBe(ids.manualRunId);
+    expect(manual.availableActions).toContain("VIEW_RESULT");
+    expect(manual.availableActions).toContain("CONTINUE_MANUAL_INPUT");
+
+    // MONITOR：结果是 MonitorTask → MONITOR + task.id
+    const monitor = items.find(it => it.id === ids.monitorTaskId) as Record<string, any>;
+    expect(monitor).toBeTruthy();
+    expect(monitor.resultType).toBe("MONITOR");
+    expect(monitor.resultId).toBe(ids.monitorTaskId);
+  });
+
+  test("Activity contract：不支持的 action 不返回（无 CANCEL / 无 RETRY）", async () => {
+    // 当前后端不存在安全的 cancel / retry endpoint，availableActions 不应杜撰这些动作
+    const res = await owner.get("/activity").query({ pageSize: 50 }).expect(200);
+    for (const it of res.body.items as Array<{ availableActions: string[] }>) {
+      expect(it.availableActions).toBeDefined();
+      expect(it.availableActions).not.toContain("CANCEL");
+      expect(it.availableActions).not.toContain("RETRY");
+      expect(it.availableActions.every((a: string) => a === "VIEW_RESULT" || a === "CONTINUE_MANUAL_INPUT")).toBe(true);
+    }
+  });
 });

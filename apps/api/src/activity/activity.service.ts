@@ -62,6 +62,15 @@ export interface ActivityDTO {
   completedAt: string | null;
   startable: boolean;
   resultUrl: string;
+  /**
+   * 当前业务状态真正支持的 action。只返回有真实后端行为的动作，
+   * 不给前端找 button 而杜撰不存在的能力。
+   */
+  availableActions: string[];
+  /** 结果对象类型：RUN | MONITOR | EXPERIMENT；无法可靠确定时为 null。 */
+  resultType: string | null;
+  /** 结果对象 id：resultType 对应的真实实体 id；无法可靠确定时为 null。 */
+  resultId: string | null;
 }
 
 @Injectable()
@@ -148,6 +157,15 @@ export class ActivityService {
           resultUrl: isManual
             ? `/app/manual-runs/${run.id}`
             : `/app/benchmark?suite=${run.suiteId}&run=${run.id}`,
+          // R2：手动测量有真实的人工录入入口（manual-runs 详情页）→ CONTINUE_MANUAL_INPUT；
+          // 结果对象 = BenchmarkRun 本身（run detail），始终可 VIEW_RESULT。
+          availableActions: isManual
+            ? (effectiveStatus === "AWAITING_MANUAL_INPUT"
+              ? ["VIEW_RESULT", "CONTINUE_MANUAL_INPUT"]
+              : ["VIEW_RESULT"])
+            : ["VIEW_RESULT"],
+          resultType: "RUN",
+          resultId: run.id,
         });
       });
     }
@@ -191,6 +209,9 @@ export class ActivityService {
           completedAt: task.completedAt?.toISOString() ?? null,
           startable: true,
           resultUrl: `/app/monitor?task=${task.id}`,
+          availableActions: ["VIEW_RESULT"],
+          resultType: "MONITOR",
+          resultId: task.id,
         });
       });
     }
@@ -232,6 +253,9 @@ export class ActivityService {
           completedAt: exp.completedAt?.toISOString() ?? null,
           startable: true,
           resultUrl: `/app/experiments/${exp.id}`,
+          availableActions: ["VIEW_RESULT"],
+          resultType: "EXPERIMENT",
+          resultId: exp.id,
         });
       });
     }
@@ -277,6 +301,9 @@ export class ActivityService {
           completedAt: rt.completedAt?.toISOString() ?? null,
           startable: true,
           resultUrl: `/app/experiments/${rt.experiment.id}`,
+          availableActions: ["VIEW_RESULT"],
+          resultType: "EXPERIMENT",
+          resultId: rt.experiment.id,
         });
       });
     }

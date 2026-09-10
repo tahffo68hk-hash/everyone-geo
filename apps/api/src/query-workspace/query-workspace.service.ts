@@ -4,6 +4,7 @@ import {
   buildQueries, detectTargetContamination, guardQueryType, normalizeQueryText,
   type BuilderInput, type QuerySemanticType,
 } from "@geo/core";
+import { enginePresentation } from "@geo/llm";
 import { PrismaService } from "../prisma.service";
 import { TenantService } from "../common/tenant.service";
 
@@ -522,30 +523,85 @@ export class QueryWorkspaceService {
 
   /**
    * R2 · Cost Preflight（纯占位）。不调真实 Provider、不读价格表：
-   * 只回显 启用 query × 启用 engine 的估算调用次数；pricing/currency 恒为 null，
+   * 只读取配置 / DB 状态并计算估算调用次数；pricing/currency 恒为 null，
    * 前端显示「暂不可估算」，严禁硬编码价格。
+   *
+   * scope 二选一（异或，同时传 400）：
+   *   - suiteId：Suite-scoped，后端在 tenant/project 内统计 enabled && !archived 的
+   *     query；suite 跨 tenant / 跨 project 一律 404（不信任前端 scope）。
+   *   - queryIds：显式 query 列表（历史兼容模式）。
+   * blocked 由后端判定（provider availability / 无可用 engine 等），并给可直接展示的中文原因。
    */
-  async costPreflight(userId: string, projectId: string, dto: { queryIds?: string[]; engineIds?: string[] }) {
+  async costPreflight(userId: string, projectId: string, dto: {
+    queryIds?: string[]; engineIds?: string[]; suiteId?: string; runType?: "demo" | "real";
+  }) {
     await this.tenant.assertUserInProject(userId, projectId);
-    const queryIds = dto.queryIds ?? [];
     const engineIds = dto.engineIds ?? [];
+    const suiteId = dto.suiteId;
+    const queryIds = dto.queryIds ?? [];
+    if (suiteId && queryIds.length > 0) {
+      throw new BadRequestException("queryIds 与 suiteId 不能同时指定（两种预检 scope 二选一）");
+    }
+    // 默认 demo（与 BenchmarkRun 创建默认 runType 一致）
+    const runType: "demo" | "real" = dto.runType ?? "demo";
+
     const queryBase: Prisma.BenchmarkQueryWhereInput = { suite: { projectId }, enabled: true, archived: false };
-    const [queryCount, engineCount] = await Promise.all([
-      queryIds.length > 0
-        ? this.db.client.benchmarkQuery.count({ where: { ...queryBase, id: { in: queryIds } } })
-        : this.db.client.benchmarkQuery.count({ where: queryBase }),
-      engineIds.length > 0
-        ? this.db.client.engine.count({ where: { id: { in: engineIds }, enabled: true } })
-        : this.db.client.engine.count({ where: { enabled: true } }),
+    const suite = suiteId
+      ? await this.db.client.benchmarkSuite.findFirst({ where: { id: suiteId, projectId } })
+      : null;
+    if (suiteId && !suite) {
+      // 跨 tenant / 跨 project 一律按 404 处理，不泄露 suite 存在性
+      throw new NotFoundException("Query Set 不存在或不属于当前项目");
+    }
+    const queryDoor: Prisma.BenchmarkQueryWhereInput = suiteId
+      ? { ...queryBase, suiteId }
+      : queryIds.length > 0 ? { ...queryBase, id: { in: queryIds } } : queryBase;
+
+    const [queryCount, engines] = await Promise.all([
+      this.db.client.benchmarkQuery.count({ where: queryDoor }),
+      this.db.client.engine.findMany({
+        where: engineIds.length > 0 ? { id: { in: engineIds }, enabled: true } : { enabled: true },
+      }),
     ]);
+    const engineCount = engines.length;
+
+    // ---- blocked 判定（后端权威，不让前端猜是否能运行）----
+    const real = runType === "real";
+    let blocked = false;
+    let blockedReasonCode: string | null = null;
+    let blockedReason: string | null = null;
+    if (engineCount === 0) {
+      blocked = true;
+      blockedReasonCode = "NO_ENGINE_AVAILABLE";
+      blockedReason = "当前没有可用的 AI 引擎";
+    } else if (real) {
+      // Real Run 只允许 DeepSeek / Qwen 且配置就绪；需要当前 scope（或整体）上有任一可用 provider
+      const usable = engines.some(e => {
+        const p = enginePresentation(e.provider, e.config, process.env);
+        return (e.provider === "deepseek" || e.provider === "qwen") && p.configured;
+      });
+      if (!usable) {
+        blocked = true;
+        blockedReasonCode = "REAL_PROVIDER_UNAVAILABLE";
+        blockedReason = "当前 Provider 暂不可用（需启用 DeepSeek / Qwen 且完成配置）";
+      }
+    }
+    // Demo Run：若 pass 进来的 engine 存在但被禁用，上面的 enabled:true 已过滤为 0 → NO_ENGINE_AVAILABLE
+
     return {
-      queryIds: queryIds.length > 0 ? queryIds : undefined,
+      suiteId: suiteId ?? undefined,
+      queryIds: queryIds.length > 0 && !suiteId ? queryIds : undefined,
       engineIds: engineIds.length > 0 ? engineIds : undefined,
+      runType,
       queryCount,
       engineCount,
       estimatedCalls: queryCount * engineCount,
+      estimatedCost: null,
       pricing: null,
       currency: null,
+      blocked,
+      blockedReasonCode,
+      blockedReason,
       note: "暂不可估算（未接入价格表）",
       demo: true,
     };

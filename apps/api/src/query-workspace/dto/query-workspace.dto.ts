@@ -230,8 +230,12 @@ export class BatchQueriesDto {
 
 /**
  * R2 · Cost Preflight（纯占位，不调真实 Provider / 不读价格表）。
- * 只回显 queryIds × engineIds 的估算调用次数；pricing/currency 恒为 null，
- * 前端必须显示「暂不可估算」，严禁硬编码任何价格。
+ * 支持两种 scope（XOR，同时传 400）：
+ *   - suiteId + engineIds + runType：整个 Query Set 预检（后端在 tenant/project 内计数，
+ *     enabled=true && archived=false 的 query 才计入，不需要前端枚举 queryIds）。
+ *   - queryIds + engineIds + runType：显式 query 列表（历史兼容）。
+ * pricing/currency 恒为 null，前端必须显示「暂不可估算」，严禁硬编码任何价格。
+ * runType 用于预检语义（demo / real 复用现有 BenchmarkRunType 语义），不引入新状态机。
  */
 export class CostPreflightDto {
   @IsOptional()
@@ -245,4 +249,16 @@ export class CostPreflightDto {
   @ArrayMaxSize(50)
   @IsUUID("4", { each: true })
   engineIds?: string[];
+
+  /**
+   * Suite-scoped 预检：suite 必须属于当前 tenant + project；与 queryIds XOR。
+   */
+  @IsOptional()
+  @IsUUID("4")
+  suiteId?: string;
+
+  /** 预检运行类型：demo | real（复用现有 BenchmarkRunType 语义）。默认 demo。 */
+  @IsOptional()
+  @IsIn(["demo", "real"])
+  runType?: "demo" | "real";
 }
