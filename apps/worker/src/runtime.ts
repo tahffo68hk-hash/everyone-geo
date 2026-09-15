@@ -1,7 +1,11 @@
 import { Worker } from 'bullmq';
 import { prisma } from '@geo/database';
-import { createRunQueue, dispatchPendingRuns, reconcileRuns, queueOptions, QUEUE_NAME, type RunJob, type RunResult } from '@geo/queue';
+import {
+  createRunQueue, dispatchPendingRuns, reconcileRuns, queueOptions, QUEUE_NAME,
+  createPublicationQueue, PUBLICATION_QUEUE, type RunJob, type RunResult, type PublicationJob,
+} from '@geo/queue';
 import { boundedInteger, createRunProcessor, jsonLogger } from './processor';
+import { createPublicationProcessor } from './publication-processor';
 import { recoverAnalyses } from './evidence';
 
 export async function startWorker() {
@@ -19,6 +23,17 @@ export async function startWorker() {
   worker.on('error', () => jsonLogger({ component: 'worker', status: 'ERROR', error: 'QUEUE_UNAVAILABLE' }));
   worker.on('failed', job => jsonLogger({
     component: 'worker', jobId: job?.id, status: 'JOB_FAILED', error: 'EXECUTION_FAILED',
+  }));
+
+  // 内容发布队列（PHASE 15）：仅 Mock Publisher；幂等由 executePublication 的 idempotencyKey 保证。
+  const publicationQueue = createPublicationQueue();
+  publicationQueue.on('error', () => jsonLogger({ component: 'worker', status: 'ERROR', error: 'PUBLICATION_QUEUE_UNAVAILABLE' }));
+  const publicationWorker = new Worker<PublicationJob, void>(PUBLICATION_QUEUE, createPublicationProcessor(prisma), {
+    ...queueOptions('worker'), concurrency: 1, lockDuration, stalledInterval, maxStalledCount: 1,
+  });
+  publicationWorker.on('error', () => jsonLogger({ component: 'worker', status: 'ERROR', error: 'PUBLICATION_QUEUE_UNAVAILABLE' }));
+  publicationWorker.on('failed', job => jsonLogger({
+    component: 'worker', jobId: job?.id, status: 'PUBLICATION_JOB_FAILED', error: 'PUBLICATION_FAILED',
   }));
   let stopping = false;
   let timer: NodeJS.Timeout | undefined;
@@ -41,7 +56,9 @@ export async function startWorker() {
     closing = (async () => {
       await maintenance;
       await worker.close(); // Wait for active bounded provider executions.
+      await publicationWorker.close();
       await queue.close();
+      await publicationQueue.close();
       await prisma.$disconnect();
       jsonLogger({ component: 'worker', status: 'STOPPED' });
     })();
@@ -53,5 +70,5 @@ export async function startWorker() {
   poll();
   await worker.waitUntilReady();
   jsonLogger({ component: 'worker', status: 'READY' });
-  return { worker, queue, close };
+  return { worker, queue, publicationWorker, publicationQueue, close };
 }
