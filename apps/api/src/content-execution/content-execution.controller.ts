@@ -65,6 +65,12 @@ export class ContentExecutionController {
     return this.content.listAudit(u.sub, id);
   }
 
+  /** 渠道能力描述符（PHASE 17）：不猜测真实 API，全部标注 mock/unverified。 */
+  @Get("channels/capabilities")
+  channelCapabilities() {
+    return this.content.channelCapabilities();
+  }
+
   // ---- 渠道账号连接（OAuth readiness，仅登记，不做真实 OAuth）----
   @Get("projects/:id/channel-connections")
   listConnections(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {

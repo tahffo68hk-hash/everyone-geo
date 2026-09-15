@@ -41,6 +41,31 @@ const CHANNEL_LIMITS: Record<string, { titleMax: number; bodyMax: number }> = {
   OTHER: { titleMax: 200, bodyMax: 5000 },
 };
 
+/**
+ * 渠道能力描述符（PHASE 17）—— 只声明本系统「已知且已验证」的能力，**不猜测**各平台真实 API。
+ * 本回合所有渠道均为 mock（publisher=mock、oauthImplemented=false、apiDetails=unverified）；
+ * 真实接入需在下一阶段由官方 Connector 提供并在 descriptor 中显式升级。
+ */
+export interface ChannelCapability {
+  channel: string;
+  label: string;
+  titleMax: number;
+  bodyMax: number;
+  supportsImages: boolean;
+  publisher: "mock";
+  oauthImplemented: false;
+  apiDetails: "unverified";
+}
+
+export const CHANNEL_CAPABILITIES: ChannelCapability[] = [
+  { channel: "XIAOHONGSHU", label: "小红书", ...CHANNEL_LIMITS.XIAOHONGSHU, supportsImages: true, publisher: "mock", oauthImplemented: false, apiDetails: "unverified" },
+  { channel: "DOUYIN", label: "抖音", ...CHANNEL_LIMITS.DOUYIN, supportsImages: true, publisher: "mock", oauthImplemented: false, apiDetails: "unverified" },
+  { channel: "WEIBO", label: "微博", ...CHANNEL_LIMITS.WEIBO, supportsImages: true, publisher: "mock", oauthImplemented: false, apiDetails: "unverified" },
+  { channel: "WECHAT", label: "微信", ...CHANNEL_LIMITS.WECHAT, supportsImages: true, publisher: "mock", oauthImplemented: false, apiDetails: "unverified" },
+  { channel: "BAIDU", label: "百度", ...CHANNEL_LIMITS.BAIDU, supportsImages: false, publisher: "mock", oauthImplemented: false, apiDetails: "unverified" },
+  { channel: "OTHER", label: "其他", ...CHANNEL_LIMITS.OTHER, supportsImages: false, publisher: "mock", oauthImplemented: false, apiDetails: "unverified" },
+];
+
 @Injectable()
 export class ContentExecutionService implements OnModuleDestroy {
   private readonly logger = new Logger(ContentExecutionService.name);
@@ -267,6 +292,11 @@ export class ContentExecutionService implements OnModuleDestroy {
       },
     });
     return this.toConnectionView(conn);
+  }
+
+  /** 渠道能力描述符（PHASE 17）：显式声明已知能力，不猜测真实平台 API。 */
+  channelCapabilities(): ChannelCapability[] {
+    return CHANNEL_CAPABILITIES;
   }
 
   // ---------------------------------------------------------------

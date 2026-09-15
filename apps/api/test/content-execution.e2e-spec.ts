@@ -278,4 +278,16 @@ describe("M9 内容执行领域 e2e", () => {
       "DRAFT_CREATED", "SUBMITTED_FOR_REVIEW", "APPROVED", "PUBLICATION_CREATED", "PUBLICATION_SUCCEEDED",
     ]));
   }, 60000);
+
+  it("L. 渠道能力描述符（PHASE 17）：全部 mock / 不猜测真实 API", async () => {
+    const res = await owner.get("/channels/capabilities").expect(200);
+    const caps = res.body as Array<Record<string, unknown>>;
+    expect(caps.length).toBeGreaterThanOrEqual(2);
+    const xhs = caps.find((c) => c.channel === "XIAOHONGSHU");
+    expect(xhs).toBeTruthy();
+    expect(xhs!.publisher).toBe("mock");
+    expect(xhs!.oauthImplemented).toBe(false);
+    expect(xhs!.apiDetails).toBe("unverified");
+    expect(caps.every((c) => c.publisher === "mock" && c.oauthImplemented === false)).toBe(true);
+  }, 60000);
 });
