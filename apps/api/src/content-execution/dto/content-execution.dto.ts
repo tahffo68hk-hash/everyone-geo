@@ -3,7 +3,13 @@ import { Type } from "class-transformer";
 
 const GENERATION_MODES = ["MANUAL", "AI_ASSISTED", "AI_GENERATED"] as const;
 const DRAFT_STATUSES = ["DRAFT", "READY_FOR_REVIEW", "CHANGES_REQUESTED", "APPROVED", "REJECTED", "PUBLISHED", "ARCHIVED"] as const;
-const CHANNELS = ["XIAOHONGSHU", "DOUYIN", "WEIBO", "WECHAT", "BAIDU", "OTHER"] as const;
+export const CHANNELS = [
+  "XIAOHONGSHU", "DOUYIN", "WEIBO", "WECHAT", "BAIDU", "OTHER",
+  "WORDPRESS", "GHOST", "WEBFLOW", "BLOGGER", "DEV_TO", "MASTODON", "BLUESKY", "TELEGRAM", "DISCORD", "SLACK",
+  "THREADS", "LINKEDIN", "PINTEREST", "X", "REDDIT", "GOOGLE_BUSINESS_PROFILE", "YOUTUBE",
+  "BILIBILI", "WECHAT_OFFICIAL_ACCOUNT", "TOUTIAO", "XIGUA", "TIKTOK", "INSTAGRAM", "FACEBOOK",
+  "BAIDU_SEARCH_SURFACE", "WECHAT_CHANNELS", "ZHIHU", "BAIJIAHAO", "KUAISHOU", "SUBSTACK", "MEDIUM"
+] as const;
 const DECISIONS = ["APPROVED", "REJECTED", "CHANGES_REQUESTED"] as const;
 const PUBLICATION_STATUSES = ["PENDING", "QUEUED", "PUBLISHING", "PUBLISHED", "FAILED", "CANCELLED"] as const;
 export const ASSET_TYPES = ["IMAGE", "VIDEO", "COVER", "AUDIO"] as const;
@@ -185,3 +191,27 @@ export class ListAssetsDto {
   @Max(200)
   pageSize?: number;
 }
+
+export class AuthorizeChannelDto {
+  @IsUUID()
+  projectId!: string;
+
+  @IsString()
+  @Length(1, 1000)
+  redirectUri!: string;
+}
+
+export class CallbackQueryDto {
+  @IsString()
+  code!: string;
+
+  @IsString()
+  state!: string;
+}
+
+export class ValidatePublicationDto {
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
+}
+

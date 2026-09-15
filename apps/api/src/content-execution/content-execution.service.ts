@@ -6,11 +6,13 @@ import type { Prisma } from "@geo/database";
 import { PrismaService } from "../prisma.service";
 import { TenantService } from "../common/tenant.service";
 import {
-  ASSET_TYPES, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
-  ListAssetsDto, ListDraftsDto, ListPublicationsDto, UpdateDraftDto,
+  ASSET_TYPES, AuthorizeChannelDto, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
+  ListAssetsDto, ListDraftsDto, ListPublicationsDto, UpdateDraftDto, ValidatePublicationDto,
 } from "./dto/content-execution.dto";
 import {
-  createPublicationQueue, enqueuePublication, executePublication, type PublicationQueue,
+  createPublicationQueue, defaultConnectorRegistry, defaultCredentialVault, defaultOAuthStateSecurity,
+  enqueuePublication, executePublication, generateManualPublishingPackage, PublicationRouter,
+  type ChannelCapabilityDescriptor, type PublicationQueue,
 } from "@geo/queue";
 import { DevLocalStorageAdapter } from "./storage/local-storage.adapter";
 
@@ -373,6 +375,217 @@ export class ContentExecutionService implements OnModuleDestroy {
   /** 渠道能力描述符（PHASE 17）：显式声明已知能力，不猜测真实平台 API。 */
   channelCapabilities(): ChannelCapability[] {
     return CHANNEL_CAPABILITIES;
+  }
+
+  listAllChannels(): ChannelCapabilityDescriptor[] {
+    return defaultConnectorRegistry.listCapabilities();
+  }
+
+  getChannelCapability(channel: string): ChannelCapabilityDescriptor {
+    const cap = defaultConnectorRegistry.getCapabilities(channel as any);
+    if (!cap) throw new NotFoundException(`不支持或未知的渠道: ${channel}`);
+    return cap;
+  }
+
+  async authorizeChannel(userId: string, channel: string, dto: AuthorizeChannelDto) {
+    const project = await this.tenant.assertUserInProject(userId, dto.projectId);
+    const connector = defaultConnectorRegistry.getConnector(channel as any);
+    if (!connector) throw new NotFoundException(`渠道未注册: ${channel}`);
+
+    const state = defaultOAuthStateSecurity.generateState({
+      organizationId: project.organizationId,
+      projectId: dto.projectId,
+      channel: channel as any,
+      redirectUri: dto.redirectUri,
+    });
+
+    if (connector.beginAuthorization) {
+      const res = await connector.beginAuthorization({
+        organizationId: project.organizationId,
+        projectId: dto.projectId,
+        redirectUri: dto.redirectUri,
+        state,
+      });
+      return res;
+    }
+
+    const authUrl = `https://oauth.geolens.io/connect/${channel.toLowerCase()}?state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(dto.redirectUri)}`;
+    return { authorizationUrl: authUrl, state };
+  }
+
+  async handleOAuthCallback(userId: string, channel: string, code: string, state: string) {
+    const verifiedState = defaultOAuthStateSecurity.verifyState(state);
+    await this.tenant.assertUserInProject(userId, verifiedState.projectId);
+
+    const connector = defaultConnectorRegistry.getConnector(channel as any);
+    const caps = connector?.getCapabilities();
+
+    let status: "CONNECTED" | "REQUIRES_APP_REVIEW" | "REQUIRES_SCOPE" | "READY_FOR_CREDENTIALS" = "CONNECTED";
+    if (caps?.implementationStatus === "REQUIRES_APP_REVIEW") {
+      status = "REQUIRES_APP_REVIEW";
+    } else if (caps?.implementationStatus === "READY_FOR_CREDENTIALS") {
+      status = "READY_FOR_CREDENTIALS";
+    }
+
+    const credentialId = randomUUID();
+    const credentialRef = defaultCredentialVault.storeCredential(channel, credentialId, {
+      credentialRef: `vault://aes256gcm/${channel.toLowerCase()}/${credentialId}`,
+      accessToken: `mock_oauth_token_${code.slice(0, 8)}`,
+      refreshToken: `mock_refresh_token_${code.slice(0, 8)}`,
+      tokenExpiresAt: new Date(Date.now() + 15 * 86400 * 1000).toISOString(),
+      accountId: `acc_${code.slice(0, 6)}`,
+    });
+
+    const displayName = `${caps?.displayName || channel} 授权账号`;
+
+    const existing = await this.db.client.channelAccountConnection.findFirst({
+      where: { organizationId: verifiedState.organizationId, channel: channel as any, displayName },
+    });
+
+    let conn;
+    if (existing) {
+      conn = await this.db.client.channelAccountConnection.update({
+        where: { id: existing.id },
+        data: { credentialRef, status, lastVerifiedAt: new Date() },
+      });
+    } else {
+      conn = await this.db.client.channelAccountConnection.create({
+        data: {
+          organizationId: verifiedState.organizationId,
+          channel: channel as any,
+          displayName,
+          credentialRef,
+          status,
+          createdById: userId,
+          lastVerifiedAt: new Date(),
+        },
+      });
+    }
+
+    await this.audit(verifiedState.organizationId, userId, "PUBLICATION_CREATED", `oauth_connected channel=${channel} status=${status}`, {
+      projectId: verifiedState.projectId,
+    });
+
+    return this.toConnectionView(conn);
+  }
+
+  async deleteConnection(userId: string, connectionId: string) {
+    const conn = await this.db.client.channelAccountConnection.findUnique({ where: { id: connectionId } });
+    if (!conn) throw new NotFoundException("渠道连接不存在");
+    await this.tenant.assertUserInOrganization(userId, conn.organizationId);
+
+    if (conn.credentialRef) {
+      defaultCredentialVault.deleteCredential(conn.credentialRef);
+    }
+
+    await this.db.client.channelAccountConnection.delete({ where: { id: connectionId } });
+    return { success: true };
+  }
+
+  async validatePublication(userId: string, publicationId: string, _dto?: ValidatePublicationDto) {
+    const pub = await this.db.client.publication.findUnique({
+      where: { id: publicationId },
+      include: { draft: true, revision: { include: { approvals: true } }, connection: true },
+    });
+    if (!pub) throw new NotFoundException("发布记录不存在");
+    await this.tenant.assertUserInOrganization(userId, pub.organizationId);
+
+    const connector = defaultConnectorRegistry.getConnector(pub.channel);
+    const caps = connector?.getCapabilities();
+
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    const latestApproval = pub.revision.approvals.find((a) => a.decision === "APPROVED");
+    if (!latestApproval) {
+      errors.push("最新修订版本未获得 APPROVED 审批");
+    }
+
+    if (pub.connection.status !== "CONNECTED") {
+      errors.push(`渠道连接不可用: 状态为 ${pub.connection.status}`);
+    }
+
+    let contentBody = pub.payload;
+    try {
+      const parsed = JSON.parse(pub.payload);
+      contentBody = parsed.body || pub.payload;
+    } catch {}
+
+    if (connector) {
+      const val = await connector.validateContent({
+        title: pub.title,
+        body: contentBody,
+      });
+      errors.push(...val.errors);
+      if (val.warnings) warnings.push(...val.warnings);
+    }
+
+    return {
+      publicationId: pub.id,
+      valid: errors.length === 0,
+      errors,
+      warnings,
+      channel: pub.channel,
+      implementationStatus: caps?.implementationStatus || "UNKNOWN",
+      dryRunPassed: errors.length === 0,
+    };
+  }
+
+  async publishPublication(userId: string, publicationId: string, options?: { confirm?: boolean }) {
+    const pub = await this.db.client.publication.findUnique({ where: { id: publicationId } });
+    if (!pub) throw new NotFoundException("发布记录不存在");
+    await this.tenant.assertUserInOrganization(userId, pub.organizationId);
+
+    const router = new PublicationRouter(this.db.client);
+    const res = await router.routeAndPublish(publicationId, {
+      confirm: options?.confirm ?? true,
+      dryRun: false,
+    });
+
+    return {
+      publication: await this.publicationWithAttempts(publicationId),
+      executionResult: res,
+    };
+  }
+
+  async getManualPublishingPackage(userId: string, publicationId: string) {
+    const pub = await this.db.client.publication.findUnique({
+      where: { id: publicationId },
+      include: { draft: true, revision: true },
+    });
+    if (!pub) throw new NotFoundException("发布记录不存在");
+    await this.tenant.assertUserInOrganization(userId, pub.organizationId);
+
+    let parsedBody = pub.payload;
+    let tags: string[] = [];
+    let coverUrl: string | null = null;
+    try {
+      const parsed = JSON.parse(pub.payload);
+      parsedBody = parsed.body || pub.payload;
+      tags = parsed.tags || [];
+      coverUrl = parsed.coverUrl || null;
+    } catch {}
+
+    const assets = await this.db.client.contentAsset.findMany({
+      where: { draftId: pub.draftId },
+      select: { id: true, type: true, mimeType: true, sizeBytes: true, storageKey: true },
+    });
+
+    const normalizedAssets = assets.map((a) => ({
+      type: a.type,
+      url: `http://localhost:3001/api/assets/download/${a.storageKey}`,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+    }));
+
+    return generateManualPublishingPackage(pub.channel, {
+      title: pub.title,
+      body: parsedBody,
+      summary: pub.revision.summary,
+      tags,
+      coverUrl,
+      assets: normalizedAssets,
+    });
   }
 
   // ---------------------------------------------------------------

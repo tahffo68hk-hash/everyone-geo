@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UploadedFile,
+  Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UploadedFile,
   UseGuards, UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -7,8 +7,8 @@ import { AuthGuard, JwtUserPayload } from "../common/auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ContentExecutionService, type UploadedBuffer } from "./content-execution.service";
 import {
-  CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
-  ListAssetsDto, ListDraftsDto, ListPublicationsDto, UpdateDraftDto,
+  AuthorizeChannelDto, CallbackQueryDto, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
+  ListAssetsDto, ListDraftsDto, ListPublicationsDto, UpdateDraftDto, ValidatePublicationDto,
 } from "./dto/content-execution.dto";
 
 /**
@@ -83,7 +83,19 @@ export class ContentExecutionController {
     return this.content.channelCapabilities();
   }
 
-  // ---- 渠道账号连接（OAuth readiness，仅登记，不做真实 OAuth）----
+  /** 全部渠道能力与分类列表 */
+  @Get("channels")
+  listChannels() {
+    return this.content.listAllChannels();
+  }
+
+  /** 单个渠道能力详情 */
+  @Get("channels/:channel/capabilities")
+  getChannelCapability(@Param("channel") channel: string) {
+    return this.content.getChannelCapability(channel.toUpperCase());
+  }
+
+  // ---- 渠道账号连接（OAuth & Credential Vault）----
   @Get("projects/:id/channel-connections")
   listConnections(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
     return this.content.listConnections(u.sub, id);
@@ -93,6 +105,34 @@ export class ContentExecutionController {
   @HttpCode(201)
   createConnection(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string, @Body() dto: CreateConnectionDto) {
     return this.content.createConnection(u.sub, id, dto);
+  }
+
+  @Post("connections/:channel/authorize")
+  @HttpCode(200)
+  authorizeChannel(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("channel") channel: string,
+    @Body() dto: AuthorizeChannelDto,
+  ) {
+    return this.content.authorizeChannel(u.sub, channel.toUpperCase(), dto);
+  }
+
+  @Get("connections/:channel/callback")
+  handleOAuthCallback(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("channel") channel: string,
+    @Query() query: CallbackQueryDto,
+  ) {
+    return this.content.handleOAuthCallback(u.sub, channel.toUpperCase(), query.code, query.state);
+  }
+
+  @Delete("connections/:connectionId")
+  @HttpCode(200)
+  deleteConnection(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("connectionId", ParseUUIDPipe) connectionId: string,
+  ) {
+    return this.content.deleteConnection(u.sub, connectionId);
   }
 
   // ---- 发布 ----
@@ -110,6 +150,36 @@ export class ContentExecutionController {
   @Get("publications/:id")
   getPublication(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
     return this.content.getPublication(u.sub, id);
+  }
+
+  @Get("publications/:id/status")
+  getPublicationStatus(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.content.getPublication(u.sub, id);
+  }
+
+  @Post("publications/:id/validate")
+  @HttpCode(200)
+  validatePublication(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto?: ValidatePublicationDto,
+  ) {
+    return this.content.validatePublication(u.sub, id, dto);
+  }
+
+  @Post("publications/:id/publish")
+  @HttpCode(200)
+  publishPublication(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body?: { confirm?: boolean },
+  ) {
+    return this.content.publishPublication(u.sub, id, body);
+  }
+
+  @Get("publications/:id/manual-package")
+  getManualPackage(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.content.getManualPublishingPackage(u.sub, id);
   }
 
   /** 算子触发：重跑一次发布尝试（幂等；用于失败重试 / 演示）。 */
