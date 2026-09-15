@@ -23,10 +23,10 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
       displayName: '微信公众号 (WeChat Official Account)',
       officialDocsUrl: 'https://developers.weixin.qq.com/doc/offiaccount/Draft_Box/Add_draft.html',
       authorizationType: 'API_KEY', // AppID + AppSecret or Component OAuth
-      implementationStatus: 'RESTRICTED',
+      implementationStatus: 'READY_FOR_CREDENTIALS',
       supportsText: true,
       supportsImages: true,
-      supportsVideo: true,
+      supportsVideo: false, // 公众号图文草稿主要支持文本与图片，视频由视频号独立承载
       supportsCarousel: false,
       supportsScheduling: 'GEOLENS_SCHEDULING',
       supportsDelete: true,
@@ -43,9 +43,30 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
       ],
       assetLimits: {
         maxImages: 20,
-        maxVideoSizeMb: 20,
+        maxVideoSizeMb: 0,
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
       },
+    };
+  }
+
+  async validateContent(content: NormalizedPublishContent) {
+    const baseRes = await super.validateContent(content);
+    const errors = [...baseRes.errors];
+    const warnings = [...(baseRes.warnings || [])];
+
+    if (!content.title || content.title.trim().length === 0) {
+      errors.push('微信公众号图文草稿必须提供标题 (title)');
+    }
+
+    const hasImage = content.assets?.some((a) => a.type === 'IMAGE' || a.type === 'COVER');
+    if (!hasImage && !content.coverUrl) {
+      warnings.push('微信公众号草稿建议提供封面图以提升阅读体验');
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
     };
   }
 
@@ -80,14 +101,18 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
     try {
       const accessToken = credential.accessToken || 'mock_wx_token';
 
-      // 1. 新建草稿 (Draft Add)
+      // 1. 新建草稿箱图文 (Draft Box Add)
+      // 注意：微信公众号发布体系分为“草稿箱”与“发表/群发”。
+      // Pilot 阶段严格收敛至草稿箱 (draft/add)，绝不自动群发，保留人工在微信后台最终确认。
       const draftPayload = {
         articles: [
           {
-            title: content.title || '微信图文分享',
+            title: (content.title || '微信图文分享').slice(0, 64),
             author: 'GeoLens',
-            digest: content.summary || '',
-            content: `<p>${content.body.replace(/\n/g, '</p><p>')}</p>`,
+            digest: (content.summary || content.body.slice(0, 120)).slice(0, 120),
+            content: content.body.startsWith('<p>')
+              ? content.body
+              : `<p>${content.body.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br/>')}</p>`,
             thumb_media_id: (content.assets || [])[0]?.externalId || 'mock_thumb_id',
           },
         ],
@@ -112,32 +137,18 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
 
       const mediaId = draftData.media_id || `wx_draft_${Date.now()}`;
 
-      // 2. 发布 (Free Publish Submit)
-      const pubRes = await fetch(`https://api.weixin.qq.com/cgi-bin/freepublish/submit?access_token=${accessToken}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ media_id: mediaId }),
-      });
-
-      const pubData = (await pubRes.json()) as { publish_id?: string; errcode?: number; errmsg?: string };
-      if (pubData.errcode && pubData.errcode !== 0) {
-        return {
-          ok: false,
-          publisher: 'real',
-          errorMessage: `微信发表失败: ${pubData.errmsg}`,
-          errorCode: 'PLATFORM_REJECTED',
-          durationMs: Date.now() - start,
-        };
-      }
-
-      const publishId = pubData.publish_id || mediaId;
+      // 成功写入微信公众号草稿箱（草稿箱阶段完成，不调用 freepublish/submit 群发）
       return {
         ok: true,
         publisher: 'real',
-        externalId: publishId,
-        externalUrl: `https://mp.weixin.qq.com/s/${publishId}`,
+        externalId: mediaId,
+        externalUrl: `https://mp.weixin.qq.com/`, // 草稿箱管理入口，文章尚未公开发表
         durationMs: Date.now() - start,
-        rawResponse: pubData,
+        rawResponse: {
+          media_id: mediaId,
+          status: 'DRAFT_CREATED_EXTERNALLY',
+          finalBroadcastRequiresHuman: true,
+        },
       };
     } catch (e) {
       return {
@@ -153,15 +164,15 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
   async deletePublication(externalId: string, credential: StoredCredential): Promise<DeleteResult> {
     try {
       const accessToken = credential.accessToken || 'mock_wx_token';
-      const res = await fetch(`https://api.weixin.qq.com/cgi-bin/freepublish/delete?access_token=${accessToken}`, {
+      const res = await fetch(`https://api.weixin.qq.com/cgi-bin/draft/delete?access_token=${accessToken}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ article_id: externalId }),
+        body: JSON.stringify({ media_id: externalId }),
       });
       const data = (await res.json()) as { errcode?: number };
       return { ok: data.errcode === 0 };
     } catch (e) {
-      return { ok: false, errorMessage: e instanceof Error ? e.message : '删除失败' };
+      return { ok: false, errorMessage: e instanceof Error ? e.message : '微信草稿删除失败' };
     }
   }
 }

@@ -1559,6 +1559,7 @@ enum ConnectionStatus {
   REQUIRES_APP_REVIEW
   REQUIRES_SCOPE
   READY_FOR_CREDENTIALS
+  REQUIRES_ENTERPRISE_QUALIFICATION
 }
 
 enum PublicationStatus {
@@ -1568,6 +1569,7 @@ enum PublicationStatus {
   PUBLISHED
   FAILED
   CANCELLED
+  DRAFT_CREATED_EXTERNALLY
 }
 
 enum ApprovalDecision {

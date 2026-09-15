@@ -21,7 +21,7 @@ export class WeiboConnector extends BaseConnector {
       displayName: '新浪微博 (Weibo)',
       officialDocsUrl: 'https://open.weibo.com/wiki/Statuses/share',
       authorizationType: 'OAUTH2',
-      implementationStatus: 'RESTRICTED',
+      implementationStatus: 'REQUIRES_APP_REVIEW',
       supportsText: true,
       supportsImages: true,
       supportsVideo: true,
@@ -44,6 +44,31 @@ export class WeiboConnector extends BaseConnector {
         maxVideoSizeMb: 50,
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif'],
       },
+    };
+  }
+
+  async validateContent(content: NormalizedPublishContent) {
+    const baseRes = await super.validateContent(content);
+    const errors = [...baseRes.errors];
+    const warnings = [...(baseRes.warnings || [])];
+
+    let fullText = content.body;
+    if (content.title) {
+      fullText = `【${content.title}】${content.body}`;
+    }
+    if (fullText.length > 2000) {
+      errors.push(`微博发布文本总字数 (${fullText.length}) 超过微博 2000 字上限`);
+    }
+
+    const imgCount = content.assets?.filter((a) => a.type === 'IMAGE' || a.type === 'COVER').length || 0;
+    if (imgCount > 9) {
+      errors.push(`微博单条博文最多支持 9 张配图，当前提供了 ${imgCount} 张`);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
     };
   }
 

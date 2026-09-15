@@ -45,6 +45,26 @@ export class YouTubeConnector extends BaseConnector {
     };
   }
 
+  async validateContent(content: NormalizedPublishContent) {
+    const baseRes = await super.validateContent(content);
+    const errors = [...baseRes.errors];
+    const warnings = [...(baseRes.warnings || [])];
+
+    const hasVideo =
+      content.assets?.some((a) => a.type === 'VIDEO' || a.mimeType?.startsWith('video/')) ||
+      Boolean(content.metadata?.videoAssetId || content.metadata?.hasVideo);
+
+    if (!hasVideo) {
+      errors.push('VIDEO_ASSET_REQUIRED: YouTube upload requires a valid video asset');
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
+
   async validateConnection(credential: StoredCredential): Promise<ConnectionValidationResult> {
     if (!credential.accessToken) return { valid: false, errorMessage: 'Missing YouTube Access Token' };
     try {
@@ -71,15 +91,19 @@ export class YouTubeConnector extends BaseConnector {
   ): Promise<PublishResult> {
     const start = Date.now();
     try {
+      // 第一次真实 Pilot 必须强制 private，禁止公开外放
+      const privacyStatus = 'private';
+      const channelId = credential.channelId || credential.accountId || 'primary';
+
       const metadata = {
         snippet: {
-          title: content.title || 'Untitled Video',
-          description: content.body,
-          tags: content.tags || [],
+          title: (content.title || 'Untitled Video').slice(0, 100),
+          description: content.body.slice(0, 5000),
+          tags: (content.tags || []).slice(0, 30),
           categoryId: '22', // People & Blogs default
         },
         status: {
-          privacyStatus: options.scheduledAt ? 'private' : 'public',
+          privacyStatus,
           publishAt: options.scheduledAt ? options.scheduledAt.toISOString() : undefined,
         },
       };
@@ -116,7 +140,12 @@ export class YouTubeConnector extends BaseConnector {
         externalId: videoId,
         externalUrl: `https://www.youtube.com/watch?v=${videoId}`,
         durationMs: Date.now() - start,
-        rawResponse: { uploadLocation },
+        rawResponse: {
+          videoId,
+          privacyStatus,
+          channelId,
+          uploadLocation,
+        },
       };
     } catch (e) {
       return {

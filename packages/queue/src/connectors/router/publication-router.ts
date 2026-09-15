@@ -143,6 +143,18 @@ export class PublicationRouter {
     // 10. 执行发布（受 BaseConnector 出站写闸门与 dryRun 保护）
     const result = await connector.publish(normalizedContent, credential, options);
 
+    const isDraftExternally =
+      result.ok &&
+      (pub.channel === 'WECHAT_OFFICIAL_ACCOUNT' ||
+        options.targetStatus === 'draft' ||
+        (result.rawResponse as any)?.status === 'DRAFT_CREATED_EXTERNALLY');
+
+    const newStatus: any = !result.ok
+      ? 'FAILED'
+      : isDraftExternally
+        ? 'DRAFT_CREATED_EXTERNALLY'
+        : 'PUBLISHED';
+
     const attemptNo = (await this.db.publicationAttempt.count({ where: { publicationId: pub.id } })) + 1;
     await this.db.publicationAttempt.create({
       data: {
@@ -150,7 +162,7 @@ export class PublicationRouter {
         idempotencyKey: idemKey,
         channel: pub.channel,
         attemptNo,
-        status: result.ok ? 'PUBLISHED' : 'FAILED',
+        status: newStatus,
         publisher: result.publisher,
         externalId: result.externalId ?? null,
         externalUrl: result.externalUrl ?? null,
@@ -159,16 +171,15 @@ export class PublicationRouter {
       },
     });
 
-    const newStatus = result.ok ? 'PUBLISHED' : 'FAILED';
     await this.db.publication.update({
       where: { id: pub.id },
       data: {
         status: newStatus,
-        publishedAt: result.ok ? new Date() : null,
+        publishedAt: isDraftExternally ? null : result.ok ? new Date() : null,
       },
     });
 
-    if (result.ok) {
+    if (result.ok && !isDraftExternally) {
       await this.db.contentDraft.update({
         where: { id: pub.draftId },
         data: { status: 'PUBLISHED' },
@@ -176,13 +187,19 @@ export class PublicationRouter {
     }
 
     // 11. 记录审计与用量（绝不暴露秘钥）
+    const auditAction = !result.ok
+      ? 'PUBLICATION_FAILED'
+      : isDraftExternally
+        ? 'DRAFT_CREATED_EXTERNALLY'
+        : 'PUBLICATION_SUCCEEDED';
+
     await this.db.contentAuditLog.create({
       data: {
         organizationId: pub.organizationId,
         projectId: pub.projectId,
         draftId: pub.draftId,
         publicationId: pub.id,
-        action: result.ok ? 'PUBLICATION_SUCCEEDED' : 'PUBLICATION_FAILED',
+        action: auditAction,
         actorId: pub.createdById,
         detail: `channel=${pub.channel} attemptNo=${attemptNo} publisher=${result.publisher} status=${newStatus}`,
       },

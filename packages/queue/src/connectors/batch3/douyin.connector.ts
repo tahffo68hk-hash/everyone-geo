@@ -36,7 +36,8 @@ export class DouyinConnector extends BaseConnector {
       bodyMax: 1000,
       prerequisites: [
         '抖音开放平台企业开发者认证',
-        '代替用户发布内容到抖音能力 (video.create.bind 实验室能力已于2024-07-20全面禁用，需平台特批直连资质)',
+        '代替用户发布内容到抖音能力 (video.create 权限审批)',
+        'ICP 备案与软件著作权证书',
         '白名单与定向商务准入',
       ],
       assetLimits: {
@@ -44,6 +45,26 @@ export class DouyinConnector extends BaseConnector {
         maxVideoSizeMb: 4000,
         allowedMimeTypes: ['video/mp4'],
       },
+    };
+  }
+
+  async validateContent(content: NormalizedPublishContent) {
+    const baseRes = await super.validateContent(content);
+    const errors = [...baseRes.errors];
+    const warnings = [...(baseRes.warnings || [])];
+
+    const hasVideo =
+      content.assets?.some((a) => a.type === 'VIDEO' || a.mimeType?.startsWith('video/')) ||
+      Boolean(content.metadata?.videoAssetId || content.metadata?.hasVideo);
+
+    if (!hasVideo) {
+      errors.push('VIDEO_ASSET_REQUIRED: 抖音发布需要视频媒体资产文件');
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
     };
   }
 
@@ -80,6 +101,16 @@ export class DouyinConnector extends BaseConnector {
   ): Promise<PublishResult> {
     const start = Date.now();
     try {
+      // 官方 Scope 准入闸门：无 video.create 权限严格返回 REQUIRES_PLATFORM_APPROVAL
+      if (credential.scopes && credential.scopes.length > 0 && !credential.scopes.includes('video.create')) {
+        return {
+          ok: false,
+          publisher: 'real',
+          errorMessage: 'REQUIRES_PLATFORM_APPROVAL: 抖音账号未获得 video.create 官方发布权限审批',
+          errorCode: 'REQUIRES_PLATFORM_APPROVAL',
+          durationMs: Date.now() - start,
+        };
+      }
       const videoId = (content.assets || []).find((a) => a.type === 'VIDEO')?.externalId || 'mock_douyin_video_id';
       const openId = credential.accountId || '';
 

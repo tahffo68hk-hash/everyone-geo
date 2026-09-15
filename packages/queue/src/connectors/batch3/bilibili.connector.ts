@@ -21,7 +21,7 @@ export class BilibiliConnector extends BaseConnector {
       displayName: '哔哩哔哩 (Bilibili)',
       officialDocsUrl: 'https://open.bilibili.com/doc/4/e570f80a-9d9c-11e9-9a74-00163e04271e',
       authorizationType: 'OAUTH2',
-      implementationStatus: 'RESTRICTED',
+      implementationStatus: 'REQUIRES_APP_REVIEW',
       supportsText: true,
       supportsImages: true,
       supportsVideo: true,
@@ -37,6 +37,7 @@ export class BilibiliConnector extends BaseConnector {
       prerequisites: [
         'Bilibili 开放平台企业开发者资质',
         '视频/专栏投稿权限审批 (app.archive.add)',
+        'UP主授权 (OAuth2)',
         '官方白名单合作协议',
       ],
       assetLimits: {
@@ -44,6 +45,26 @@ export class BilibiliConnector extends BaseConnector {
         maxVideoSizeMb: 8000,
         allowedMimeTypes: ['video/mp4', 'video/x-flv'],
       },
+    };
+  }
+
+  async validateContent(content: NormalizedPublishContent) {
+    const baseRes = await super.validateContent(content);
+    const errors = [...baseRes.errors];
+    const warnings = [...(baseRes.warnings || [])];
+
+    const hasVideo =
+      content.assets?.some((a) => a.type === 'VIDEO' || a.mimeType?.startsWith('video/')) ||
+      Boolean(content.metadata?.videoAssetId || content.metadata?.hasVideo);
+
+    if (!hasVideo) {
+      errors.push('VIDEO_ASSET_REQUIRED: Bilibili 投稿需要视频媒体资产文件');
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
     };
   }
 
@@ -115,8 +136,12 @@ export class BilibiliConnector extends BaseConnector {
         publisher: 'real',
         externalId: bvid,
         externalUrl: `https://www.bilibili.com/video/${bvid}`,
+        targetStatus: 'future',
         durationMs: Date.now() - start,
-        rawResponse: data.data,
+        rawResponse: {
+          ...(data.data || {}),
+          platformStatus: 'UNDER_REVIEW', // 平台审核中，不等于已公开发布
+        },
       };
     } catch (e) {
       return {

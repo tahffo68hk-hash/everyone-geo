@@ -8,7 +8,9 @@ export * from './storage/s3-storage';
 export * from './manual/manual-package';
 export * from './registry/connector-registry';
 export * from './router/publication-router';
+export * from './content-transform';
 export * from './base.connector';
+
 
 // Connectors
 export * from './batch1/wordpress.connector';
