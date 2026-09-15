@@ -42,6 +42,13 @@ model Organization {
   monitorTasks MonitorTask[]
   benchmarkRuns BenchmarkRun[]
 
+  // —— 内容执行领域（M9，独立但可追溯）——
+  contentDrafts      ContentDraft[]
+  contentAssets      ContentAsset[]
+  contentPublications Publication[]
+  channelConnections ChannelAccountConnection[]
+  contentAudits      ContentAuditLog[]
+
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
 }
@@ -108,6 +115,11 @@ model Project {
   experiments      OptimizationExperiment[]
   sites            Site[]
   changePlans      OptimizationChangePlan[]
+
+  // —— 内容执行领域（M9，独立但可追溯）——
+  contentDrafts    ContentDraft[]
+  contentAssets    ContentAsset[]
+  contentPublications Publication[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -1461,4 +1473,289 @@ model TargetEntityAlias {
 
   @@unique([brandId, alias])
   @@index([brandId, enabled])
+}
+
+// ============================================================
+// M9 - 内容执行领域（Content Execution Domain）
+// ============================================================
+// 设计原则（PHASE 2-13 收口）：
+//   1) 独立但可追溯：每一条内容数据都挂 organizationId + projectId，回溯到租户/项目。
+//   2) 人工审批闸门：DRAFT 不会自动 APPROVED，也不会自动发布；只有「最新 revision 的
+//      APPROVED 批准」才允许进入 Publication 流程（状态机强制）。
+//   3) 渠道中立（Channel-neutral）：Publication 只承载渠道中立的 content payload；
+//      XIAOHONGSHU / DOUYIN 等为 Channel 枚举值，预留 WEIBO/WECHAT/BAIDU/OTHER。
+//   4) 凭证安全：ChannelAccountConnection 只存 credentialRef（指向密钥库），
+//      绝不内联 token / secret；externalId / externalUrl 由 Mock Publisher 生成假值。
+//   5) 出站写保护闸门：EXTERNAL_PUBLISHING_ENABLED=false（本轮回合恒为 false）；
+//      任何真实平台发布调用 = 0，Mock Publisher 仅产生占位/假 id，不触达外部。
+//   6) 度量边界：Publication / PublicationAttempt 与 GEO Evidence / OptimizationExperiment
+//      解耦——发布成功与否不构成 GEO 优化证据，避免污染实验度量。
+//   7) 生成溯源：generationMode 区分 MANUAL / AI_ASSISTED / AI_GENERATED；
+//      不存储敏感 prompt / API key。
+//   8) 幂等：Publication.idempotencyKey 与 PublicationAttempt.idempotencyKey 唯一，
+//      保证重试/重放安全（Redis 仅承载标识符，数据落在 Postgres）。
+
+enum GenerationMode {
+  MANUAL
+  AI_ASSISTED
+  AI_GENERATED
+}
+
+enum DraftStatus {
+  DRAFT
+  READY_FOR_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum Channel {
+  XIAOHONGSHU
+  DOUYIN
+  WEIBO
+  WECHAT
+  BAIDU
+  OTHER
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  EXPIRED
+  REVOKED
+  ERROR
+}
+
+enum PublicationStatus {
+  PENDING
+  QUEUED
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum AssetType {
+  IMAGE
+  VIDEO
+  TEXT
+  OTHER
+}
+
+enum ContentAuditAction {
+  DRAFT_CREATED
+  DRAFT_UPDATED
+  REVISION_CREATED
+  SUBMITTED_FOR_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  PUBLICATION_CREATED
+  PUBLICATION_QUEUED
+  PUBLICATION_SUCCEEDED
+  PUBLICATION_FAILED
+  PUBLICATION_CANCELLED
+}
+
+enum ContentUsageEventType {
+  CONTENT_GENERATION
+  PUBLICATION_ATTEMPT
+}
+
+model ContentDraft {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  projectId      String         @db.Uuid
+  title          String
+  topic          String?
+  generationMode GenerationMode @default(MANUAL)
+  status         DraftStatus    @default(DRAFT)
+  createdById    String         @db.Uuid
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  revisions   ContentRevision[]
+  approvals   ContentApproval[]
+  assets      ContentAsset[]
+  publications Publication[]
+  auditLogs   ContentAuditLog[]
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([status])
+  @@index([createdById])
+}
+
+model ContentRevision {
+  id           String   @id @default(uuid()) @db.Uuid
+  draftId      String   @db.Uuid
+  version      Int      @default(1)
+  body         String   // 渠道中立的内容主体（序列化 JSON 或纯文本）
+  summary      String?
+  changeNote   String?
+  generatedById String  @db.Uuid
+  createdAt    DateTime @default(now())
+
+  draft    ContentDraft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  approvals ContentApproval[]
+  publications Publication[] // Publication.revision 的反向关系
+
+  @@unique([draftId, version])
+  @@index([draftId])
+}
+
+model ContentApproval {
+  id         String           @id @default(uuid()) @db.Uuid
+  draftId    String           @db.Uuid
+  revisionId String           @db.Uuid
+  decision   ApprovalDecision
+  reviewerId String           @db.Uuid
+  comment    String?
+  createdAt  DateTime         @default(now())
+
+  draft    ContentDraft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  revision ContentRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@index([draftId])
+  @@index([revisionId])
+}
+
+model ContentAsset {
+  id           String   @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  projectId    String   @db.Uuid
+  draftId      String?  @db.Uuid
+  type         AssetType @default(IMAGE)
+  mimeType     String   // MIME allowlist 在应用层强制校验
+  sizeBytes    Int
+  checksum     String   // sha256，防止重复/篡改
+  storageKey   String   // 不透明存储引用，不含任何密钥
+  ownerId      String   @db.Uuid
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  draft       ContentDraft?  @relation(fields: [draftId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([draftId])
+}
+
+model ChannelAccountConnection {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  channel        Channel
+  displayName    String
+  // OAuth readiness：仅存 credentialRef（指向密钥库，如 vault://geo/oauth/<channel>/<id>），
+  // 绝不内联 token / secret / refreshToken。
+  credentialRef  String?
+  status         ConnectionStatus @default(CONNECTED)
+  lastVerifiedAt DateTime?
+  createdById    String           @db.Uuid
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  publications Publication[]
+
+  @@unique([organizationId, channel, displayName])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model Publication {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  projectId      String           @db.Uuid
+  draftId        String           @db.Uuid
+  revisionId     String           @db.Uuid
+  connectionId   String           @db.Uuid
+  channel        Channel
+  title          String?
+  payload        String   // 渠道中立的序列化内容（JSON）
+  status         PublicationStatus @default(PENDING)
+  idempotencyKey String   @unique // 安全重放 / 重试幂等键
+  createdById    String   @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project     Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  draft       ContentDraft           @relation(fields: [draftId], references: [id], onDelete: Restrict)
+  revision    ContentRevision        @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  connection  ChannelAccountConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  attempts    PublicationAttempt[]
+  auditLogs   ContentAuditLog[]
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([draftId])
+  @@index([status])
+}
+
+model PublicationAttempt {
+  id             String           @id @default(uuid()) @db.Uuid
+  publicationId  String           @db.Uuid
+  idempotencyKey String           @unique
+  channel        Channel
+  attemptNo      Int              @default(1)
+  status         PublicationStatus @default(QUEUED) // PENDING/QUEUED/FAILED/PUBLISHED/CANCELLED
+  publisher      String           @default("mock") // 本回合恒为 "mock"；绝不产生真实出站写
+  externalId     String?  // Mock 生成的假 id（标记 fake，不触达外部）
+  externalUrl    String?  // Mock 生成的假 url
+  errorMessage   String?
+  durationMs     Int?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  publication Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  @@index([publicationId])
+}
+
+model ContentAuditLog {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  projectId      String?          @db.Uuid
+  draftId        String?          @db.Uuid
+  publicationId  String?          @db.Uuid
+  action         ContentAuditAction
+  actorId        String           @db.Uuid
+  detail         String?  // 绝不记录 token / secret / 敏感 prompt
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  draft       ContentDraft?  @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  publication Publication?   @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([draftId])
+  @@index([publicationId])
+  @@index([action])
+}
+
+// 用量/成本钩子（PHASE 16）：成本一律 null（无真实计费），绝不写 0（0 会误导为「零成本已计」）。
+model ContentUsageEvent {
+  id          String              @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  projectId   String?             @db.Uuid
+  eventType   ContentUsageEventType
+  provider    String              @default("none") // mock / none（本回合无真实 Provider 调用）
+  costUsd     Float?              // 可空；默认 null（cost=null not 0）
+  quantity    Int                 @default(1)
+  actorId     String              @db.Uuid
+  createdAt   DateTime            @default(now())
+
+  @@index([organizationId])
+  @@index([eventType])
 }
