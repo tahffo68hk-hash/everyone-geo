@@ -62,14 +62,9 @@ export interface PublishRequest {
   idempotencyKey: string;
 }
 
-export interface PublishResult {
-  ok: boolean;
-  publisher: 'mock' | 'real';
-  externalId?: string;
-  externalUrl?: string;
-  errorMessage?: string;
-  durationMs: number;
-}
+import type { PublishResult } from './connectors/types';
+
+export type { PublishResult };
 
 export interface PublisherAdapter {
   publish(req: PublishRequest): Promise<PublishResult>;

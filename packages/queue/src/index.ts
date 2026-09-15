@@ -7,6 +7,7 @@ import { queueOptions } from './config';
 export * from './state';
 export * from './config';
 export * from './publication';
+export * from './connectors';
 export const QUEUE_NAME = 'monitor-runs';
 export const JOB_NAME = 'execute-run';
 export const MAX_RUN_ATTEMPTS = 3;
