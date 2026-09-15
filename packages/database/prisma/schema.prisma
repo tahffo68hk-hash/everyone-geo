@@ -1544,6 +1544,8 @@ enum ApprovalDecision {
 enum AssetType {
   IMAGE
   VIDEO
+  COVER
+  AUDIO
   TEXT
   OTHER
 }
@@ -1576,6 +1578,11 @@ model ContentDraft {
   topic          String?
   generationMode GenerationMode @default(MANUAL)
   status         DraftStatus    @default(DRAFT)
+  // 来源溯源（PHASE 2）：可空引用，仅存 id、不做 FK —— 跨 project/tenant 引用由服务层强制拒绝。
+  // 不伪造关联：写入前校验来源实体存在且属于同一 project（同一租户）。
+  sourceOpportunityId    String? @db.Uuid
+  sourceRecommendationId String? @db.Uuid
+  sourceDiagnosisId      String? @db.Uuid
   createdById    String         @db.Uuid
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -1684,6 +1691,7 @@ model Publication {
   title          String?
   payload        String   // 渠道中立的序列化内容（JSON）
   status         PublicationStatus @default(PENDING)
+  publishedAt    DateTime? // 成功发布时刻（PENDING/FAILED 为 null）
   idempotencyKey String   @unique // 安全重放 / 重试幂等键
   createdById    String   @db.Uuid
   createdAt      DateTime @default(now())

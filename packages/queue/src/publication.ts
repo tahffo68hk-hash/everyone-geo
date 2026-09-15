@@ -140,7 +140,11 @@ export async function executePublication(
   });
 
   const newStatus = result.ok ? 'PUBLISHED' : 'FAILED';
-  await db.publication.update({ where: { id: pub.id }, data: { status: newStatus } });
+  await db.publication.update({
+    where: { id: pub.id },
+    // publishedAt：成功发布时刻；FAILED 置空（列表契约的 publishedAt? 字段）。
+    data: { status: newStatus, publishedAt: result.ok ? new Date() : null },
+  });
   if (result.ok) {
     await db.contentDraft.update({ where: { id: pub.draftId }, data: { status: 'PUBLISHED' } });
   }
