@@ -44,8 +44,13 @@ describe('DeepSeek provider guards (M5 e2e)', () => {
     ids.orgs.push(response.body.organization.id);
     const project = await prisma.project.create({ data: { organizationId: response.body.organization.id, name: `DeepSeek ${suffix}` } });
     ids.projects.push(project.id);
+    // 真实产品路径：可用监测 Query 必须挂接 enabled && !archived 的 BenchmarkQuery
+    // （镜像 Query 与 BenchmarkQuery 成对存在）。create() 以 BenchmarkQuery 启用/归档为
+    // "可用"判定（R2 修复 #3），故此处补齐镜像，避免 DeepSeek 守卫测试被可用性校验拦截。
+    const suite = await prisma.benchmarkSuite.create({ data: { projectId: project.id, name: `M5 Suite ${suffix}`, version: '1' } });
     for (let i = 0; i < 2; i++) {
-      await prisma.query.create({ data: { projectId: project.id, text: `M5 e2e query ${suffix} ${i}` } });
+      const q = await prisma.query.create({ data: { projectId: project.id, text: `M5 e2e query ${suffix} ${i}` } });
+      await prisma.benchmarkQuery.create({ data: { suiteId: suite.id, projectQueryId: q.id, queryText: q.text, category: 'custom', intent: '自定义', enabled: true, sortOrder: i } });
     }
     const mockEngine = await prisma.engine.create({ data: { key: `m5-mock-${suffix}`, name: 'M5 Mock', provider: 'mock', config: { delayMs: 5 } as never } });
     mockEngineId = mockEngine.id;

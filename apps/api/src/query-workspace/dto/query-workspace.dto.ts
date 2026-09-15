@@ -207,8 +207,8 @@ export class QueryListDto {
  */
 export class BatchQueriesDto {
   @IsOptional()
-  @IsIn(["enable", "disable", "archive", "move"])
-  operation?: "enable" | "disable" | "archive" | "move";
+  @IsIn(["enable", "disable", "archive", "restore", "move"])
+  operation?: "enable" | "disable" | "archive" | "restore" | "move";
 
   @IsOptional()
   @IsArray()

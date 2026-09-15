@@ -109,8 +109,25 @@ describe("R2 Query 运营 e2e", () => {
   }, 120000);
 
   afterAll(async () => {
-    await prisma.$disconnect();
-    await app?.close();
+    try {
+      // R2 隔离修复（PHASE 1.1）：本 suite 对自己创建的数据负责，按 tenant 根节点级联清理，
+      // 避免 geo_test 残留污染后续 suite / 下一次 full regression。
+      const orgIds = [ids.orgA, ids.orgB].filter(Boolean) as string[];
+      if (orgIds.length) {
+        await prisma.project.deleteMany({ where: { organizationId: { in: orgIds } } });
+        const members = await prisma.organizationMember.findMany({ where: { organizationId: { in: orgIds } }, select: { userId: true } });
+        const userIds = Array.from(new Set(members.map((m) => m.userId)));
+        await prisma.organizationMember.deleteMany({ where: { organizationId: { in: orgIds } } });
+        await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
+        if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      }
+      await prisma.engine.deleteMany({ where: { key: { contains: suffix } } });
+    } catch (e) {
+      console.error("qwr2 teardown error", e);
+    } finally {
+      await prisma.$disconnect();
+      await app?.close();
+    }
   });
 
   it("1. list 默认隐藏已归档；含分页/类型/status 过滤、搜索、排序", async () => {
@@ -190,6 +207,31 @@ describe("R2 Query 运营 e2e", () => {
     expect(en.body.items.every((i: { archived: boolean }) => i.archived === false)).toBe(true);
   });
 
+  it("3b. batch：restore（还原归档）——仅翻回 archived=false，历史快照不变", async () => {
+    // 独立 suite，避免干扰 test 3/test 4 对 suiteA 的归档/移动假设
+    const rs = await mkSuite("QsRestore", [
+      { queryText: "restore a", category: "workflow", intent: "x", queryType: "CUSTOM" },
+      { queryText: "restore b", category: "workflow", intent: "x", queryType: "CUSTOM" },
+    ]);
+    const rIds = await listIds(rs.id);
+    expect(rIds.length).toBe(2);
+    const ar = await owner.post(`/projects/${ids.projectA}/queries/batch`).send({ operation: "archive", queryIds: rIds }).expect(201);
+    expect(ar.body.operation).toBe("archive");
+    expect(ar.body.affected).toBe(2);
+    const archivedView = await owner.get(`/projects/${ids.projectA}/queries?suiteId=${rs.id}&archived=true`).expect(200);
+    expect(archivedView.body.total).toBe(2);
+    const res = await owner.post(`/projects/${ids.projectA}/queries/batch`)
+      .send({ operation: "restore", queryIds: rIds }).expect(201);
+    expect(res.body.operation).toBe("restore");
+    expect(res.body.affected).toBe(2);
+    expect(res.body.note).toContain("历史");
+    // 还原后默认列表恢复 2 条，归档视图为空（archive 是软删除，还原不重写任何历史）
+    const after = await owner.get(`/projects/${ids.projectA}/queries?suiteId=${rs.id}`).expect(200);
+    expect(after.body.total).toBe(2);
+    const archView = await owner.get(`/projects/${ids.projectA}/queries?suiteId=${rs.id}&archived=true`).expect(200);
+    expect(archView.body.total).toBe(0);
+  });
+
   it("4. batch：move 至同项目另一 Query Set", async () => {
     const all = await listIds(ids.suiteA);
     const move = await owner.post(`/projects/${ids.projectA}/queries/batch`)
@@ -257,11 +299,15 @@ describe("R2 Query 运营 e2e", () => {
     });
     const ids2 = await listIds(s.id);
     expect(ids2.length).toBe(4);
+    // 明确取一条 enabled query 归档（不依赖 list 返回顺序，避免偶发选中 disabled 行）
+    const enabledIds = (await owner.get(`/projects/${ids.projectA}/queries?suiteId=${s.id}&status=enabled`).expect(200))
+      .body.items.map((i: { id: string }) => i.id);
+    expect(enabledIds.length).toBe(3);
     // 归档其中 1 条 enabled → 剩余 2 条 enabled + 1 禁用（不计）
     const dbBefore = await prisma.benchmarkQuery.groupBy({ by: ["enabled", "archived"], where: { suiteId: s.id }, _count: { _all: true } });
     expect(dbBefore.find(r => r.enabled && !r.archived)?._count._all).toBe(3);
     const ar = await owner.post(`/projects/${ids.projectA}/queries/batch`)
-      .send({ operation: "archive", queryIds: [ids2[0]] }).expect(201);
+      .send({ operation: "archive", queryIds: [enabledIds[0]] }).expect(201);
     const dbAfter = await prisma.benchmarkQuery.groupBy({ by: ["enabled", "archived"], where: { suiteId: s.id }, _count: { _all: true } });
     const enNonAr = dbAfter.find(r => r.enabled && !r.archived)?._count._all ?? -1;
     expect(enNonAr).toBe(2);

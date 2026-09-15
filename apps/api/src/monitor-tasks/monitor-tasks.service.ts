@@ -20,7 +20,10 @@ export class MonitorTasksService implements OnModuleDestroy {
     const [projects, engines] = await Promise.all([
       this.db.client.project.findMany({
         where: { organization: { members: { some: { userId } } }, status: 'ACTIVE' },
-        select: { id: true, name: true, queries: { where: { status: 'ACTIVE' }, select: { id: true, text: true }, orderBy: { createdAt: 'asc' } } },
+        // R2 修复（#3 启用 Query 空态）："可用监测问题"以 BenchmarkQuery 的启用/归档状态为准
+        // （权威来源），而非 Query 镜像行的 status。Query.status 在批量建镜像时恒为 PAUSED 且
+        // 不与 BenchmarkQuery.enabled 同步，导致已启用 Query 在监测页显示"暂无检测问题"。
+        select: { id: true, name: true, queries: { where: { benchmarkQuery: { is: { enabled: true, archived: false } } }, select: { id: true, text: true }, orderBy: { createdAt: 'asc' } } },
         orderBy: { createdAt: 'asc' },
       }),
       this.db.client.engine.findMany({ where: { enabled: true }, orderBy: { key: 'asc' } }),
@@ -41,7 +44,8 @@ export class MonitorTasksService implements OnModuleDestroy {
   async create(userId: string, dto: CreateMonitorTaskDto) {
     const started = Date.now();
     const project = await this.tenant.assertUserInProject(userId, dto.projectId);
-    const queries = await this.db.client.query.count({ where: { id: { in: dto.queryIds }, projectId: project.id, status: 'ACTIVE' } });
+    // R2 修复（#3）：与 options 一致，以 BenchmarkQuery.enabled && !archived 为"可用"判定。
+    const queries = await this.db.client.query.count({ where: { id: { in: dto.queryIds }, projectId: project.id, benchmarkQuery: { is: { enabled: true, archived: false } } } });
     if (queries !== dto.queryIds.length) {
       throw new BadRequestException('Query 不可用，或 Query 不属于当前项目');
     }

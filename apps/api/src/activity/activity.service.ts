@@ -126,16 +126,41 @@ export class ActivityService {
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         take: SOURCE_LIMIT,
       });
-      const rows = fromBench.map(r => r.monitorTask.runs.map(x => String(x.status)));
       fromBench.forEach(run => {
         const isManual = run.provider === "manual";
-        const runStatuses = rows.length ? run.monitorTask.runs.map(x => String(x.status)) : [];
-        const awaiting = runStatuses.includes("AWAITING_MANUAL_INPUT");
-        const done = runStatuses.filter(s => s === "SUCCEEDED" || s === "SKIPPED" || s === "FAILED").length;
-        // 手动测量：仍有等待人工录入的子 Run 时，提升为一级 AWAITING_MANUAL_INPUT 状态
-        const effectiveStatus = isManual && awaiting && done < runStatuses.length
-          ? "AWAITING_MANUAL_INPUT"
-          : run.status;
+        // R2 修复（P0 Activity 状态不同步）：
+        // 进度/状态以真实子 Run（MonitorTask.runs）为准，而非 BenchmarkRun 上可能滞后的
+        // 冗余镜像列（status/completedRuns/plannedRuns）。schema 注释明确：
+        // "读取端点以关联 MonitorTask 实时计算为准"。完成态（SUCCEEDED/PARTIAL）不得被
+        // 旧的 PENDING/QUEUED 镜像列覆盖；completed/total 必须来自真实子任务。
+        const childRuns = (run.monitorTask?.runs ?? []).map(x => String(x.status));
+        const awaiting = childRuns.includes("AWAITING_MANUAL_INPUT");
+        const succeededSkipped = childRuns.filter(s => s === "SUCCEEDED" || s === "SKIPPED").length;
+        const failed = childRuns.filter(s => s === "FAILED").length;
+        // 与手动分支口径一致：已解决 = 成功 + 跳过 + 失败（不含 CANCELLED）。
+        const resolved = succeededSkipped + failed;
+
+        let effectiveStatus: string;
+        if (isManual && awaiting && succeededSkipped < childRuns.length) {
+          // 手动测量：仍有等待人工录入的子 Run 时，提升为一级 AWAITING_MANUAL_INPUT 状态
+          effectiveStatus = "AWAITING_MANUAL_INPUT";
+        } else if (childRuns.length > 0) {
+          // 真实子 Run 优先：终态不得被旧 PENDING/QUEUED 镜像列覆盖
+          const terminal = new Set(["SUCCEEDED", "SKIPPED", "FAILED", "CANCELLED"]);
+          if (childRuns.every(s => terminal.has(s))) {
+            effectiveStatus = failed === 0 ? "SUCCEEDED" : succeededSkipped > 0 ? "PARTIAL" : "FAILED";
+          } else if (childRuns.some(s => s === "RUNNING")) {
+            effectiveStatus = "RUNNING";
+          } else {
+            effectiveStatus = "PENDING";
+          }
+        } else {
+          // 无子 Run（极端兜底）：退回冗余镜像列
+          effectiveStatus = run.status;
+        }
+
+        const completed = isManual ? resolved : childRuns.length > 0 ? resolved : run.completedRuns;
+        const total = isManual ? childRuns.length : childRuns.length > 0 ? childRuns.length : run.plannedRuns;
         benchmarkItems.push({
           id: run.id,
           type: isManual ? "MANUAL" : "BENCHMARK",
@@ -147,9 +172,9 @@ export class ActivityService {
           engineLabel: run.engine.name,
           status: effectiveStatus,
           progress: {
-            completed: isManual ? done : run.completedRuns,
-            total: isManual ? runStatuses.length : run.plannedRuns,
-            label: isManual ? `${done} / ${runStatuses.length}` : `${run.completedRuns} / ${run.plannedRuns}`,
+            completed,
+            total,
+            label: `${completed} / ${total}`,
           },
           createdAt: run.createdAt.toISOString(),
           completedAt: run.completedAt?.toISOString() ?? null,

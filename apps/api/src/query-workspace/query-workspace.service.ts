@@ -448,7 +448,7 @@ export class QueryWorkspaceService {
    * - 兼容历史调用：body 含 rows 时退化为 saveQueries 语义（批量新增到 targetSuiteId）。
    */
   async batchQueries(userId: string, projectId: string, dto: {
-    operation?: "enable" | "disable" | "archive" | "move";
+    operation?: "enable" | "disable" | "archive" | "restore" | "move";
     queryIds?: string[]; targetSuiteId?: string;
     rows?: Array<{ text: string; category?: string; intent?: string; queryType: QuerySemanticType; locale?: string; enabled?: boolean }>;
   }) {
@@ -465,8 +465,8 @@ export class QueryWorkspaceService {
 
     const operation = dto.operation;
     const queryIds = dto.queryIds ?? [];
-    if (!operation || !["enable", "disable", "archive", "move"].includes(operation)) {
-      throw new BadRequestException("operation 必填：enable / disable / archive / move");
+    if (!operation || !["enable", "disable", "archive", "restore", "move"].includes(operation)) {
+      throw new BadRequestException("operation 必填：enable / disable / archive / restore / move");
     }
     if (operation === "move" && !dto.targetSuiteId) {
       throw new BadRequestException("move 操作必须指定 targetSuiteId");
@@ -495,6 +495,11 @@ export class QueryWorkspaceService {
           // 软删除：只影响未来执行；历史 Run/Report/Evidence 快照 immutability 不变
           await tx.benchmarkQuery.updateMany({ where: { id: { in: queryIds }, suite: { projectId } }, data: { archived: true } });
           break;
+        case "restore":
+          // 还原归档：仅把 archived 翻回 false；历史 Run/Report/Evidence/Snapshot 一律不变
+          // （archive 是软删除，不做任何数据搬迁或快照重写，还原不引入新副作用）
+          await tx.benchmarkQuery.updateMany({ where: { id: { in: queryIds }, suite: { projectId } }, data: { archived: false } });
+          break;
         case "move": {
           const target = await tx.benchmarkSuite.findFirst({ where: { id: dto.targetSuiteId, projectId } });
           if (!target) throw new NotFoundException("目标 Query Set 不存在或不属于该项目");
@@ -518,6 +523,7 @@ export class QueryWorkspaceService {
         toSuiteId: dto.targetSuiteId,
       } : {}),
       ...(operation === "archive" ? { note: "已软删除（归档）：仅影响未来执行，历史快照不变" } : {}),
+      ...(operation === "restore" ? { note: "已还原归档：仅翻回 archived=false，历史 Run/Report/Evidence/Snapshot 不变" } : {}),
     };
   }
 

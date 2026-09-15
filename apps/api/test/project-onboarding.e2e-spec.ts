@@ -63,8 +63,23 @@ describe("General Project Onboarding (e2e)", () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
-    await app?.close();
+    try {
+      const orgIds = [ids.orgA, ids.orgB].filter(Boolean) as string[];
+      if (orgIds.length) {
+        await prisma.project.deleteMany({ where: { organizationId: { in: orgIds } } });
+        const members = await prisma.organizationMember.findMany({ where: { organizationId: { in: orgIds } }, select: { userId: true } });
+        const userIds = Array.from(new Set(members.map((m) => m.userId)));
+        await prisma.organizationMember.deleteMany({ where: { organizationId: { in: orgIds } } });
+        await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
+        if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      }
+      await prisma.engine.deleteMany({ where: { key: { contains: suffix } } });
+    } catch (e) {
+      console.error("project-onboarding teardown error", e);
+    } finally {
+      await prisma.$disconnect();
+      await app?.close();
+    }
   });
 
   it("1. 创建通用项目：本组织 201；同组织同名 409；他人组织 404；未登录 401", async () => {

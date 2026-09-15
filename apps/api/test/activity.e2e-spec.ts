@@ -44,6 +44,10 @@ describe("Activity Center R2 e2e", () => {
     // fixture 4: retest (RETEST)
     retestId: "",
     q1: "", // 用于 Join query
+    // fixture 5: 滞后镜像 —— 子 Run 全 SUCCEEDED，但 BenchmarkRun 镜像列 status=PENDING/completedRuns=0
+    staleRunId: "",
+    // fixture 6: PARTIAL —— 子 Run 2 SUCCEEDED + 1 FAILED，镜像列滞后
+    partialRunId: "",
   };
 
   beforeAll(async () => {
@@ -137,10 +141,71 @@ describe("Activity Center R2 e2e", () => {
     // RETEST 强依赖 experiment→contentOpportunity→recommendationRun→diagnosisRun→report
     // 关联链，seed 成本高、脆弱；本套件改为断言「RETEST 类型筛选在无数据时返回空列表而非报错」，
     // experiment 真实数据聚合由 service 单测/后续 M8+ 阶段补充覆盖。
+    // ============ fixture 5: 滞后镜像（复现 P0 状态不同步）============
+    // 真实子 Run 已全 SUCCEEDED，但 BenchmarkRun 冗余镜像列滞后为 PENDING / completedRuns=0。
+    // R2 修复前 Activity 会显示「等待中 0/3」；修复后必须表现真实终态 SUCCEEDED / 3/3。
+    const staleSuite = await prisma.benchmarkSuite.create({ data: { projectId: ids.projectA, name: `Stale Suite ${suffix}`, version: "1" } });
+    const staleTask = await prisma.monitorTask.create({ data: {
+      organizationId: ids.orgA, projectId: ids.projectA, totalRuns: 3, status: "SUCCEEDED", completedRuns: 3,
+    } });
+    for (let i = 0; i < 3; i++) {
+      const q = await prisma.query.create({ data: { projectId: ids.projectA, text: `stale-q${i} ${suffix}`, source: "IMPORTED", status: "PAUSED" } });
+      await prisma.run.create({ data: {
+        monitorTaskId: staleTask.id, queryId: q.id, engineId: ids.engine,
+        status: "SUCCEEDED", analysisStatus: "SUCCEEDED",
+      } });
+    }
+    const staleRun = await prisma.benchmarkRun.create({ data: {
+      organizationId: ids.orgA, projectId: ids.projectA, suiteId: staleSuite.id,
+      suiteName: staleSuite.name, suiteVersion: "1", runType: "DEMO", provider: "mock",
+      engineId: ids.engine, monitorTaskId: staleTask.id, plannedRuns: 3, completedRuns: 0,
+      status: "PENDING", // 滞后镜像
+    } });
+    ids.staleRunId = staleRun.id;
+
+    // ============ fixture 6: PARTIAL（部分成功部分失败，镜像列滞后）============
+    const partialSuite = await prisma.benchmarkSuite.create({ data: { projectId: ids.projectA, name: `Partial Suite ${suffix}`, version: "1" } });
+    const partialTask = await prisma.monitorTask.create({ data: {
+      organizationId: ids.orgA, projectId: ids.projectA, totalRuns: 3, status: "PARTIAL", completedRuns: 3,
+    } });
+    const partialQs = [];
+    for (let i = 0; i < 3; i++) {
+      partialQs.push(await prisma.query.create({ data: { projectId: ids.projectA, text: `partial-q${i} ${suffix}`, source: "IMPORTED", status: "PAUSED" } }));
+    }
+    const partialStatuses = ["SUCCEEDED", "SUCCEEDED", "FAILED"] as const;
+    for (let i = 0; i < 3; i++) {
+      await prisma.run.create({ data: {
+        monitorTaskId: partialTask.id, queryId: partialQs[i].id, engineId: ids.engine,
+        status: partialStatuses[i], analysisStatus: partialStatuses[i] === "FAILED" ? "FAILED" : "SUCCEEDED",
+      } });
+    }
+    const partialRun = await prisma.benchmarkRun.create({ data: {
+      organizationId: ids.orgA, projectId: ids.projectA, suiteId: partialSuite.id,
+      suiteName: partialSuite.name, suiteVersion: "1", runType: "DEMO", provider: "mock",
+      engineId: ids.engine, monitorTaskId: partialTask.id, plannedRuns: 3, completedRuns: 0,
+      status: "PENDING", // 滞后镜像
+    } });
+    ids.partialRunId = partialRun.id;
   }, 120_000);
 
   afterAll(async () => {
-    if (app) await app.close();
+    try {
+      const orgIds = [ids.orgA, ids.orgB].filter(Boolean) as string[];
+      if (orgIds.length) {
+        await prisma.project.deleteMany({ where: { organizationId: { in: orgIds } } });
+        const members = await prisma.organizationMember.findMany({ where: { organizationId: { in: orgIds } }, select: { userId: true } });
+        const userIds = Array.from(new Set(members.map((m) => m.userId)));
+        await prisma.organizationMember.deleteMany({ where: { organizationId: { in: orgIds } } });
+        await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
+        if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      }
+      await prisma.engine.deleteMany({ where: { key: { contains: suffix } } });
+    } catch (e) {
+      console.error("activity teardown error", e);
+    } finally {
+      await prisma.$disconnect();
+      await app?.close();
+    }
   });
 
   test("GET /activity 未登录 → 401", async () => {
@@ -273,5 +338,29 @@ describe("Activity Center R2 e2e", () => {
       expect(it.availableActions).not.toContain("RETRY");
       expect(it.availableActions.every((a: string) => a === "VIEW_RESULT" || a === "CONTINUE_MANUAL_INPUT")).toBe(true);
     }
+  });
+
+  test("P0 修复：滞后镜像（子 Run 全 SUCCEEDED）必须表现真实终态 SUCCEEDED，而非旧 PENDING 0/3", async () => {
+    const res = await owner.get("/activity").query({ pageSize: 50 }).expect(200);
+    const stale = ((res.body.items as Array<Record<string, any>>).find((it) => it.id === ids.staleRunId)) as Record<string, any>;
+    expect(stale).toBeTruthy();
+    expect(stale.type).toBe("BENCHMARK");
+    // 不得被旧 PENDING/QUEUED 镜像列覆盖
+    expect(stale.status).toBe("SUCCEEDED");
+    expect(stale.progress).toBeTruthy();
+    expect(stale.progress.completed).toBe(3);
+    expect(stale.progress.total).toBe(3);
+    expect(stale.progress.label).toBe("3 / 3");
+  });
+
+  test("P0 修复：PARTIAL（部分成功部分失败）状态与 completed/total 来自真实子 Run", async () => {
+    const res = await owner.get("/activity").query({ pageSize: 50 }).expect(200);
+    const partial = ((res.body.items as Array<Record<string, any>>).find((it) => it.id === ids.partialRunId)) as Record<string, any>;
+    expect(partial).toBeTruthy();
+    expect(partial.status).toBe("PARTIAL");
+    // 2 SUCCEEDED + 1 FAILED → 已解决 3 / 计划 3
+    expect(partial.progress.completed).toBe(3);
+    expect(partial.progress.total).toBe(3);
+    expect(partial.progress.label).toBe("3 / 3");
   });
 });

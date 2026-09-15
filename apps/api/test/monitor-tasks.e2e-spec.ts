@@ -30,8 +30,10 @@ describe("MonitorTasks (M3 e2e)", () => {
   const password = "m3-e2e-pass-123";
 
   const ids = {
-    orgA: "", orgB: "", projectA: "", projectB: "",
+    orgA: "", orgB: "", projectA: "", projectB: "", suiteA: "",
     queries: [] as string[], engines: [] as string[], taskA: "",
+    // R2 Red-Team #3 fixture（project 在 orgA 下，afterAll 随 org 级联清理）
+    rtProject: "", rtEnabledQuery: "",
   };
 
   beforeAll(async () => {
@@ -57,14 +59,41 @@ describe("MonitorTasks (M3 e2e)", () => {
     const projectB = await prisma.project.create({ data: { organizationId: ids.orgB, name: `MT Project B ${suffix}` } });
     ids.projectA = projectA.id;
     ids.projectB = projectB.id;
+    // 监测可用 Query 必须挂接 enabled && !archived 的 BenchmarkQuery（真实产品路径：
+    // 通过 query-workspace / benchmark 创建，镜像 Query 与 BenchmarkQuery 成对存在）。
+    const suiteA = await prisma.benchmarkSuite.create({ data: { projectId: projectA.id, name: `MT Suite A ${suffix}`, version: "1" } });
+    ids.suiteA = suiteA.id;
     for (let i = 0; i < 5; i++) {
       const q = await prisma.query.create({ data: { projectId: projectA.id, text: `MT query ${i} ${suffix}` } });
       ids.queries.push(q.id);
+      await prisma.benchmarkQuery.create({
+        data: { suiteId: suiteA.id, projectQueryId: q.id, queryText: q.text, category: "custom", intent: "自定义", enabled: true, sortOrder: i },
+      });
     }
     for (let i = 0; i < 3; i++) {
       const e = await prisma.engine.create({ data: { key: `mock-e2e-${i}-${suffix}`, name: `Mock E2E ${i}`, provider: "mock", config: { delayMs: 20 } } });
       ids.engines.push(e.id);
     }
+
+    // ============ R2 Red-Team #3 fixture：enabled / disabled / archived 三态对照 ============
+    // 复现真实 bug：镜像 Query.status 恒为 PAUSED，但"可用监测问题"应以 BenchmarkQuery
+    // enabled/archived 为准。enabled 镜像即使 PAUSED 也必须出现在 options。
+    const rtProject = await prisma.project.create({ data: { organizationId: ids.orgA, name: `RT3 Project ${suffix}` } });
+    ids.rtProject = rtProject.id;
+    const rtSuite = await prisma.benchmarkSuite.create({ data: { projectId: rtProject.id, name: `RT3 Suite ${suffix}`, version: "1" } });
+    const rtEnabled = await prisma.query.create({ data: { projectId: rtProject.id, text: `RT3 enabled ${suffix}`, source: "IMPORTED", status: "PAUSED" } });
+    ids.rtEnabledQuery = rtEnabled.id;
+    await prisma.benchmarkQuery.create({
+      data: { suiteId: rtSuite.id, projectQueryId: rtEnabled.id, queryText: rtEnabled.text, category: "custom", intent: "自定义", enabled: true, sortOrder: 0 },
+    });
+    const rtDisabled = await prisma.query.create({ data: { projectId: rtProject.id, text: `RT3 disabled ${suffix}`, source: "IMPORTED", status: "PAUSED" } });
+    await prisma.benchmarkQuery.create({
+      data: { suiteId: rtSuite.id, projectQueryId: rtDisabled.id, queryText: rtDisabled.text, category: "custom", intent: "自定义", enabled: false, sortOrder: 1 },
+    });
+    const rtArchived = await prisma.query.create({ data: { projectId: rtProject.id, text: `RT3 archived ${suffix}`, source: "IMPORTED", status: "PAUSED" } });
+    await prisma.benchmarkQuery.create({
+      data: { suiteId: rtSuite.id, projectQueryId: rtArchived.id, queryText: rtArchived.text, category: "custom", intent: "自定义", enabled: true, archived: true, sortOrder: 2 },
+    });
   });
 
   afterAll(async () => {
@@ -167,5 +196,37 @@ describe("MonitorTasks (M3 e2e)", () => {
     await agent.post("/monitor-tasks")
       .send({ projectId: ids.projectA, queryIds: ids.queries, engineIds: [randomUUID()] })
       .expect(400);
+  });
+
+  it("R2 Red-Team #3：options 以 BenchmarkQuery 启用/归档为准（镜像 Query.status=PAUSED 不再阻断）", async () => {
+    const agent = request.agent(http);
+    await agent.post("/auth/login").send({ email: emailA, password }).expect(200);
+    const res = await agent.get("/monitor-tasks/options").expect(200);
+    const rt = (res.body.projects as Array<{ id: string; queries: Array<{ id: string; text: string }> }>)
+      .find((p) => p.id === ids.rtProject);
+    expect(rt).toBeDefined();
+    const texts = rt!.queries.map((q) => q.text);
+    // enabled 必须出现（即使其镜像 Query.status=PAUSED）
+    expect(texts).toContain(`RT3 enabled ${suffix}`);
+    // disabled / archived 必须不出现
+    expect(texts).not.toContain(`RT3 disabled ${suffix}`);
+    expect(texts).not.toContain(`RT3 archived ${suffix}`);
+  });
+
+  it("R2 Red-Team #3：create 仅接受 enabled && !archived 的 Query（disabled 被拒）", async () => {
+    const agent = request.agent(http);
+    await agent.post("/auth/login").send({ email: emailA, password }).expect(200);
+    // 仅传 disabled 的 Query（无 enabled BenchmarkQuery）→ 校验失败 400
+    const disabledQ = await prisma.query.findFirstOrThrow({
+      where: { projectId: ids.rtProject, benchmarkQuery: { is: { enabled: false } } },
+      select: { id: true },
+    });
+    await agent.post("/monitor-tasks")
+      .send({ projectId: ids.rtProject, queryIds: [disabledQ.id], engineIds: ids.engines })
+      .expect(400);
+    // 传 enabled 的 Query → 202
+    await agent.post("/monitor-tasks")
+      .send({ projectId: ids.rtProject, queryIds: [ids.rtEnabledQuery], engineIds: ids.engines })
+      .expect(202);
   });
 });

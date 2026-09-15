@@ -160,8 +160,23 @@ describe("M8 Site Asset & Real Pilot e2e", () => {
   }, 120000);
 
   afterAll(async () => {
-    await prisma.$disconnect();
-    await app?.close();
+    try {
+      const orgIds = [ids.orgA, ids.orgB].filter(Boolean) as string[];
+      if (orgIds.length) {
+        await prisma.project.deleteMany({ where: { organizationId: { in: orgIds } } });
+        const members = await prisma.organizationMember.findMany({ where: { organizationId: { in: orgIds } }, select: { userId: true } });
+        const userIds = Array.from(new Set(members.map((m) => m.userId)));
+        await prisma.organizationMember.deleteMany({ where: { organizationId: { in: orgIds } } });
+        await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
+        if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      }
+      await prisma.engine.deleteMany({ where: { key: { contains: suffix } } });
+    } catch (e) {
+      console.error("sites-pilot teardown error", e);
+    } finally {
+      await prisma.$disconnect();
+      await app?.close();
+    }
   });
 
   it("1. sites: create + list + tenant isolation + 401", async () => {
