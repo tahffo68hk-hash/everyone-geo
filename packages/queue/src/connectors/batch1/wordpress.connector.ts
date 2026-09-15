@@ -126,10 +126,11 @@ export class WordPressConnector extends BaseConnector {
       const baseUrl = this.getBaseUrl(credential);
       const auth = this.getAuthHeader(credential);
 
+      const postStatus = options?.targetStatus || (options?.scheduledAt ? 'future' : 'publish');
       const postData: Record<string, unknown> = {
         title: content.title || 'Untitled Post',
         content: content.body,
-        status: options.scheduledAt ? 'future' : 'publish',
+        status: postStatus,
       };
 
       if (options.scheduledAt) {

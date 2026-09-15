@@ -89,6 +89,7 @@ export interface PublishOptions {
   scheduledAt?: Date;
   confirm?: boolean;
   idempotencyKey?: string;
+  targetStatus?: 'draft' | 'publish' | 'future';
 }
 
 export interface PublishResult {
