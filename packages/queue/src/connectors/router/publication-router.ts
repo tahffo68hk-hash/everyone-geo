@@ -191,9 +191,7 @@ export class PublicationRouter {
     // 11. 记录审计与用量（绝不暴露秘钥）
     const auditAction = !result.ok
       ? 'PUBLICATION_FAILED'
-      : isDraftExternally
-        ? 'DRAFT_CREATED_EXTERNALLY'
-        : 'PUBLICATION_SUCCEEDED';
+      : 'PUBLICATION_SUCCEEDED';
 
     await this.db.contentAuditLog.create({
       data: {
