@@ -17,12 +17,18 @@ import { Test } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import cookieParser from "cookie-parser";
 import request from "supertest";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { prisma } from "@geo/database";
 import { AppModule } from "../src/app.module";
 
 process.env.ENABLE_REAL_PROVIDERS = "false";
 process.env.EXTERNAL_PUBLISHING_ENABLED = "false";
+// DEV_ONLY 本地素材存储：落到独立临时目录，测试后清理（不污染仓库）。
+const ASSET_DIR = mkdtempSync(join(tmpdir(), "m9-assets-"));
+process.env.CONTENT_ASSET_STORAGE_DIR = ASSET_DIR;
 
 const json = (obj: unknown) => JSON.stringify(obj);
 
@@ -100,6 +106,29 @@ describe("M9 内容执行领域 e2e", () => {
     ids.projectA = pA.id;
     const pB = await prisma.project.create({ data: { organizationId: ids.orgB, name: `M9 B ${suffix}` } });
     ids.projectB = pB.id;
+    // 同 org、不同 project（跨 project 溯源拒绝用）。
+    const pS = await prisma.project.create({ data: { organizationId: ids.orgA, name: `M9 S ${suffix}` } });
+    ids.projectSameOrg = pS.id;
+
+    // 来源溯源 fixtures：为各 project 建 opportunity 链（DiagnosisRun→RecommendationRun→OpportunityRun→Opportunity）。
+    const mkOpportunity = async (projectId: string) => {
+      const dr = await prisma.diagnosisRun.create({ data: { projectId, reportId: randomUUID(), diagnosisVersion: "test-v1" } });
+      const rr = await prisma.recommendationRun.create({ data: { projectId, diagnosisRunId: dr.id, recommendationVersion: "test-v1" } });
+      const cor = await prisma.contentOpportunityRun.create({ data: { projectId, recommendationRunId: rr.id, opportunityVersion: "test-v1" } });
+      const op = await prisma.contentOpportunity.create({
+        data: {
+          opportunityRunId: cor.id, opportunityType: "ENTITY_OVERVIEW", titleDirection: "t",
+          summary: "s", rationale: "r", priority: "HIGH", priorityScore: 80,
+          contentIntent: "DISCOVERY", effortLevel: "LOW", expectedSignals: [],
+        },
+      });
+      return { opportunityId: op.id, diagnosisId: dr.id };
+    };
+    const oppA = await mkOpportunity(ids.projectA);
+    ids.oppA = oppA.opportunityId;
+    ids.diagA = oppA.diagnosisId;
+    ids.oppSameOrg = (await mkOpportunity(ids.projectSameOrg)).opportunityId;
+    ids.oppB = (await mkOpportunity(ids.projectB)).opportunityId;
 
     // CONNECTED 连接（经 API 创建，携带 credentialRef；响应/审计均不得回显）。
     const conn = await owner.post(`/projects/${ids.projectA}/channel-connections`).send({
@@ -133,6 +162,8 @@ describe("M9 内容执行领域 e2e", () => {
       await prisma.$disconnect();
     } catch {
       /* 清理失败不掩盖测试结论 */
+    } finally {
+      try { rmSync(ASSET_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   }, 120000);
 
@@ -290,4 +321,152 @@ describe("M9 内容执行领域 e2e", () => {
     expect(xhs!.apiDetails).toBe("unverified");
     expect(caps.every((c) => c.publisher === "mock" && c.oauthImplemented === false)).toBe(true);
   }, 60000);
+
+  it("M. 来源溯源：Opportunity/Diagnosis → Draft；跨 project/tenant 拒绝", async () => {
+    // happy path：同 project 来源关联。
+    const ok = await owner.post(`/projects/${ids.projectA}/content-drafts`).send({
+      title: `Src-${suffix}`, body: json({ body: "x" }),
+      sourceOpportunityId: ids.oppA, sourceDiagnosisId: ids.diagA,
+    });
+    expect(ok.status).toBe(201);
+    expect(ok.body.sourceOpportunityId).toBe(ids.oppA);
+    expect(ok.body.sourceDiagnosisId).toBe(ids.diagA);
+    expect(ok.body.sourceRecommendationId).toBeNull();
+
+    // detail 同样返回来源。
+    const detail = await owner.get(`/content-drafts/${ok.body.id}`).expect(200);
+    expect(detail.body.sourceOpportunityId).toBe(ids.oppA);
+    expect(detail.body.sourceDiagnosisId).toBe(ids.diagA);
+
+    // 跨 project（同 org、不同 project）→ 404。
+    const crossProject = await owner.post(`/projects/${ids.projectA}/content-drafts`).send({
+      title: `SrcCP-${suffix}`, body: json({ body: "x" }), sourceOpportunityId: ids.oppSameOrg,
+    });
+    expect(crossProject.status).toBe(404);
+
+    // 跨 tenant（orgB 的 opportunity）→ 404。
+    const crossTenant = await owner.post(`/projects/${ids.projectA}/content-drafts`).send({
+      title: `SrcCT-${suffix}`, body: json({ body: "x" }), sourceOpportunityId: ids.oppB,
+    });
+    expect(crossTenant.status).toBe(404);
+
+    // 不存在的来源 → 404（绝不伪造关联）。
+    const bogus = await owner.post(`/projects/${ids.projectA}/content-drafts`).send({
+      title: `SrcBG-${suffix}`, body: json({ body: "x" }), sourceRecommendationId: randomUUID(),
+    });
+    expect(bogus.status).toBe(404);
+  }, 60000);
+
+  it("N. Revision 历史正文：多版本可读、历史不被覆盖、latest guard 保持", async () => {
+    const d = await mkDraft(`Rev-${suffix}`, { body: "v1-body" });
+    await owner.patch(`/content-drafts/${d.id}`).send({ body: json({ body: "v2-body" }) }).expect(200);
+    await owner.patch(`/content-drafts/${d.id}`).send({ body: json({ body: "v3-body" }) }).expect(200);
+
+    const detail = await owner.get(`/content-drafts/${d.id}`).expect(200);
+    const revs = detail.body.revisions as Array<{ id: string; version: number; body: string; generationMode: string }>;
+    expect(revs.length).toBe(3);
+    const byV = new Map(revs.map((r) => [r.version, r.body]));
+    expect(byV.get(1)).toContain("v1-body"); // 历史正文未被覆盖（immutable）
+    expect(byV.get(2)).toContain("v2-body");
+    expect(byV.get(3)).toContain("v3-body");
+
+    // 单版本端点（Revision endpoint）。
+    const v1 = revs.find((r) => r.version === 1)!;
+    const single = await owner.get(`/content-drafts/${d.id}/revisions/${v1.id}`).expect(200);
+    expect(single.body.version).toBe(1);
+    expect(single.body.body).toContain("v1-body");
+    // 不泄露 system prompt / api key / secret 字段。
+    expect(JSON.stringify(single.body)).not.toMatch(/apiKey|api_key|systemPrompt|system_prompt|secret/i);
+
+    // latest guard：提交后只能审批最新版本。
+    await owner.post(`/content-drafts/${d.id}/submit`).expect(200);
+    const bad = await owner.post(`/content-drafts/${d.id}/decide`).send({ decision: "APPROVED", revisionId: v1.id });
+    expect(bad.status).toBe(400);
+    const okDecide = await owner.post(`/content-drafts/${d.id}/decide`).send({ decision: "APPROVED" });
+    expect(okDecide.status).toBe(200);
+    expect(okDecide.body.status).toBe("APPROVED");
+
+    // 跨 tenant 单版本不可读。
+    await outsider.get(`/content-drafts/${d.id}/revisions/${v1.id}`).expect(404);
+  }, 60000);
+
+  it("O. 发布列表：分页 + status/channel 过滤 + 租户/项目隔离", async () => {
+    const all = await owner.get(`/projects/${ids.projectA}/publications?page=1&pageSize=10`).expect(200);
+    expect(all.body.page).toBe(1);
+    expect(all.body.pageSize).toBe(10);
+    expect(all.body.total).toBeGreaterThanOrEqual(1);
+    const item = (all.body.items as Array<Record<string, unknown>>).find((x) => x.id === ids.publication)!;
+    expect(item).toBeTruthy();
+    expect(item.draftId).toBe(ids.draftPublished);
+    expect(item.channel).toBe("XIAOHONGSHU");
+    expect(item.status).toBe("PUBLISHED");
+    expect(item.isMock).toBe(true); // 本轮恒 mock
+    expect(item.publishedAt).toBeTruthy(); // 成功发布时刻
+    expect(item.scheduledAt).toBeNull();
+    expect(String(item.externalUrl)).toContain("mock.geo.local");
+    expect((item.accountConnection as Record<string, unknown>).id).toBe(ids.connConnected);
+
+    // status filter
+    const okStatus = await owner.get(`/projects/${ids.projectA}/publications?status=PUBLISHED`).expect(200);
+    expect((okStatus.body.items as Array<Record<string, unknown>>).every((x) => x.status === "PUBLISHED")).toBe(true);
+    const emptyStatus = await owner.get(`/projects/${ids.projectA}/publications?status=FAILED`).expect(200);
+    expect((emptyStatus.body.items as unknown[]).length).toBe(0);
+    // channel filter
+    const xhs = await owner.get(`/projects/${ids.projectA}/publications?channel=XIAOHONGSHU`).expect(200);
+    expect((xhs.body.items as unknown[]).length).toBeGreaterThanOrEqual(1);
+    const douyin = await owner.get(`/projects/${ids.projectA}/publications?channel=DOUYIN`).expect(200);
+    expect((douyin.body.items as unknown[]).length).toBe(0);
+    // pagination 边界
+    const p1 = await owner.get(`/projects/${ids.projectA}/publications?page=1&pageSize=1`).expect(200);
+    expect((p1.body.items as unknown[]).length).toBeLessThanOrEqual(1);
+
+    // tenant / project isolation
+    await outsider.get(`/projects/${ids.projectA}/publications`).expect(404);
+    await anon.get(`/projects/${ids.projectA}/publications`).expect(401);
+    const otherProject = await owner.get(`/projects/${ids.projectSameOrg}/publications`).expect(200);
+    expect(otherProject.body.total).toBe(0);
+  }, 60000);
+
+  it("P. 素材上传：MIME allowlist / 大小上限 / checksum / 租户隔离（DEV_ONLY）", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const ok = await owner.post(`/projects/${ids.projectA}/content-assets`)
+      .field("type", "IMAGE")
+      .attach("file", png, { filename: "a.png", contentType: "image/png" });
+    expect(ok.status).toBe(201);
+    expect(ok.body.type).toBe("IMAGE");
+    expect(ok.body.mimeType).toBe("image/png");
+    expect(ok.body.sizeBytes).toBe(png.length);
+    expect(ok.body.devOnly).toBe(true); // DEV_ONLY 明确标记
+    expect(String(ok.body.storageRef)).toMatch(/^dev-local:\/\//);
+    expect(ok.body.checksum).toBe(createHash("sha256").update(png).digest("hex"));
+
+    // 非法 MIME → 400（未校验 MIME 一律拒绝）
+    const badMime = await owner.post(`/projects/${ids.projectA}/content-assets`)
+      .field("type", "IMAGE")
+      .attach("file", Buffer.from("hello"), { filename: "a.txt", contentType: "text/plain" });
+    expect(badMime.status).toBe(400);
+    // 不支持的类型 → 400
+    const badType = await owner.post(`/projects/${ids.projectA}/content-assets`)
+      .field("type", "TEXT")
+      .attach("file", Buffer.from("hello"), { filename: "a.txt", contentType: "text/plain" });
+    expect(badType.status).toBe(400);
+    // 超过大小上限 → 400（IMAGE 上限 10MB）
+    const tooBig = await owner.post(`/projects/${ids.projectA}/content-assets`)
+      .field("type", "IMAGE")
+      .attach("file", Buffer.alloc(10 * 1024 * 1024 + 1), { filename: "big.png", contentType: "image/png" });
+    expect(tooBig.status).toBe(400);
+
+    // 跨 tenant 上传 → 404
+    await outsider.post(`/projects/${ids.projectA}/content-assets`)
+      .field("type", "IMAGE")
+      .attach("file", png, { filename: "a.png", contentType: "image/png" })
+      .expect(404);
+
+    // 列表 + 项目隔离
+    const list = await owner.get(`/projects/${ids.projectA}/content-assets`).expect(200);
+    expect(list.body.total).toBeGreaterThanOrEqual(1);
+    expect((list.body.items as Array<Record<string, unknown>>)[0]).toHaveProperty("checksum");
+    const otherList = await owner.get(`/projects/${ids.projectSameOrg}/content-assets`).expect(200);
+    expect(otherList.body.total).toBe(0);
+  }, 120000);
 });

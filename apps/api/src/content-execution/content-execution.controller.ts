@@ -1,12 +1,14 @@
 import {
-  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards,
+  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UploadedFile,
+  UseGuards, UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { AuthGuard, JwtUserPayload } from "../common/auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
-import { ContentExecutionService } from "./content-execution.service";
+import { ContentExecutionService, type UploadedBuffer } from "./content-execution.service";
 import {
   CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
-  ListDraftsDto, UpdateDraftDto,
+  ListAssetsDto, ListDraftsDto, ListPublicationsDto, UpdateDraftDto,
 } from "./dto/content-execution.dto";
 
 /**
@@ -65,6 +67,16 @@ export class ContentExecutionController {
     return this.content.listAudit(u.sub, id);
   }
 
+  /** 历史 Revision 正文（PHASE 3）：只读、immutable；跨 tenant/project 404。 */
+  @Get("content-drafts/:id/revisions/:revisionId")
+  getRevision(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("revisionId", ParseUUIDPipe) revisionId: string,
+  ) {
+    return this.content.getRevision(u.sub, id, revisionId);
+  }
+
   /** 渠道能力描述符（PHASE 17）：不猜测真实 API，全部标注 mock/unverified。 */
   @Get("channels/capabilities")
   channelCapabilities() {
@@ -105,5 +117,30 @@ export class ContentExecutionController {
   @HttpCode(200)
   processPublication(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
     return this.content.processPublication(u.sub, id);
+  }
+
+  /** 发布列表（PHASE 4）：project scoped + 分页 + status/channel 过滤。 */
+  @Get("projects/:id/publications")
+  listPublications(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string, @Query() dto: ListPublicationsDto) {
+    return this.content.listPublications(u.sub, id, dto);
+  }
+
+  // ---- 素材上传基础（PHASE 5，DEV_ONLY 本地存储适配器）----
+  @Get("projects/:id/content-assets")
+  listAssets(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string, @Query() dto: ListAssetsDto) {
+    return this.content.listAssets(u.sub, id, dto);
+  }
+
+  /** 最小安全上传：multipart 字段 type(IMAGE/VIDEO/COVER/AUDIO) + file；可选 draftId。 */
+  @Post("projects/:id/content-assets")
+  @HttpCode(201)
+  @UseInterceptors(FileInterceptor("file"))
+  createAsset(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @UploadedFile() file: UploadedBuffer | undefined,
+    @Body() body: { type?: string; draftId?: string },
+  ) {
+    return this.content.createAsset(u.sub, id, file, { type: body?.type, draftId: body?.draftId });
   }
 }

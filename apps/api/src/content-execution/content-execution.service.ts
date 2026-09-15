@@ -1,17 +1,18 @@
 import {
   BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Prisma } from "@geo/database";
 import { PrismaService } from "../prisma.service";
 import { TenantService } from "../common/tenant.service";
 import {
-  CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
-  ListDraftsDto, UpdateDraftDto,
+  ASSET_TYPES, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
+  ListAssetsDto, ListDraftsDto, ListPublicationsDto, UpdateDraftDto,
 } from "./dto/content-execution.dto";
 import {
   createPublicationQueue, enqueuePublication, executePublication, type PublicationQueue,
 } from "@geo/queue";
+import { DevLocalStorageAdapter } from "./storage/local-storage.adapter";
 
 /**
  * 内容执行领域服务（M9 / PHASE 2-16）。
@@ -66,10 +67,35 @@ export const CHANNEL_CAPABILITIES: ChannelCapability[] = [
   { channel: "OTHER", label: "其他", ...CHANNEL_LIMITS.OTHER, supportsImages: false, publisher: "mock", oauthImplemented: false, apiDetails: "unverified" },
 ];
 
+// 素材上传（PHASE 5 · Asset Upload Foundation）—— MIME allowlist + 大小上限（应用层强制）。
+// 仅开放 IMAGE / VIDEO / COVER / AUDIO；TEXT/OTHER 不开放上传，未校验 MIME 一律拒绝。
+const ASSET_MIME_ALLOWLIST: Record<string, string[]> = {
+  IMAGE: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+  COVER: ["image/png", "image/jpeg", "image/webp"],
+  VIDEO: ["video/mp4", "video/quicktime", "video/webm"],
+  AUDIO: ["audio/mpeg", "audio/wav", "audio/mp4", "audio/aac", "audio/x-wav"],
+};
+const ASSET_MAX_BYTES: Record<string, number> = {
+  IMAGE: 10 * 1024 * 1024,
+  COVER: 10 * 1024 * 1024,
+  VIDEO: 100 * 1024 * 1024,
+  AUDIO: 25 * 1024 * 1024,
+};
+
+/** 上传文件的最小结构（避免依赖 @types/multer）。 */
+export interface UploadedBuffer {
+  originalname?: string;
+  mimetype?: string;
+  size?: number;
+  buffer?: Buffer;
+}
+
 @Injectable()
 export class ContentExecutionService implements OnModuleDestroy {
   private readonly logger = new Logger(ContentExecutionService.name);
   private readonly queue: PublicationQueue | null;
+  // DEV_ONLY 本地存储适配器（未接入正式对象存储）。
+  private readonly storage = new DevLocalStorageAdapter();
 
   constructor(
     private readonly db: PrismaService,
@@ -89,6 +115,8 @@ export class ContentExecutionService implements OnModuleDestroy {
 
   async createDraft(userId: string, projectId: string, dto: CreateDraftDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    // 来源溯源（PHASE 2）：来源实体必须存在且属于同一 project（⇒ 同一租户），否则 404。
+    const sources = await this.resolveSources(projectId, dto);
     const draft = await this.db.client.contentDraft.create({
       data: {
         organizationId: project.organizationId,
@@ -97,6 +125,9 @@ export class ContentExecutionService implements OnModuleDestroy {
         topic: dto.topic ?? null,
         generationMode: (dto.generationMode ?? "MANUAL") as Prisma.ContentDraftCreateInput["generationMode"],
         status: "DRAFT",
+        sourceOpportunityId: sources.opportunityId,
+        sourceRecommendationId: sources.recommendationId,
+        sourceDiagnosisId: sources.diagnosisId,
         createdById: userId,
         revisions: {
           create: {
@@ -110,11 +141,54 @@ export class ContentExecutionService implements OnModuleDestroy {
       },
       include: { revisions: { orderBy: [{ version: "desc" }], take: 1 }, _count: { select: { revisions: true } } },
     });
-    await this.audit(project.organizationId, userId, "DRAFT_CREATED", `title=${draft.title.slice(0, 60)}`, {
-      projectId, draftId: draft.id,
-    });
+    await this.audit(
+      project.organizationId, userId, "DRAFT_CREATED",
+      `title=${draft.title.slice(0, 60)}${sources.summary ? ` sources:[${sources.summary}]` : ""}`,
+      { projectId, draftId: draft.id },
+    );
     await this.usage(project.organizationId, userId, "CONTENT_GENERATION", projectId, "none");
     return this.toDraftView(draft);
+  }
+
+  /**
+   * 校验来源溯源：来源实体必须存在且属于同一 project（⇒ 同一租户）。
+   * 跨 project / 跨 tenant 引用一律 404（不泄露存在性）；绝不伪造关联。
+   */
+  private async resolveSources(projectId: string, dto: {
+    sourceOpportunityId?: string; sourceRecommendationId?: string; sourceDiagnosisId?: string;
+  }): Promise<{ opportunityId: string | null; recommendationId: string | null; diagnosisId: string | null; summary: string }> {
+    let opportunityId: string | null = null;
+    let recommendationId: string | null = null;
+    let diagnosisId: string | null = null;
+    if (dto.sourceOpportunityId) {
+      // ContentOpportunity 无 projectId：经 opportunityRun 关联校验。
+      const row = await this.db.client.contentOpportunity.findFirst({
+        where: { id: dto.sourceOpportunityId, opportunityRun: { projectId } }, select: { id: true },
+      });
+      if (!row) throw new NotFoundException("来源 Opportunity 不存在或不属于该项目");
+      opportunityId = row.id;
+    }
+    if (dto.sourceRecommendationId) {
+      // Recommendation 无 projectId：经 recommendationRun 关联校验。
+      const row = await this.db.client.recommendation.findFirst({
+        where: { id: dto.sourceRecommendationId, recommendationRun: { projectId } }, select: { id: true },
+      });
+      if (!row) throw new NotFoundException("来源 Recommendation 不存在或不属于该项目");
+      recommendationId = row.id;
+    }
+    if (dto.sourceDiagnosisId) {
+      const row = await this.db.client.diagnosisRun.findFirst({
+        where: { id: dto.sourceDiagnosisId, projectId }, select: { id: true },
+      });
+      if (!row) throw new NotFoundException("来源 DiagnosisRun 不存在或不属于该项目");
+      diagnosisId = row.id;
+    }
+    const summary = [
+      opportunityId ? `opportunity=${opportunityId.slice(0, 8)}` : null,
+      recommendationId ? `recommendation=${recommendationId.slice(0, 8)}` : null,
+      diagnosisId ? `diagnosis=${diagnosisId.slice(0, 8)}` : null,
+    ].filter(Boolean).join(",");
+    return { opportunityId, recommendationId, diagnosisId, summary };
   }
 
   async listDrafts(userId: string, projectId: string, dto: ListDraftsDto) {
@@ -143,9 +217,11 @@ export class ContentExecutionService implements OnModuleDestroy {
     await this.tenant.assertUserInOrganization(userId, draft.organizationId);
     return {
       ...this.toDraftView(draft),
+      // 历史 Revision 正文（immutable）：返回全部版本的完整 body，供前端版本对比 / 回溯。
+      // body 为草稿内容本体；不含 system prompt / API key / secret / 内部敏感 metadata。
       revisions: draft.revisions.map((r) => ({
-        id: r.id, version: r.version, summary: r.summary, changeNote: r.changeNote,
-        generatedById: r.generatedById, createdAt: r.createdAt,
+        id: r.id, version: r.version, body: r.body, summary: r.summary, changeNote: r.changeNote,
+        generationMode: draft.generationMode, generatedById: r.generatedById, createdAt: r.createdAt,
       })),
       approvals: draft.approvals.map((a) => ({
         id: a.id, decision: a.decision, reviewerId: a.reviewerId, comment: a.comment, revisionId: a.revisionId, createdAt: a.createdAt,
@@ -385,6 +461,160 @@ export class ContentExecutionService implements OnModuleDestroy {
   }
 
   // ---------------------------------------------------------------
+  // 历史 Revision（PHASE 3）—— 只读，immutable
+  // ---------------------------------------------------------------
+
+  /** 读取单个历史 Revision 正文；跨 tenant/project 不可读（404）。 */
+  async getRevision(userId: string, draftId: string, revisionId: string) {
+    const draft = await this.requireDraft(userId, draftId);
+    const rev = await this.db.client.contentRevision.findFirst({ where: { id: revisionId, draftId } });
+    if (!rev) throw new NotFoundException("修订版本不存在");
+    return {
+      id: rev.id, draftId: rev.draftId, version: rev.version, body: rev.body,
+      summary: rev.summary, changeNote: rev.changeNote,
+      generationMode: draft.generationMode, generatedById: rev.generatedById, createdAt: rev.createdAt,
+    };
+  }
+
+  // ---------------------------------------------------------------
+  // 发布列表（PHASE 4）—— project scoped + 分页 + 过滤
+  // ---------------------------------------------------------------
+
+  async listPublications(userId: string, projectId: string, filters: ListPublicationsDto) {
+    await this.tenant.assertUserInProject(userId, projectId);
+    const where: Prisma.PublicationWhereInput = { projectId };
+    if (filters.status) where.status = filters.status as Prisma.PublicationWhereInput["status"];
+    if (filters.channel) where.channel = filters.channel as Prisma.PublicationWhereInput["channel"];
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? 20));
+    const [total, rows] = await Promise.all([
+      this.db.client.publication.count({ where }),
+      this.db.client.publication.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          connection: { select: { id: true, channel: true, displayName: true, status: true } },
+          attempts: { orderBy: [{ attemptNo: "desc" }], take: 1 },
+        },
+      }),
+    ]);
+    return {
+      page, pageSize, total,
+      items: rows.map((p) => {
+        const last = p.attempts[0] ?? null;
+        return {
+          id: p.id,
+          draftId: p.draftId,
+          revisionId: p.revisionId,
+          channel: p.channel,
+          status: p.status,
+          accountConnection: {
+            id: p.connection.id, channel: p.connection.channel,
+            displayName: p.connection.displayName, status: p.connection.status,
+          },
+          createdAt: p.createdAt,
+          scheduledAt: null, // 本轮无排期功能；字段稳定保留供前端消费。
+          publishedAt: p.publishedAt,
+          externalUrl: last?.externalUrl ?? null,
+          externalId: last?.externalId ?? null,
+          publisher: last?.publisher ?? null,
+          isMock: last ? last.publisher === "mock" : true, // 本轮恒 mock
+        };
+      }),
+    };
+  }
+
+  // ---------------------------------------------------------------
+  // 素材上传基础（PHASE 5）—— DEV_ONLY 本地存储适配器
+  // ---------------------------------------------------------------
+
+  async createAsset(
+    userId: string, projectId: string, file: UploadedBuffer | undefined,
+    input: { type?: string; draftId?: string },
+  ) {
+    const project = await this.tenant.assertUserInProject(userId, projectId);
+    const type = String(input.type ?? "").toUpperCase();
+    if (!(ASSET_TYPES as readonly string[]).includes(type)) {
+      throw new BadRequestException(`不支持的素材类型（仅允许 ${ASSET_TYPES.join("/")}）`);
+    }
+    if (!file || !file.buffer || !file.size) throw new BadRequestException("缺少上传文件");
+    const mime = String(file.mimetype ?? "").toLowerCase();
+    const allow = ASSET_MIME_ALLOWLIST[type] ?? [];
+    if (!allow.includes(mime)) {
+      throw new BadRequestException(`MIME 类型 ${mime || "(空)"} 不在 ${type} 允许清单内`);
+    }
+    const maxBytes = ASSET_MAX_BYTES[type] ?? 0;
+    if (file.size > maxBytes) {
+      throw new BadRequestException(`文件超过 ${type} 大小上限（${Math.floor(maxBytes / 1024 / 1024)}MB）`);
+    }
+    let draftId: string | null = null;
+    if (input.draftId) {
+      const draft = await this.db.client.contentDraft.findFirst({ where: { id: input.draftId, projectId }, select: { id: true } });
+      if (!draft) throw new NotFoundException("草稿不存在或不属于该项目");
+      draftId = draft.id;
+    }
+    // 校验和：sha256（防重复 / 防篡改）。
+    const checksum = createHash("sha256").update(file.buffer).digest("hex");
+    // DEV_ONLY 落盘；key 由服务端生成，绝不使用用户提供的路径/文件名。
+    const stored = await this.storage.put(project.organizationId, file.buffer);
+    const asset = await this.db.client.contentAsset.create({
+      data: {
+        organizationId: project.organizationId,
+        projectId,
+        draftId,
+        type: type as Prisma.ContentAssetCreateInput["type"],
+        mimeType: mime,
+        sizeBytes: file.size,
+        checksum,
+        storageKey: stored.storageKey,
+        ownerId: userId,
+      },
+    });
+    return this.toAssetView(asset);
+  }
+
+  async listAssets(userId: string, projectId: string, filters: ListAssetsDto) {
+    await this.tenant.assertUserInProject(userId, projectId);
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? 20));
+    const where: Prisma.ContentAssetWhereInput = { projectId };
+    const [total, rows] = await Promise.all([
+      this.db.client.contentAsset.count({ where }),
+      this.db.client.contentAsset.findMany({
+        where, orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        skip: (page - 1) * pageSize, take: pageSize,
+      }),
+    ]);
+    return { page, pageSize, total, items: rows.map((a) => this.toAssetView(a)) };
+  }
+
+  private toAssetView(a: {
+    id: string; organizationId: string; projectId: string; draftId: string | null;
+    type: string; mimeType: string; sizeBytes: number; checksum: string; storageKey: string;
+    ownerId: string; createdAt: Date; updatedAt: Date;
+  }) {
+    return {
+      id: a.id,
+      organizationId: a.organizationId,
+      projectId: a.projectId,
+      draftId: a.draftId,
+      type: a.type,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      checksum: a.checksum,
+      // 不透明存储引用（不暴露本地磁盘绝对路径；DEV_ONLY 本地适配器）。
+      storageRef: `dev-local://${a.storageKey}`,
+      storage: "dev-local" as const,
+      devOnly: true as const,
+      ownerId: a.ownerId,
+      createdAt: a.createdAt,
+      updatedAt: a.updatedAt,
+    };
+  }
+
+  // ---------------------------------------------------------------
   // 守卫 / 校验 / 审计 / 用量 辅助
   // ---------------------------------------------------------------
 
@@ -487,7 +717,7 @@ export class ContentExecutionService implements OnModuleDestroy {
   private toDraftView(
     d: Prisma.ContentDraftGetPayload<{ include: { revisions: true } }> & { _count?: { revisions: number } },
   ) {
-    const revs = (d.revisions ?? []) as Array<{ id: string; version: number; summary: string | null; changeNote: string | null; generatedById: string; createdAt: Date }>;
+    const revs = (d.revisions ?? []) as Array<{ id: string; version: number; body: string; summary: string | null; changeNote: string | null; generatedById: string; createdAt: Date }>;
     const latest = revs.length ? revs[0] : null;
     const revisionCount = typeof d._count?.revisions === "number" ? d._count.revisions : revs.length;
     return {
@@ -498,11 +728,15 @@ export class ContentExecutionService implements OnModuleDestroy {
       topic: d.topic,
       generationMode: d.generationMode,
       status: d.status,
+      // 来源溯源（PHASE 2）：可空；仅返回 id，不伪造关联。
+      sourceOpportunityId: d.sourceOpportunityId,
+      sourceRecommendationId: d.sourceRecommendationId,
+      sourceDiagnosisId: d.sourceDiagnosisId,
       createdById: d.createdById,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
       latestRevision: latest
-        ? { id: latest.id, version: latest.version, summary: latest.summary, changeNote: latest.changeNote, generatedById: latest.generatedById, createdAt: latest.createdAt }
+        ? { id: latest.id, version: latest.version, body: latest.body, summary: latest.summary, changeNote: latest.changeNote, generatedById: latest.generatedById, createdAt: latest.createdAt }
         : null,
       revisionCount,
     };
