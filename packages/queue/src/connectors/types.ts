@@ -201,7 +201,7 @@ export interface ChannelConnector {
   publish(
     content: NormalizedPublishContent,
     credential: StoredCredential,
-    options: PublishOptions,
+    options?: PublishOptions,
   ): Promise<PublishResult>;
 
   getPublicationStatus?(externalId: string, credential: StoredCredential): Promise<PublicationStatusResult>;

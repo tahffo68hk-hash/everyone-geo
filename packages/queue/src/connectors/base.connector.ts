@@ -70,7 +70,7 @@ export abstract class BaseConnector implements ChannelConnector {
   async publish(
     content: NormalizedPublishContent,
     credential: StoredCredential,
-    options: PublishOptions,
+    options?: PublishOptions,
   ): Promise<PublishResult> {
     const start = Date.now();
     const caps = this.getCapabilities();
@@ -88,7 +88,7 @@ export abstract class BaseConnector implements ChannelConnector {
     }
 
     // 2. dryRun 模式：只验证不发帖
-    if (options.dryRun) {
+    if (options?.dryRun) {
       return {
         ok: true,
         publisher: 'mock',

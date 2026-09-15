@@ -191,6 +191,15 @@ test('E. WordPressConnector: 生产能力、内容校验与出站写闸门', asy
   );
   assert.equal(dryPub.ok, true);
   assert.ok(dryPub.externalId?.startsWith('dryrun_wordpress_'));
+
+  // P2 靶向测试：publish 调用时不传 options 参数，绝不抛出 TypeError
+  const noOptionsPub = await wp.publish(
+    { title: 'No Options Post', body: 'Testing optional options parameter' },
+    { credentialRef: 'vault://mock' },
+  );
+  assert.equal(noOptionsPub.ok, true);
+  assert.equal(noOptionsPub.publisher, 'mock');
+  assert.ok(noOptionsPub.externalUrl?.includes('mock.geo.local'));
 });
 
 test('F. ManualPublishingPackage: 人工发布包生成', () => {
