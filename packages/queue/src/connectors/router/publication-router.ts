@@ -146,7 +146,9 @@ export class PublicationRouter {
     const isDraftExternally =
       result.ok &&
       (pub.channel === 'WECHAT_OFFICIAL_ACCOUNT' ||
+        (pub.channel === 'DEV_TO' && options.targetStatus !== 'publish') ||
         options.targetStatus === 'draft' ||
+        result.targetStatus === 'draft' ||
         (result.rawResponse as any)?.status === 'DRAFT_CREATED_EXTERNALLY');
 
     const newStatus: any = !result.ok

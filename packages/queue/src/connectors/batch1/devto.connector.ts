@@ -23,7 +23,7 @@ export class DevToConnector extends BaseConnector {
       displayName: 'DEV Community',
       officialDocsUrl: 'https://developers.forem.com/api/v1#tag/articles/operation/createArticle',
       authorizationType: 'API_KEY',
-      implementationStatus: 'READY',
+      implementationStatus: 'READY_FOR_CREDENTIALS',
       supportsText: true,
       supportsImages: true,
       supportsVideo: false,
@@ -79,10 +79,12 @@ export class DevToConnector extends BaseConnector {
   ): Promise<PublishResult> {
     const start = Date.now();
     try {
+      // 试点安全规则：必须保持 published: false（即生成 DEV.to Draft，绝不直接公开发布）
+      const isPublic = options.targetStatus === 'publish' && options.confirm ? true : false;
       const articlePayload = {
         article: {
           title: content.title || 'Untitled Article',
-          published: !options.scheduledAt,
+          published: isPublic,
           body_markdown: content.body,
           tags: (content.tags || []).slice(0, 4).map((t) => t.replace(/[^a-zA-Z0-9]/g, '')),
           main_image: content.coverUrl || undefined,
@@ -114,8 +116,13 @@ export class DevToConnector extends BaseConnector {
         publisher: 'real',
         externalId: String(data.id),
         externalUrl: data.url,
+        targetStatus: isPublic ? 'publish' : 'draft',
         durationMs: Date.now() - start,
-        rawResponse: data,
+        rawResponse: {
+          ...data,
+          status: isPublic ? 'PUBLISHED' : 'DRAFT_CREATED_EXTERNALLY',
+          published: isPublic,
+        },
       };
     } catch (e) {
       return {

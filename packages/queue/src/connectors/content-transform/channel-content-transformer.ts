@@ -179,6 +179,186 @@ export function transformContentForChannel(
       };
     }
 
+    case 'TELEGRAM': {
+      // Telegram: Markdown 短消息（标题加粗、标签、控制在 4096 字符）
+      let text = content.body;
+      if (content.title) {
+        text = '*' + content.title + '*\n\n' + content.body;
+      }
+      if (tags.length > 0) {
+        text += '\n\n' + tags.map((t) => (t.startsWith('#') ? t : '#' + t)).join(' ');
+      }
+      const trimmed = text.slice(0, 4096);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title: (content.title || '').slice(0, 128),
+        body: trimmed,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          text: trimmed,
+          parse_mode: 'Markdown',
+        },
+      };
+    }
+
+    case 'DISCORD': {
+      // Discord: Webhook 消息与富文本 Embeds
+      const embeds: Array<Record<string, unknown>> = [];
+      if (content.title || coverUrl || content.summary) {
+        embeds.push({
+          title: (content.title || '').slice(0, 256) || undefined,
+          description: (content.summary || content.body.slice(0, 250)) || undefined,
+          image: coverUrl ? { url: coverUrl } : undefined,
+          color: 0x5865f2,
+        });
+      }
+      const trimmedBody = content.body.slice(0, 2000);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title: (content.title || '').slice(0, 256),
+        body: trimmedBody,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          content: trimmedBody,
+          embeds: embeds.length > 0 ? embeds : undefined,
+        },
+      };
+    }
+
+    case 'SLACK': {
+      // Slack: Block/Message 纯文本（标题加粗、控制在 4000 字符）
+      const text = content.title ? '*' + content.title + '*\n' + content.body : content.body;
+      const trimmed = text.slice(0, 4000);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title: (content.title || '').slice(0, 150),
+        body: trimmed,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          text: trimmed,
+        },
+      };
+    }
+
+    case 'MASTODON': {
+      // Mastodon: 联邦宇宙嘟文（默认 unlisted 避免污染公共主线、控制在 500 字符）
+      const text = (content.title ? content.title + '\n\n' + content.body : content.body).slice(0, 500);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title: (content.title || '').slice(0, 100),
+        body: text,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          status: text,
+          visibility: 'unlisted',
+        },
+      };
+    }
+
+    case 'BLUESKY': {
+      // Bluesky: AT Protocol 帖子（控制在 300 字符内）
+      const text = content.body.slice(0, 300);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title: (content.title || '').slice(0, 80),
+        body: text,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          text,
+        },
+      };
+    }
+
+    case 'DEV_TO': {
+      // DEV.to: 开发者长文 Markdown（强制 published: false 保持 Draft 隔离）
+      const title = (content.title || 'Untitled Article').slice(0, 128);
+      const cleanTags = tags.slice(0, 4).map((t) => t.replace(/[^a-zA-Z0-9]/g, '')).filter(Boolean);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title,
+        body: content.body,
+        summary: content.summary || undefined,
+        tags: cleanTags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          article: {
+            title,
+            body_markdown: content.body,
+            published: false, // 严格保持草稿
+            tags: cleanTags,
+            main_image: coverUrl,
+            canonical_url: content.canonicalUrl || undefined,
+          },
+        },
+      };
+    }
+
+    case 'THREADS': {
+      // Threads: 社交短帖（控制在 500 字符）
+      const text = content.body.slice(0, 500);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title: (content.title || '').slice(0, 100),
+        body: text,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          text,
+        },
+      };
+    }
+
+    case 'LINKEDIN': {
+      // LinkedIn: 职场专业动态（控制在 3000 字符）
+      const text = (content.title ? content.title + '\n\n' + content.body : content.body).slice(0, 3000);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title: (content.title || '').slice(0, 120),
+        body: text,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          text,
+        },
+      };
+    }
+
     default: {
       return {
         channel,

@@ -108,6 +108,7 @@ export class MastodonConnector extends BaseConnector {
       const instance = this.getInstanceUrl(credential);
       const payload: Record<string, unknown> = {
         status: content.body,
+        visibility: 'unlisted', // 试点安全策略：使用 unlisted 避免污染公共时间线
         media_ids: (content.assets || []).map((a) => a.externalId).filter(Boolean),
       };
 
