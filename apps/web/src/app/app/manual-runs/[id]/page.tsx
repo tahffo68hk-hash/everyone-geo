@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import {
-  formatManualProduct, formatQueryType, friendlyError, MANUAL_NAV,
+  formatManualProduct, formatQueryType, formatVersion, friendlyError, MANUAL_NAV,
 } from "@/lib/labels";
 
 type Analysis = {
@@ -147,7 +147,7 @@ function ManualRunInner() {
           <p className="mt-1 text-xs text-slate-500">
             监测对象：<span className="font-medium text-slate-700">{(target as { canonicalName?: string } | null)?.canonicalName ?? "—"}</span>
             {target ? <>（{(target as { productCategory?: string | null }).productCategory ?? "未设产品类别"}）</> : ""}
-            · 问题集 {ws?.suite.name} v{ws?.suite.version}
+            · 问题集 {ws?.suite.name} {formatVersion(ws?.suite.version)}
             · AI 产品：<span className="font-medium text-slate-700">{productLabel}</span>
             · {ws?.isDemo ? <span className="text-amber-700">{MANUAL_NAV.demoBadge}</span> : <span className="text-emerald-700">{MANUAL_NAV.realBadge}</span>}
           </p>

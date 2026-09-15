@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
-  DIAGNOSIS_NAV, formatMetricSource, formatSeverity, friendlyError, SEVERITY_BADGE,
+  DIAGNOSIS_NAV, formatMetricSource, formatSeverity, formatVersion, friendlyError, SEVERITY_BADGE,
 } from "@/lib/labels";
 
 type Project = { id: string; name: string };
@@ -105,7 +105,7 @@ export default function DiagnosisListPage() {
                   const c = counts(diagnosis);
                   return (
                     <tr key={diagnosis.id} className="border-b border-slate-100 align-top">
-                      <td className="p-2">{report.suiteName} v{report.suiteVersion}</td>
+                      <td className="p-2">{report.suiteName} {formatVersion(report.suiteVersion)}</td>
                       <td className="p-2">{formatMetricSource(report.metricSource)}</td>
                       <td className="p-2 font-mono text-xs">{diagnosis.diagnosisVersion}</td>
                       <td className="p-2 whitespace-nowrap text-slate-600">{new Date(diagnosis.generatedAt).toLocaleString()}</td>

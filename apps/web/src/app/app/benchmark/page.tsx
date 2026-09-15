@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import {
-  EMPTY_TEXT, formatCategory, formatProjectStatus, formatRunType, formatStatus, friendlyError,
+  EMPTY_TEXT, formatCategory, formatProjectStatus, formatRunType, formatStatus, formatVersion, friendlyError,
 } from "@/lib/labels";
 import { EvidenceDialog } from "../monitor/evidence-dialog";
 
@@ -252,7 +252,7 @@ export default function BenchmarkPage() {
                 <div>
                   <label htmlFor="suite" className="mb-2 block text-sm font-medium">测试集（版本化）</label>
                   <select id="suite" value={suiteId} className="w-full rounded-lg border border-slate-300 p-2" onChange={event => setSuiteId(event.target.value)}>
-                    {suites.map(item => <option key={item.id} value={item.id}>{item.name} · v{item.version}（{formatProjectStatus(item.status)}）</option>)}
+                    {suites.map(item => <option key={item.id} value={item.id}>{item.name} · {formatVersion(item.version)}（{formatProjectStatus(item.status)}）</option>)}
                   </select>
                 </div>
               </div>
@@ -264,7 +264,7 @@ export default function BenchmarkPage() {
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold">{suite.name}</span>
-                    <span className={badge("bg-blue-100 text-blue-800", `版本 v${suite.version}`)}>版本 v{suite.version}</span>
+                    <span className={badge("bg-blue-100 text-blue-800", `版本 ${formatVersion(suite.version)}`)}>版本 {formatVersion(suite.version)}</span>
                     <span className={badge("bg-emerald-100 text-emerald-800", `测试问题 ${suite.queryCount}`)}>测试问题 {suite.queryCount}</span>
                     {suite.sanityQueryCount > 0 && <span className={badge("bg-slate-100 text-slate-600", `品牌控制 ${suite.sanityQueryCount}（不计主指标）`)}>品牌控制 {suite.sanityQueryCount}（不计主指标）</span>}
                     <span className={badge(suite.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600", suite.status)}>{formatProjectStatus(suite.status)}</span>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
-import { formatMetricSource, friendlyError } from "@/lib/labels";
+import { formatMetricSource, formatVersion, friendlyError } from "@/lib/labels";
 
 type Project = { id: string; name: string };
 type ReportRow = {
@@ -132,14 +132,14 @@ export default function ReportsComparePage() {
             <label className="text-sm text-slate-600">
               报告 A（Report A）
               <select value={aId} onChange={event => setAId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-slate-900">
-                {reports.map(row => <option key={row.id} value={row.id}>{row.suiteName} v{row.suiteVersion} · {new Date(row.generatedAt).toLocaleDateString("zh-CN")}</option>)}
+                {reports.map(row => <option key={row.id} value={row.id}>{row.suiteName} {formatVersion(row.suiteVersion)} · {new Date(row.generatedAt).toLocaleDateString("zh-CN")}</option>)}
               </select>
             </label>
             <div className="flex items-end"><span className="pb-2 text-lg text-slate-400">vs</span></div>
             <label className="text-sm text-slate-600">
               报告 B（Report B）
               <select value={bId} onChange={event => setBId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-slate-900">
-                {reports.map(row => <option key={row.id} value={row.id}>{row.suiteName} v{row.suiteVersion} · {new Date(row.generatedAt).toLocaleDateString("zh-CN")}</option>)}
+                {reports.map(row => <option key={row.id} value={row.id}>{row.suiteName} {formatVersion(row.suiteVersion)} · {new Date(row.generatedAt).toLocaleDateString("zh-CN")}</option>)}
               </select>
             </label>
           </div>

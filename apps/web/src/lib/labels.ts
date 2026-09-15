@@ -22,6 +22,26 @@ export const withRaw = (label: string, raw: string | null | undefined): string =
 const fallback = (label: string | null, raw: string | null | undefined): string =>
   label ?? (raw ? String(raw) : "未知");
 
+/** Contract version may already include one or more legacy `v` prefixes. */
+export const formatVersion = (value: string | null | undefined): string => {
+  const normalized = value?.trim().replace(/^v+/i, "") ?? "";
+  return `v${normalized || "—"}`;
+};
+
+const TOAST_CODE: Dict = {
+  DRAFT: "草稿",
+  ACTIVE: "已启用",
+  ARCHIVED: "已归档",
+  APPROVED: "已确认",
+  REJECTED: "已排除",
+  "mock/demo": "演示或模拟证据",
+  estimated: "估算证据",
+};
+
+/** Toasts never expose unknown backend enum/code values. */
+export const formatToastCode = (value: string | null | undefined, unknown = "操作已完成"): string =>
+  lookup(TOAST_CODE, value) ?? unknown;
+
 /* ------------------------------------------------------------------ */
 /* 运行状态 / 分析状态                                                   */
 /* ------------------------------------------------------------------ */
@@ -289,6 +309,13 @@ const ERROR_MAP: Array<[RegExp, string]> = [
 export function friendlyError(error: unknown): string {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   if (!raw) return "操作失败，请稍后重试。";
+  const code = raw.match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/)?.[0];
+  if (code === "NO_ENGINE_AVAILABLE") return "当前没有可用的 AI 引擎";
+  if (code === "REAL_PROVIDER_UNAVAILABLE") return "当前 Provider 暂不可用";
+  if (code || /^\s*[\[{]/.test(raw) || /\bat\s+\S+\s*\([^)]*:\d+:\d+\)/.test(raw)) {
+    if (typeof console !== "undefined") console.warn("[GeoLens] 原始错误信息：", raw);
+    return "操作失败，请稍后重试。";
+  }
   if (/[\u4e00-\u9fa5]/.test(raw)) return raw; // 后端已给中文
   for (const [pattern, text] of ERROR_MAP) {
     if (pattern.test(raw)) {

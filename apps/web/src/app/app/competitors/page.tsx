@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import {
   COMPETITOR_TYPE_OPTIONS, EMPTY_TEXT, formatCandidateStatus, formatCompetitorType,
-  formatMetricName, formatSetStatus, friendlyError,
+  formatMetricName, formatSetStatus, formatToastCode, formatVersion, friendlyError,
 } from "@/lib/labels";
 import { EvidenceDialog } from "../monitor/evidence-dialog";
 
@@ -126,7 +126,7 @@ export default function CompetitorsPage() {
     try {
       const result = await api<DiscoveryResult>(`/projects/${encodeURIComponent(projectId)}/competitor-discovery`, { method: "POST" });
       const excluded = Object.entries(result.eligibility.excludedEvidence)
-        .map(([key, value]) => `${key} ${value}`).join("；") || "无";
+        .map(([key, value]) => `${formatToastCode(key, "其他原因")} ${value}`).join("；") || "无";
       setNotice(
         `发现完成：可用真实证据 ${result.eligibility.realEvidenceEligible} 条（共 ${result.eligibility.totalSucceededEvidence} 条；排除 ${excluded}）· 新增候选 ${result.outcome.candidatesDiscovered} · 刷新 ${result.outcome.candidatesRefreshed}`,
       );
@@ -200,11 +200,11 @@ export default function CompetitorsPage() {
     if (!newSetName.trim() || !newSetVersion.trim()) return;
     setBusy(true); setError("");
     try {
-      await api(`/projects/${encodeURIComponent(projectId)}/competitor-sets`, {
+      const result = await api<CompetitorSet>(`/projects/${encodeURIComponent(projectId)}/competitor-sets`, {
         method: "POST",
         body: JSON.stringify({ name: newSetName.trim(), version: newSetVersion.trim() }),
       });
-      setNotice("竞品集合已创建为草稿（DRAFT，条目 = 当前已确认候选快照）。");
+      setNotice(`竞品集合已创建为${formatToastCode(result.status)}（条目 = 当前已确认候选快照）。`);
       await load(loadSeq.current);
     } catch (err) {
       setError(errorText(err));
@@ -217,7 +217,7 @@ export default function CompetitorsPage() {
     setBusy(true); setError("");
     try {
       const result = await api<CompetitorSet>(`/competitor-sets/${encodeURIComponent(set.id)}/activate`, { method: "POST" });
-      setNotice(`集合「${result.name} v${result.version}」已启用（激活即冻结；如需修改请创建新版本）。`);
+      setNotice(`集合「${result.name} ${formatVersion(result.version)}」已启用（激活即冻结；如需修改请创建新版本）。`);
       await load(loadSeq.current);
     } catch (err) {
       setError(errorText(err));
@@ -431,7 +431,7 @@ export default function CompetitorsPage() {
                   <div key={set.id} className="rounded-xl border border-slate-200 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{set.name}</span>
-                      <span className={badge("bg-blue-100 text-blue-800", `v${set.version}`)}>v{set.version}</span>
+                      <span className={badge("bg-blue-100 text-blue-800", formatVersion(set.version))}>{formatVersion(set.version)}</span>
                       <span className={badge(set.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : set.status === "DRAFT" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500", formatSetStatus(set.status))}>{formatSetStatus(set.status)}</span>
                       <span className="text-xs text-slate-500">{set.entryCount} 个条目{set.activatedAt ? ` · 启用时间 ${new Date(set.activatedAt).toLocaleString()}` : ""}</span>
                       <span className="flex-1" />
@@ -474,7 +474,7 @@ export default function CompetitorsPage() {
               {sov?.status === "ready" && sov.competitorSet && (
                 <div className="mt-2 space-y-3">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className={badge("bg-emerald-100 text-emerald-800", `竞品集合：${sov.competitorSet.name} v${sov.competitorSet.version}`)}>竞品集合 {sov.competitorSet.name} v{sov.competitorSet.version}</span>
+                    <span className={badge("bg-emerald-100 text-emerald-800", `竞品集合：${sov.competitorSet.name} ${formatVersion(sov.competitorSet.version)}`)}>竞品集合 {sov.competitorSet.name} {formatVersion(sov.competitorSet.version)}</span>
                     <span className={badge("bg-indigo-100 text-indigo-800", `分析版本 ${sov.analysisVersion}`)}>分析版本：{sov.analysisVersion}</span>
                     <span className={badge("bg-slate-100 text-slate-600", `真实证据 ${sov.pool?.eligibleEvidence ?? 0} 条`)}>真实证据 {sov.pool?.eligibleEvidence ?? 0} 条</span>
                   </div>
@@ -496,7 +496,7 @@ export default function CompetitorsPage() {
                       );
                     })}
                   </div>
-                  <p className="text-xs text-slate-500">竞品集合：{sov.competitorSet.name} v{sov.competitorSet.version}；分析版本：{sov.analysisVersion}。未启用 / 未重新分析前不出正式 AI 声量份额。</p>
+                  <p className="text-xs text-slate-500">竞品集合：{sov.competitorSet.name} {formatVersion(sov.competitorSet.version)}；分析版本：{sov.analysisVersion}。未启用 / 未重新分析前不出正式 AI 声量份额。</p>
                 </div>
               )}
               {!sov && <p className="text-sm text-slate-400">正在加载 AI 声量份额…</p>}

@@ -88,6 +88,7 @@ export type QueryListResponse = {
 
 export type QueryListFilters = {
   suiteId: string;
+  archived?: boolean;
   q?: string;
   status?: QueryStatusFilter | "";
   type?: QuerySemanticType | "";
@@ -149,7 +150,7 @@ export type RunPreflightResponse = {
   note: string | null;
 };
 
-function appendDefined(params: URLSearchParams, key: string, value: string | number | undefined): void {
+function appendDefined(params: URLSearchParams, key: string, value: string | number | boolean | undefined): void {
   if (value === undefined || value === "") return;
   params.set(key, String(value));
 }
@@ -169,6 +170,7 @@ export function buildActivityPath(filters: ActivityFilters): string {
 export function buildQueryListPath(projectId: string, filters: QueryListFilters): string {
   const params = new URLSearchParams();
   appendDefined(params, "suiteId", filters.suiteId);
+  appendDefined(params, "archived", filters.archived === true ? true : undefined);
   appendDefined(params, "q", filters.q?.trim());
   appendDefined(params, "status", filters.status);
   appendDefined(params, "type", filters.type);

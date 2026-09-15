@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { formatMetricSource, formatRunType, formatSourceType, friendlyError } from "@/lib/labels";
+import { formatMetricSource, formatRunType, formatSourceType, formatVersion, friendlyError } from "@/lib/labels";
 
 type Project = { id: string; name: string };
 type ReportRow = {
@@ -124,9 +124,9 @@ export default function ReportsPage() {
                   <tr key={report.id} className="border-b border-slate-100 align-top">
                     <td className="p-2">
                       <Link href={`/app/reports/${report.id}`} className="font-medium text-blue-700 hover:underline">
-                        {report.suiteName} v{report.suiteVersion}
+                        {report.suiteName} {formatVersion(report.suiteVersion)}
                       </Link>
-                      {report.competitorSet && <div className="text-xs text-slate-400">竞品集合 v{report.competitorSet.version}</div>}
+                      {report.competitorSet && <div className="text-xs text-slate-400">竞品集合 {formatVersion(report.competitorSet.version)}</div>}
                     </td>
                     <td className="p-2 whitespace-nowrap">{new Date(report.generatedAt).toLocaleString("zh-CN", { hour12: false })}</td>
                     <td className="p-2">{formatRunType(report.runType)} · {formatMetricSource(report.metricSource)}</td>

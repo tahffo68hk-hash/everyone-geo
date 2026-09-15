@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import {
-  formatQuerySource, formatQueryType, formatTargetCheck, friendlyError,
+  formatQuerySource, formatQueryType, formatTargetCheck, formatVersion, friendlyError,
   MANUAL_NAV, QUERY_WORKSPACE_NAV, TARGET_NAV, QUERY_INTENT_LABEL,
 } from "@/lib/labels";
 import {
@@ -65,6 +65,7 @@ function SuiteInner() {
   const [queryLoading, setQueryLoading] = useState(true);
   const [queryError, setQueryError] = useState("");
   const [queryRevision, setQueryRevision] = useState(0);
+  const [recycleBin, setRecycleBin] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -139,6 +140,7 @@ function SuiteInner() {
     setQueryError("");
     listQueries(suiteProjectId, {
       suiteId: id,
+      archived: recycleBin,
       q: searchApplied,
       status: statusFilter,
       type: typeFilter,
@@ -163,7 +165,7 @@ function SuiteInner() {
         if (!controller.signal.aborted) setQueryLoading(false);
       });
     return () => controller.abort();
-  }, [suiteProjectId, id, searchApplied, statusFilter, typeFilter, checkFilter, sort, order, page, queryRevision]);
+  }, [suiteProjectId, id, recycleBin, searchApplied, statusFilter, typeFilter, checkFilter, sort, order, page, queryRevision]);
 
   async function applyBatch(operation: BatchOperation, targetSuiteId?: string) {
     if (!suiteProjectId || selectedIds.size === 0) return;
@@ -276,7 +278,7 @@ function SuiteInner() {
     setBusy(true); setError("");
     try {
       const r = await api<{ clonedId: string }>(`/benchmark-suites/${id}/clone`, { method: "POST", body: JSON.stringify({ version: version.trim() }) });
-      setNotice(`已复制为 v${version}（原问题集不变）。`);
+      setNotice(`已复制为 ${formatVersion(version)}（原问题集不变）。`);
       window.location.href = `/app/queries/${r.clonedId}`;
     } catch (e) { setError(friendlyError(e)); }
     finally { setBusy(false); }
@@ -324,7 +326,7 @@ function SuiteInner() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href={`/app/queries?project=${suiteProjectId}`} className="text-xs text-teal-700 hover:underline">← 返回问题集</Link>
-          <h1 className="mt-1 text-xl font-semibold text-slate-800">{suite?.name} <span className="text-slate-400">v{suite?.version}</span></h1>
+          <h1 className="mt-1 text-xl font-semibold text-slate-800">{suite?.name} <span className="text-slate-400">{formatVersion(suite?.version)}</span></h1>
           {suite && (
             <p className="mt-1 text-xs text-slate-500">
               {suite.queryCount} 个可用问题 · 自然发现 {suite.discoveryCount} · 品牌认知测试 {suite.sanityQueryCount} · 自定义 {suite.customCount}
@@ -333,6 +335,9 @@ function SuiteInner() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => { setRecycleBin(value => !value); setSelectedIds(new Set()); setPage(1); }} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+            {recycleBin ? "返回当前问题" : "回收站"}
+          </button>
           <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => { setManualProduct("qwen-web"); setManualRunType("real"); setManualDisplayedModel(""); setManualOpen(true); }} className="rounded-lg border border-teal-600 bg-white px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-40" title={MANUAL_NAV.entryHint}>
             {MANUAL_NAV.entry}
           </button>
@@ -345,6 +350,7 @@ function SuiteInner() {
       {!target?.canonicalName && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">请先在「{TARGET_NAV.title}」页设置监测对象，才能开始检测。</p>}
       {error && <div role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">重新加载问题集</button></div>}
       {notice && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
+      {recycleBin && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">回收站仅包含已归档问题。归档是软删除，历史 Run、Report 和 Evidence 保持不变。</p>}
 
       <section aria-label="问题列表" className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4">
@@ -363,13 +369,19 @@ function SuiteInner() {
         </div>
         {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b border-teal-100 bg-teal-50 px-4 py-3 text-sm">
           <span className="font-medium text-teal-900">已选 {selectedIds.size} 条</span>
-          <button type="button" className="ui-button" disabled={busy} onClick={() => void applyBatch("enable")}>批量启用</button>
-          <button type="button" className="ui-button" disabled={busy} onClick={() => void applyBatch("disable")}>批量停用</button>
-          <button type="button" className="ui-button" disabled={busy} onClick={() => setArchiveOpen(true)}>归档</button>
-          <button type="button" className="ui-button" disabled={busy} onClick={() => void openMoveDialog()}>移动到其他问题集</button>
+          {recycleBin ? (
+            <button type="button" className="ui-button" disabled title="后端暂未提供恢复接口">恢复（后端待接入）</button>
+          ) : (
+            <>
+              <button type="button" className="ui-button" disabled={busy} onClick={() => void applyBatch("enable")}>批量启用</button>
+              <button type="button" className="ui-button" disabled={busy} onClick={() => void applyBatch("disable")}>批量停用</button>
+              <button type="button" className="ui-button" disabled={busy} onClick={() => setArchiveOpen(true)}>归档</button>
+              <button type="button" className="ui-button" disabled={busy} onClick={() => void openMoveDialog()}>移动到其他问题集</button>
+            </>
+          )}
           <button type="button" className="ml-auto text-teal-700 underline" onClick={() => setSelectedIds(new Set())}>清空选择</button>
         </div>}
-        {queryError ? <div className="p-4"><ErrorState title="问题列表加载失败" error={queryError} retry={() => setQueryRevision(value => value + 1)} /></div> : queryLoading ? <div className="p-4"><LoadingSkeleton rows={6} /></div> : <div className="overflow-x-auto">
+        {queryError ? <div className="p-4"><ErrorState title="问题列表加载失败" error={queryError} retry={() => setQueryRevision(value => value + 1)} /></div> : queryLoading ? <div className="p-4"><LoadingSkeleton rows={6} /></div> : queryItems.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">{recycleBin ? "回收站暂无已归档问题。" : "当前筛选条件下暂无问题。"}</p> : <div className="overflow-x-auto">
           <table className="w-full min-w-[780px] text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500"><tr>
               <th scope="col" className="w-12 px-4 py-3"><input type="checkbox" aria-label="选择当前页全部问题" checked={allPageSelected} onChange={event => setSelectedIds(current => togglePageSelection(current, pageIds, event.target.checked))} /></th>
@@ -478,7 +490,7 @@ function SuiteInner() {
             <p className="mt-1 text-xs text-slate-500">只显示当前项目下的其他问题集。</p>
             {moveLoading ? <div className="mt-4"><LoadingSkeleton rows={3} /></div> : moveError ? <div className="mt-4"><ErrorState title="问题集加载失败" error={moveError} retry={() => void openMoveDialog()} /></div> : moveSuites.length === 0 ? <p className="mt-4 rounded-lg bg-slate-50 px-3 py-4 text-sm text-slate-600">当前项目没有其他可移动的问题集。</p> : <label className="mt-4 block text-sm text-slate-700">目标问题集
               <select value={moveSuiteId} onChange={event => setMoveSuiteId(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2" aria-label="目标问题集">
-                {moveSuites.map(option => <option key={option.id} value={option.id}>{option.name} v{option.version}</option>)}
+                {moveSuites.map(option => <option key={option.id} value={option.id}>{option.name} {formatVersion(option.version)}</option>)}
               </select>
             </label>}
             <div className="mt-5 flex justify-end gap-2">
@@ -496,7 +508,7 @@ function SuiteInner() {
             <h2 className="text-lg font-semibold">{QUERY_WORKSPACE_NAV.runPreflight}</h2>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-slate-500">监测对象</dt><dd className="font-medium">{target?.canonicalName ?? "—"}</dd></div>
-              <div className="flex justify-between"><dt className="text-slate-500">问题集</dt><dd className="font-medium">{suite.name} v{suite.version}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">问题集</dt><dd className="font-medium">{suite.name} {formatVersion(suite.version)}</dd></div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-slate-500">AI 模型</dt>
                 <select value={engineId} onChange={e => setEngineId(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" aria-label="AI 模型">
@@ -539,7 +551,7 @@ function SuiteInner() {
             <p className="mt-1 text-xs text-slate-500">{MANUAL_NAV.entryHint}</p>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-slate-500">监测对象</dt><dd className="font-medium">{target?.canonicalName ?? "—"}</dd></div>
-              <div className="flex justify-between"><dt className="text-slate-500">问题集</dt><dd className="font-medium">{suite.name} v{suite.version}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">问题集</dt><dd className="font-medium">{suite.name} {formatVersion(suite.version)}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">自然发现 / 品牌认知</dt><dd className="font-medium">{suite.discoveryCount} / {suite.sanityQueryCount}</dd></div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-slate-500">{MANUAL_NAV.product}</dt>

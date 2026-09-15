@@ -12,6 +12,7 @@ import {
   getPreflightBlockedReason,
   togglePageSelection,
 } from "../src/lib/r2-api.ts";
+import * as labels from "../src/lib/labels.ts";
 
 test("Activity 查询只发送已应用的 R2 筛选条件", () => {
   assert.equal(
@@ -197,4 +198,37 @@ test("Query 列表查询在集中适配层发送 suite 与服务端分页条件"
     }),
     "/projects/project%2F1/queries?suiteId=suite-1&q=AI+%E5%B7%A5%E5%85%B7&status=enabled&type=DISCOVERY&contamination=CLEAN&sort=queryText&order=desc&page=3&pageSize=20",
   );
+});
+
+test("Query 回收站查询只请求 archived 数据", () => {
+  assert.equal(
+    buildQueryListPath("project/1", {
+      suiteId: "suite-1",
+      archived: true,
+      page: 1,
+      pageSize: 20,
+    }),
+    "/projects/project%2F1/queries?suiteId=suite-1&archived=true&page=1&pageSize=20",
+  );
+});
+
+test("共享版本格式化不会产生 vv 前缀", () => {
+  assert.equal(typeof labels.formatVersion, "function");
+  assert.equal(labels.formatVersion("1.0"), "v1.0");
+  assert.equal(labels.formatVersion("v1.0"), "v1.0");
+  assert.equal(labels.formatVersion("vv1.0"), "v1.0");
+});
+
+test("Toast enum/code 映射为安全中文且未知值不透传", () => {
+  assert.equal(typeof labels.formatToastCode, "function");
+  assert.equal(labels.formatToastCode("DRAFT"), "草稿");
+  assert.equal(labels.formatToastCode("mock/demo"), "演示或模拟证据");
+  assert.equal(labels.formatToastCode("SOME_INTERNAL_CODE"), "操作已完成");
+  const originalWarn = console.warn;
+  console.warn = () => undefined;
+  try {
+    assert.equal(labels.friendlyError("操作失败：SOME_INTERNAL_CODE"), "操作失败，请稍后重试。");
+  } finally {
+    console.warn = originalWarn;
+  }
 });

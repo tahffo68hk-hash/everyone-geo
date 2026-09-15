@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
   DIAGNOSIS_NAV, formatFindingType, formatMetricName, formatMetricSource,
-  formatSeverity, friendlyError, RECOMMENDATION_NAV, SEVERITY_BADGE, withRaw,
+  formatSeverity, formatVersion, friendlyError, RECOMMENDATION_NAV, SEVERITY_BADGE, withRaw,
 } from "@/lib/labels";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
 
@@ -125,7 +125,7 @@ export default function DiagnosisDetailPage() {
                 ["请求模型", report.requestedModel ?? "历史记录未保存"],
                 ["响应模型", report.responseModel ?? "未知"],
                 ["分析版本", report.analysisVersion],
-                ["竞品集合", report.competitorSet ? `${report.competitorSet.name} v${report.competitorSet.version}` : "未绑定"],
+                ["竞品集合", report.competitorSet ? `${report.competitorSet.name} ${formatVersion(report.competitorSet.version)}` : "未绑定"],
                 ["诊断版本", run.diagnosisVersion],
                 ["生成时间", new Date(run.generatedAt).toLocaleString()],
                 ["报告状态", report.completion.partial ? "部分完成（PARTIAL）" : "完整"],

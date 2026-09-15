@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { formatMetricSource, friendlyError } from "@/lib/labels";
+import { formatMetricSource, formatVersion, friendlyError } from "@/lib/labels";
 
 type Project = { id: string; name: string };
 type ReportRow = { id: string; suiteName: string; suiteVersion: string; metricSource: string };
@@ -94,7 +94,7 @@ export default function RecommendationsListPage() {
                 <div key={run.id} className="rounded-2xl border border-slate-200 bg-white p-5">
                   <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/app/recommendations/${run.id}`} className="text-base font-semibold text-blue-700 hover:underline">
-                      {report.suiteName} v{report.suiteVersion} · 优化建议
+                      {report.suiteName} {formatVersion(report.suiteVersion)} · 优化建议
                     </Link>
                     <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600">{run.recommendationVersion}</span>
                     <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{formatMetricSource(report.metricSource)}</span>

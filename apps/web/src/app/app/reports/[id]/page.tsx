@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
 import {
-  formatCategory, formatMetricSource, formatRunType, formatStatus, friendlyError,
+  formatCategory, formatMetricSource, formatRunType, formatStatus, formatVersion, friendlyError,
 } from "@/lib/labels";
 
 type Report = {
@@ -108,7 +108,7 @@ export default function ReportDetailPage() {
         {/* 报告头 */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-lg font-semibold">{report.suiteName} v{report.suiteVersion}</span>
+            <span className="text-lg font-semibold">{report.suiteName} {formatVersion(report.suiteVersion)}</span>
             <span className={badge(report.metricSource === "demo" ? "bg-amber-100 text-amber-800" : report.metricSource === "real" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800")}>{formatMetricSource(report.metricSource)}</span>
             <span className={badge(report.runType === "DEMO" ? "bg-slate-100 text-slate-600" : "bg-blue-100 text-blue-800")}>{formatRunType(report.runType)}</span>
           </div>
@@ -168,7 +168,7 @@ export default function ReportDetailPage() {
         {competitor?.status === "ready" && (
           <section className="rounded-2xl border border-slate-200 bg-white p-6">
             <h2 className="text-lg font-semibold">竞品表现（AI 声量份额 · Share of Voice）</h2>
-            <p className="mt-1 text-xs text-slate-500">竞品集合：{competitor.competitorSet.name} v{competitor.competitorSet.version}</p>
+            <p className="mt-1 text-xs text-slate-500">竞品集合：{competitor.competitorSet.name} {formatVersion(competitor.competitorSet.version)}</p>
             <div className="mt-3 space-y-2">
               {competitor.competitors.map(item => (
                 <div key={item.canonicalName} className="flex items-center gap-3 text-sm">
@@ -237,7 +237,7 @@ export default function ReportDetailPage() {
               ["请求模型（requestedModel）", report.requestedModel ?? "历史记录未保存"],
               ["响应模型（responseModel）", report.responseModel ?? "未知"],
               ["分析版本", report.analysisVersion],
-              ["竞品集合", report.competitorSet ? `${report.competitorSet.name} v${report.competitorSet.version}` : "—（m4-rule-v1 无竞对集）"],
+              ["竞品集合", report.competitorSet ? `${report.competitorSet.name} ${formatVersion(report.competitorSet.version)}` : "—（m4-rule-v1 无竞对集）"],
               ["数据类型", `${formatRunType(report.runType)} · ${formatMetricSource(report.metricSource)}`],
               ["报告生成时间", new Date(report.generatedAt).toLocaleString("zh-CN", { hour12: false })],
               ["指标版本", snap.metricVersion],
