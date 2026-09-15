@@ -280,7 +280,7 @@ export default function CompetitorsPage() {
                   </button>
                 </div>
               </div>
-              {project && <p className="mt-3 text-xs text-slate-500">{project.name}：mock / demo / estimated 证据一律排除；24 条 M6A 演示基准证据不会进入输入。</p>}
+              {project && <p className="mt-3 text-xs text-slate-500">{project.name}：mock / demo / estimated 证据一律排除；当前可用真实证据 {sov?.pool?.eligibleEvidence ?? 0} 条会进入输入。</p>}
             </section>
 
             {/* Candidates */}

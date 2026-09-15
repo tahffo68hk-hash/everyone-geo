@@ -285,7 +285,7 @@ export default function BenchmarkPage() {
             {suite && (
               <section aria-labelledby="queries-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
                 <h2 id="queries-heading" className="mb-1 text-lg font-semibold">测试问题清单</h2>
-                <p className="mb-3 text-xs text-slate-500">主指标只统计启用且非品牌控制的 24 条；每条运行后可在下方结果中点击查看原始证据。</p>
+                <p className="mb-3 text-xs text-slate-500">主指标只统计启用且非品牌控制的问题（当前 {suite.queryCount - suite.sanityQueryCount} 条）；每条运行后可在下方结果中点击查看原始证据。</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <caption className="sr-only">按场景分类的测试问题</caption>

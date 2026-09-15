@@ -224,11 +224,13 @@ export default function OpportunityDetailPage() {
                 <div className="mt-4 flex gap-2">
                   <button type="button" disabled={operating} onClick={() => void setStatus("APPROVED")} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800 disabled:opacity-50">标记为已规划</button>
                   <button type="button" disabled={operating} onClick={() => void setStatus("DISMISSED")} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50">忽略该机会</button>
+                  <Link href={`/app/content/new?opportunity=${encodeURIComponent(opp.id)}`} className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50">创建内容草稿</Link>
                 </div>
               )}
               {opp.status === "APPROVED" && (
                 <div className="mt-4 flex gap-2">
                   <button type="button" disabled={operating} onClick={() => void setStatus("PROPOSED")} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50">撤回为待评估</button>
+                  <Link href={`/app/content/new?opportunity=${encodeURIComponent(opp.id)}`} className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800">创建内容草稿</Link>
                 </div>
               )}
             </section>

@@ -23,7 +23,7 @@ async function resourceProject(section: string, id: string, signal: AbortSignal)
     const run = await read<{ suite: { id: string; name: string } }>(`/benchmark-runs/${id}`);
     return { ...await read<{ projectId: string }>(`/benchmark-suites/${run.suite.id}`), name: run.suite.name };
   }
-  const paths: Record<string, string> = { diagnosis: "diagnoses", recommendations: "recommendation-runs", opportunities: "content-opportunities", experiments: "experiments", "site-assets": "site-assets", "change-plans": "change-plans" };
+  const paths: Record<string, string> = { diagnosis: "diagnoses", recommendations: "recommendation-runs", opportunities: "content-opportunities", content: "content-drafts", experiments: "experiments", "site-assets": "site-assets", "change-plans": "change-plans" };
   const resource = await read<{ projectId?: string; title?: string; name?: string; project?: { id: string }; site?: { projectId: string } }>(`/${paths[section]}/${id}`);
   const projectId = resource.projectId ?? resource.project?.id ?? resource.site?.projectId;
   if (!projectId) throw new Error("无法确认该资源所属项目");

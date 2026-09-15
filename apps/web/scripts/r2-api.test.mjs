@@ -13,6 +13,18 @@ import {
   togglePageSelection,
 } from "../src/lib/r2-api.ts";
 import * as labels from "../src/lib/labels.ts";
+import * as contentApi from "../src/lib/content-contract.ts";
+
+test("Content API 集中适配器构造真实生命周期请求", () => {
+  assert.deepEqual(contentApi.contentDraftRequest("project/1", "draft/1", "update", { title: "新标题" }), {
+    path: "/content-drafts/draft%2F1",
+    init: { method: "PATCH", body: JSON.stringify({ title: "新标题" }) },
+  });
+  assert.deepEqual(contentApi.contentApprovalRequest("draft-1", "APPROVED", "通过"), {
+    path: "/content-drafts/draft-1/decide",
+    init: { method: "POST", body: JSON.stringify({ decision: "APPROVED", comment: "通过" }) },
+  });
+});
 
 test("Activity 查询只发送已应用的 R2 筛选条件", () => {
   assert.equal(
