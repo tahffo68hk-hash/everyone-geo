@@ -9,12 +9,13 @@ export async function api<T = unknown>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  const headers = init?.body instanceof FormData ? { ...(init?.headers ?? {}) } : {
+    "Content-Type": "application/json",
+    ...(init?.headers ?? {}),
+  };
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
     ...init,
   });
 
