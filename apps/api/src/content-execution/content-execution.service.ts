@@ -6,13 +6,19 @@ import type { Prisma } from "@geo/database";
 import { PrismaService } from "../prisma.service";
 import { TenantService } from "../common/tenant.service";
 import {
+  ApplyVariantToRevisionDto,
   ASSET_TYPES, AuthorizeChannelDto, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
-  ListAssetsDto, ListDraftsDto, ListPublicationsDto, UpdateDraftDto, ValidatePublicationDto,
+  GenerateImageBriefDto, GeneratePlatformVariantDto, ListAssetsDto, ListDraftsDto, ListPublicationsDto,
+  RewriteVariantDto, UpdateDraftDto, ValidatePublicationDto,
 } from "./dto/content-execution.dto";
 import {
   createPublicationQueue, defaultConnectorRegistry, defaultCredentialVault, defaultOAuthStateSecurity,
   enqueuePublication, executePublication, generateManualPublishingPackage, PublicationRouter,
+  generatePlatformVariant as generatePlatformVariantHelper,
+  rewriteContent as rewriteContentHelper,
+  extractSafeFactCheckNotes,
   type ChannelCapabilityDescriptor, type PublicationQueue,
+  type CnPlatform, type ImageBrief,
 } from "@geo/queue";
 import { DevLocalStorageAdapter } from "./storage/local-storage.adapter";
 
@@ -1005,6 +1011,318 @@ export class ContentExecutionService implements OnModuleDestroy {
         durationMs: a.durationMs,
         createdAt: a.createdAt,
       })),
+    };
+  }
+
+  // ---------------------------------------------------------------
+  // 平台内容生成增强（Platform Variants & Image Briefs）
+  // ---------------------------------------------------------------
+
+  async generatePlatformVariant(userId: string, draftId: string, dto: GeneratePlatformVariantDto) {
+    const draft = await this.requireDraft(userId, draftId);
+    let targetRev = null;
+    if (dto.sourceRevisionId) {
+      targetRev = await this.db.client.contentRevision.findFirst({
+        where: { id: dto.sourceRevisionId, draftId },
+      });
+      if (!targetRev) throw new NotFoundException("指定来源版本不存在");
+    } else {
+      targetRev = await this.latestRevision(draftId);
+      if (!targetRev) throw new BadRequestException("草稿无版本内容");
+    }
+
+    // 解析纯文本或结构体
+    let plainBody = targetRev.body;
+    try {
+      const parsed = JSON.parse(targetRev.body);
+      if (parsed.body) plainBody = parsed.body;
+    } catch {
+      // raw
+    }
+
+    const generated = generatePlatformVariantHelper({
+      platform: dto.platform as CnPlatform,
+      draftId,
+      sourceRevisionId: targetRev.id,
+      title: draft.title,
+      body: plainBody,
+      summary: targetRev.summary ?? undefined,
+      topic: draft.topic ?? undefined,
+      generationMode: dto.generationMode as any,
+      styleTone: dto.styleTone,
+      customInstructions: dto.customInstructions,
+    });
+
+    const variantId = randomUUID();
+    await this.db.client.$executeRawUnsafe(
+      `INSERT INTO platform_content_variants (
+        id, organization_id, project_id, draft_id, source_revision_id,
+        platform, content_type, generation_mode, title, summary, body,
+        tags, cover_text, image_briefs, platform_metadata, status, created_by_id, created_at, updated_at
+      ) VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
+        $6, $7, $8, $9, $10, $11,
+        $12::jsonb, $13, $14::jsonb, $15::jsonb, $16, $17::uuid, NOW(), NOW()
+      )`,
+      variantId,
+      draft.organizationId,
+      draft.projectId,
+      draft.id,
+      targetRev.id,
+      generated.platform,
+      generated.contentType,
+      generated.generationMode,
+      generated.title,
+      generated.summary,
+      generated.body,
+      JSON.stringify(generated.tags),
+      generated.coverText,
+      JSON.stringify(generated.imageBriefs),
+      JSON.stringify(generated.platformMetadata),
+      "GENERATED",
+      userId,
+    );
+
+    // 将图片 brief 记录到 content_image_briefs
+    if (generated.imageBriefs && generated.imageBriefs.length > 0) {
+      for (const brief of generated.imageBriefs) {
+        await this.db.client.$executeRawUnsafe(
+          `INSERT INTO content_image_briefs (
+            id, organization_id, project_id, draft_id, variant_id,
+            platform, asset_type, title, prompt, negative_prompt, style, ratio, text_overlay, notes, safe_fact_check, created_by_id, created_at, updated_at
+          ) VALUES (
+            $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
+            $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16::uuid, NOW(), NOW()
+          )`,
+          randomUUID(),
+          draft.organizationId,
+          draft.projectId,
+          draft.id,
+          variantId,
+          brief.platform,
+          brief.assetType,
+          brief.title,
+          brief.prompt,
+          brief.negativePrompt,
+          brief.style,
+          brief.ratio,
+          JSON.stringify(brief.textOverlay ?? {}),
+          brief.notes,
+          brief.safeFactCheck,
+          userId,
+        );
+      }
+    }
+
+    await this.audit(
+      draft.organizationId,
+      userId,
+      "DRAFT_UPDATED",
+      `generate_variant:${dto.platform} rev=v${targetRev.version}`,
+      { projectId: draft.projectId, draftId: draft.id },
+    );
+    await this.usage(draft.organizationId, userId, "CONTENT_GENERATION", draft.projectId, "none");
+
+    return this.getPlatformVariant(userId, draftId, variantId);
+  }
+
+  async listPlatformVariants(userId: string, draftId: string) {
+    await this.requireDraft(userId, draftId);
+    const rows = await this.db.client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM platform_content_variants WHERE draft_id = $1::uuid ORDER BY created_at DESC`,
+      draftId,
+    );
+    return rows.map((r) => this.mapVariantRow(r));
+  }
+
+  async getPlatformVariant(userId: string, draftId: string, variantId: string) {
+    await this.requireDraft(userId, draftId);
+    const rows = await this.db.client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM platform_content_variants WHERE draft_id = $1::uuid AND id = $2::uuid`,
+      draftId,
+      variantId,
+    );
+    if (!rows.length) throw new NotFoundException("平台变体不存在");
+    return this.mapVariantRow(rows[0]);
+  }
+
+  async rewritePlatformVariant(userId: string, draftId: string, variantId: string, dto: RewriteVariantDto) {
+    const draft = await this.requireDraft(userId, draftId);
+    const orig = await this.getPlatformVariant(userId, draftId, variantId);
+
+    const rewritten = rewriteContentHelper({
+      platform: orig.platform as CnPlatform,
+      mode: dto.mode as any,
+      currentTitle: orig.title,
+      currentBody: orig.body,
+      currentSummary: orig.summary ?? undefined,
+      currentTags: orig.tags,
+      customInstructions: dto.customInstructions,
+    });
+
+    const newVariantId = randomUUID();
+    const updatedMetadata = {
+      ...(orig.platformMetadata || {}),
+      parentVariantId: orig.id,
+      rewriteMode: dto.mode,
+      changeNote: rewritten.changeNote,
+    };
+
+    await this.db.client.$executeRawUnsafe(
+      `INSERT INTO platform_content_variants (
+        id, organization_id, project_id, draft_id, source_revision_id,
+        platform, content_type, generation_mode, title, summary, body,
+        tags, cover_text, image_briefs, platform_metadata, status, created_by_id, created_at, updated_at
+      ) VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
+        $6, $7, $8, $9, $10, $11,
+        $12::jsonb, $13, $14::jsonb, $15::jsonb, $16, $17::uuid, NOW(), NOW()
+      )`,
+      newVariantId,
+      draft.organizationId,
+      draft.projectId,
+      draft.id,
+      orig.sourceRevisionId,
+      orig.platform,
+      orig.contentType,
+      dto.mode,
+      rewritten.title,
+      rewritten.summary ?? orig.summary,
+      rewritten.body,
+      JSON.stringify(orig.tags),
+      orig.coverText,
+      JSON.stringify(orig.imageBriefs),
+      JSON.stringify(updatedMetadata),
+      "ADAPTED",
+      userId,
+    );
+
+    await this.audit(
+      draft.organizationId,
+      userId,
+      "DRAFT_UPDATED",
+      `rewrite_variant:${orig.platform} mode=${dto.mode}`,
+      { projectId: draft.projectId, draftId: draft.id },
+    );
+    await this.usage(draft.organizationId, userId, "CONTENT_GENERATION", draft.projectId, "none");
+
+    return this.getPlatformVariant(userId, draftId, newVariantId);
+  }
+
+  async applyVariantToDraftRevision(userId: string, draftId: string, variantId: string, dto: ApplyVariantToRevisionDto) {
+    await this.requireDraft(userId, draftId);
+    const variant = await this.getPlatformVariant(userId, draftId, variantId);
+
+    const changeNote = dto.changeNote || `应用平台变体：[${variant.platform}] ${variant.title}`;
+    const updatedDraft = await this.updateDraft(userId, draftId, {
+      title: variant.title,
+      body: variant.body,
+      summary: variant.summary ?? undefined,
+      changeNote,
+      generationMode: "AI_GENERATED",
+    });
+
+    return {
+      draft: updatedDraft,
+      appliedVariantId: variantId,
+    };
+  }
+
+  async generateImageBriefs(userId: string, draftId: string, dto: GenerateImageBriefDto) {
+    const draft = await this.requireDraft(userId, draftId);
+    const latest = await this.latestRevision(draftId);
+    const platform = (dto.platform || "WECHAT_OFFICIAL_ACCOUNT") as CnPlatform;
+
+    const variant = generatePlatformVariantHelper({
+      platform,
+      draftId,
+      sourceRevisionId: latest?.id || draftId,
+      title: draft.title,
+      body: latest?.body || draft.title,
+      summary: latest?.summary ?? undefined,
+      topic: draft.topic ?? undefined,
+      styleTone: dto.preferredStyle as any,
+    });
+
+    const briefs = variant.imageBriefs || [];
+    for (const brief of briefs) {
+      await this.db.client.$executeRawUnsafe(
+        `INSERT INTO content_image_briefs (
+          id, organization_id, project_id, draft_id, variant_id,
+          platform, asset_type, title, prompt, negative_prompt, style, ratio, text_overlay, notes, safe_fact_check, created_by_id, created_at, updated_at
+        ) VALUES (
+          $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
+          $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16::uuid, NOW(), NOW()
+        )`,
+        randomUUID(),
+        draft.organizationId,
+        draft.projectId,
+        draft.id,
+        dto.variantId ?? null,
+        brief.platform,
+        brief.assetType,
+        brief.title,
+        brief.prompt,
+        brief.negativePrompt,
+        dto.preferredStyle || brief.style,
+        brief.ratio,
+        JSON.stringify(brief.textOverlay ?? {}),
+        brief.notes,
+        brief.safeFactCheck,
+        userId,
+      );
+    }
+
+    return this.listImageBriefs(userId, draftId);
+  }
+
+  async listImageBriefs(userId: string, draftId: string) {
+    await this.requireDraft(userId, draftId);
+    const rows = await this.db.client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM content_image_briefs WHERE draft_id = $1::uuid ORDER BY created_at DESC`,
+      draftId,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      organizationId: r.organization_id,
+      projectId: r.project_id,
+      draftId: r.draft_id,
+      variantId: r.variant_id,
+      platform: r.platform,
+      assetType: r.asset_type,
+      title: r.title,
+      prompt: r.prompt,
+      negativePrompt: r.negative_prompt,
+      style: r.style,
+      ratio: r.ratio,
+      textOverlay: typeof r.text_overlay === 'string' ? JSON.parse(r.text_overlay) : r.text_overlay,
+      notes: r.notes,
+      safeFactCheck: r.safe_fact_check,
+      createdAt: r.created_at,
+    }));
+  }
+
+  private mapVariantRow(r: any) {
+    return {
+      id: r.id,
+      organizationId: r.organization_id,
+      projectId: r.project_id,
+      draftId: r.draft_id,
+      sourceRevisionId: r.source_revision_id,
+      platform: r.platform,
+      contentType: r.content_type,
+      generationMode: r.generation_mode,
+      title: r.title,
+      summary: r.summary,
+      body: r.body,
+      tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags || [],
+      coverText: r.cover_text,
+      imageBriefs: typeof r.image_briefs === 'string' ? JSON.parse(r.image_briefs) : r.image_briefs || [],
+      platformMetadata: typeof r.platform_metadata === 'string' ? JSON.parse(r.platform_metadata) : r.platform_metadata || {},
+      status: r.status,
+      createdById: r.created_by_id,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
     };
   }
 }

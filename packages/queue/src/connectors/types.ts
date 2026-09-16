@@ -101,6 +101,7 @@ export interface PublishResult {
   errorCode?: string;
   durationMs: number;
   rawResponse?: Record<string, unknown>;
+  targetStatus?: 'draft' | 'publish' | 'future';
 }
 
 export interface ConnectionValidationResult {

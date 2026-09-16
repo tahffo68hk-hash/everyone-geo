@@ -139,7 +139,7 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
 
   async validateConnection(credential: StoredCredential): Promise<ConnectionValidationResult> {
     const appId = credential.apiKey || credential.username;
-    const appSecret = credential.password || credential.extra?.appSecret;
+    const appSecret = credential.password || ((credential.extra as any)?.appSecret as string | undefined);
     if (!appId || !appSecret) {
       return { valid: false, errorMessage: '缺少微信公众号 AppID 或 AppSecret' };
     }
@@ -163,7 +163,7 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
     const start = Date.now();
     try {
       const appId = credential.apiKey || credential.username;
-      const appSecret = credential.password || credential.extra?.appSecret;
+      const appSecret = credential.password || ((credential.extra as any)?.appSecret as string | undefined);
       const { token, error, code } = await getWechatAccessToken(appId, appSecret, credential.accessToken);
       if (!token) {
         return {
@@ -197,7 +197,7 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
           </svg>`;
           const jpegBuf = await sharp(Buffer.from(svgBanner)).jpeg({ quality: 90 }).toBuffer();
           const formData = new FormData();
-          formData.append('media', new Blob([jpegBuf], { type: 'image/jpeg' }), 'pawclean_cover.jpg');
+          formData.append('media', new Blob([jpegBuf as any], { type: 'image/jpeg' }), 'pawclean_cover.jpg');
 
           const uploadRes = await fetch(`https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=${accessToken}&type=image`, {
             method: 'POST',
@@ -293,7 +293,7 @@ export class WeChatOfficialAccountConnector extends BaseConnector {
   async deletePublication(externalId: string, credential: StoredCredential): Promise<DeleteResult> {
     try {
       const appId = credential.apiKey || credential.username;
-      const appSecret = credential.password || credential.extra?.appSecret;
+      const appSecret = credential.password || ((credential.extra as any)?.appSecret as string | undefined);
       const { token } = await getWechatAccessToken(appId, appSecret, credential.accessToken);
       const accessToken = token || credential.accessToken || 'mock_wx_token';
       const res = await fetch(`https://api.weixin.qq.com/cgi-bin/draft/delete?access_token=${accessToken}`, {

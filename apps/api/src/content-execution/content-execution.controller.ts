@@ -7,8 +7,9 @@ import { AuthGuard, JwtUserPayload } from "../common/auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ContentExecutionService, type UploadedBuffer } from "./content-execution.service";
 import {
-  AuthorizeChannelDto, CallbackQueryDto, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
-  ListAssetsDto, ListDraftsDto, ListPublicationsDto, UpdateDraftDto, ValidatePublicationDto,
+  ApplyVariantToRevisionDto, AuthorizeChannelDto, CallbackQueryDto, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
+  GenerateImageBriefDto, GeneratePlatformVariantDto, ListAssetsDto, ListDraftsDto, ListPublicationsDto,
+  RewriteVariantDto, UpdateDraftDto, ValidatePublicationDto,
 } from "./dto/content-execution.dto";
 
 /**
@@ -75,6 +76,68 @@ export class ContentExecutionController {
     @Param("revisionId", ParseUUIDPipe) revisionId: string,
   ) {
     return this.content.getRevision(u.sub, id, revisionId);
+  }
+
+  // ---- 平台版本生成与图片 Brief ----
+  @Post("content-drafts/:id/variants")
+  @HttpCode(201)
+  generatePlatformVariant(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: GeneratePlatformVariantDto,
+  ) {
+    return this.content.generatePlatformVariant(u.sub, id, dto);
+  }
+
+  @Get("content-drafts/:id/variants")
+  listPlatformVariants(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.content.listPlatformVariants(u.sub, id);
+  }
+
+  @Get("content-drafts/:id/variants/:variantId")
+  getPlatformVariant(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("variantId", ParseUUIDPipe) variantId: string,
+  ) {
+    return this.content.getPlatformVariant(u.sub, id, variantId);
+  }
+
+  @Post("content-drafts/:id/variants/:variantId/rewrite")
+  @HttpCode(201)
+  rewritePlatformVariant(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("variantId", ParseUUIDPipe) variantId: string,
+    @Body() dto: RewriteVariantDto,
+  ) {
+    return this.content.rewritePlatformVariant(u.sub, id, variantId, dto);
+  }
+
+  @Post("content-drafts/:id/variants/:variantId/apply")
+  @HttpCode(200)
+  applyVariantToRevision(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("variantId", ParseUUIDPipe) variantId: string,
+    @Body() dto: ApplyVariantToRevisionDto,
+  ) {
+    return this.content.applyVariantToDraftRevision(u.sub, id, variantId, dto);
+  }
+
+  @Post("content-drafts/:id/image-briefs")
+  @HttpCode(201)
+  generateImageBriefs(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: GenerateImageBriefDto,
+  ) {
+    return this.content.generateImageBriefs(u.sub, id, dto);
+  }
+
+  @Get("content-drafts/:id/image-briefs")
+  listImageBriefs(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.content.listImageBriefs(u.sub, id);
   }
 
   /** 渠道能力描述符（PHASE 17）：不猜测真实 API，全部标注 mock/unverified。 */

@@ -111,7 +111,7 @@ export abstract class BaseConnector implements ChannelConnector {
     }
 
     // 4. 真实外部调用
-    return this.doPublish(content, credential, options);
+    return this.doPublish(content, credential, options ?? {});
   }
 
   /** 子类重写真实发布逻辑 */

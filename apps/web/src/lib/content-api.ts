@@ -38,3 +38,99 @@ export async function uploadContentAsset(projectId: string, input: { type: Asset
 export const createPublication = (projectId: string, draftId: string, body: { connectionId: string; title?: string; payload: string }) => api<Publication>(`/projects/${encode(projectId)}/content-drafts/${encode(draftId)}/publications`, { method: "POST", body: JSON.stringify(body) });
 export const getPublication = (publicationId: string) => api<Publication>(`/publications/${encode(publicationId)}`);
 export const processPublication = (publicationId: string) => api<Publication>(`/publications/${encode(publicationId)}/process`, { method: "POST" });
+
+export type PlatformType = "WECHAT_OFFICIAL_ACCOUNT" | "XIAOHONGSHU" | "WEIBO" | "DOUYIN" | "BILIBILI";
+
+export interface TextOverlayInfo {
+  mainTitle: string;
+  subtitle?: string;
+  badge?: string;
+}
+
+export interface ImageBriefItem {
+  assetType: string;
+  title: string;
+  prompt: string;
+  negativePrompt?: string;
+  style: string;
+  ratio: string;
+  textOverlay?: TextOverlayInfo;
+  notes?: string;
+}
+
+export interface PlatformMetadata {
+  tone?: string;
+  outline?: string[];
+  subheadings?: string[];
+  hook?: string;
+  cta?: string;
+  wordCountTarget?: string;
+  safeNotes?: string[];
+  coverSuggestions?: string[];
+  [key: string]: unknown;
+}
+
+export interface PlatformVariant {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  draftId: string;
+  sourceRevisionId: string;
+  platform: PlatformType;
+  contentType: string;
+  generationMode: string;
+  title: string;
+  summary: string | null;
+  body: string;
+  tags: string[];
+  coverText: string | null;
+  imageBriefs: ImageBriefItem[];
+  platformMetadata: PlatformMetadata;
+  status: string;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentImageBriefRecord {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  draftId: string;
+  variantId: string | null;
+  platform: PlatformType;
+  assetType: string;
+  title: string;
+  prompt: string;
+  negativePrompt: string | null;
+  style: string;
+  ratio: string;
+  textOverlay: TextOverlayInfo | null;
+  notes: string | null;
+  safeFactCheck: string | null;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const generatePlatformVariant = (draftId: string, body: { platform: PlatformType; generationMode?: string; sourceRevisionId?: string }) =>
+  api<PlatformVariant>(`/content-drafts/${encode(draftId)}/variants`, { method: "POST", body: JSON.stringify(body) });
+
+export const listPlatformVariants = (draftId: string) =>
+  api<PlatformVariant[]>(`/content-drafts/${encode(draftId)}/variants`);
+
+export const getPlatformVariant = (draftId: string, variantId: string) =>
+  api<PlatformVariant>(`/content-drafts/${encode(draftId)}/variants/${encode(variantId)}`);
+
+export const rewritePlatformVariant = (draftId: string, variantId: string, body: { mode: string; instructions?: string }) =>
+  api<PlatformVariant>(`/content-drafts/${encode(draftId)}/variants/${encode(variantId)}/rewrite`, { method: "POST", body: JSON.stringify(body) });
+
+export const applyVariantToRevision = (draftId: string, variantId: string, body?: { changeNote?: string }) =>
+  api<{ draft: Draft; revision: Revision }>(`/content-drafts/${encode(draftId)}/variants/${encode(variantId)}/apply`, { method: "POST", body: JSON.stringify(body ?? {}) });
+
+export const generateImageBriefs = (draftId: string, body: { platform: PlatformType; variantId?: string; style?: string; count?: number }) =>
+  api<ContentImageBriefRecord[]>(`/content-drafts/${encode(draftId)}/image-briefs`, { method: "POST", body: JSON.stringify(body) });
+
+export const listImageBriefs = (draftId: string) =>
+  api<ContentImageBriefRecord[]>(`/content-drafts/${encode(draftId)}/image-briefs`);
+

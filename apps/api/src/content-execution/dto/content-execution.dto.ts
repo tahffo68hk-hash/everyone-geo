@@ -215,3 +215,83 @@ export class ValidatePublicationDto {
   idempotencyKey?: string;
 }
 
+export const CN_PLATFORMS = [
+  'WECHAT_OFFICIAL_ACCOUNT',
+  'XIAOHONGSHU',
+  'WEIBO',
+  'DOUYIN',
+  'BILIBILI',
+] as const;
+
+export const REWRITE_MODES = [
+  'REWRITE_EXPAND',
+  'REWRITE_SHORTEN',
+  'REWRITE_PROFESSIONAL',
+  'REWRITE_CONVERSATIONAL',
+  'REWRITE_LOW_PROMO',
+  'REWRITE_STRONG_CTA',
+  'REWRITE_STYLE_TUTORIAL',
+  'REWRITE_STYLE_RECOMMENDATION',
+] as const;
+
+export class GeneratePlatformVariantDto {
+  @IsIn(CN_PLATFORMS as unknown as string[])
+  platform!: 'WECHAT_OFFICIAL_ACCOUNT' | 'XIAOHONGSHU' | 'WEIBO' | 'DOUYIN' | 'BILIBILI';
+
+  @IsOptional()
+  @IsUUID()
+  sourceRevisionId?: string;
+
+  @IsOptional()
+  @IsString()
+  generationMode?: string;
+
+  @IsOptional()
+  @IsString()
+  styleTone?: 'PROFESSIONAL' | 'CONVERSATIONAL' | 'TECH' | 'LIFESTYLE' | 'TUTORIAL';
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 1000)
+  customInstructions?: string;
+}
+
+export class RewriteVariantDto {
+  @IsIn(REWRITE_MODES as unknown as string[])
+  mode!:
+    | 'REWRITE_EXPAND'
+    | 'REWRITE_SHORTEN'
+    | 'REWRITE_PROFESSIONAL'
+    | 'REWRITE_CONVERSATIONAL'
+    | 'REWRITE_LOW_PROMO'
+    | 'REWRITE_STRONG_CTA'
+    | 'REWRITE_STYLE_TUTORIAL'
+    | 'REWRITE_STYLE_RECOMMENDATION';
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 1000)
+  customInstructions?: string;
+}
+
+export class ApplyVariantToRevisionDto {
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  changeNote?: string;
+}
+
+export class GenerateImageBriefDto {
+  @IsOptional()
+  @IsIn(CN_PLATFORMS as unknown as string[])
+  platform?: 'WECHAT_OFFICIAL_ACCOUNT' | 'XIAOHONGSHU' | 'WEIBO' | 'DOUYIN' | 'BILIBILI';
+
+  @IsOptional()
+  @IsString()
+  preferredStyle?: 'MINIMALIST' | 'TECH' | 'PROFESSIONAL' | 'FRESH' | 'COMPARISON' | 'TUTORIAL';
+
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+}
+
