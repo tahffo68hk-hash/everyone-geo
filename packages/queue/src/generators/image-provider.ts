@@ -11,10 +11,12 @@
 import { createHash } from 'node:crypto';
 import type { VerifiedFact } from './fact-grounding';
 
+export type ImageRatio = '900:383' | '3:4' | '1:1' | '16:9' | '9:16' | string;
+
 export interface ImageGenerationInput {
   prompt: string;
   negativePrompt?: string;
-  ratio: '900:383' | '3:4' | '1:1' | '16:9' | '9:16' | string;
+  ratio: ImageRatio;
   style: string;
   referenceAssets?: string[];
   textOverlay?: {
@@ -80,6 +82,39 @@ export function sanitizeImagePrompt(prompt: string, knownFacts: VerifiedFact[] =
   return { safePrompt, isModified, warnings };
 }
 
+export interface WanxSizeMapping {
+  providerSize: '1024*1024' | '720*1280' | '1280*720';
+  orientation: 'square' | 'portrait' | 'landscape';
+  cropMode?: 'FIT_OR_CROP_3_4' | 'FIT_OR_CROP_900_383';
+}
+
+export function mapRatioToWanxSize(ratio: ImageRatio): WanxSizeMapping {
+  switch (ratio) {
+    case '1:1':
+      return { providerSize: '1024*1024', orientation: 'square' };
+    case '9:16':
+      return { providerSize: '720*1280', orientation: 'portrait' };
+    case '3:4':
+      // 官方 wanx-v1 不支持 768*1024；将 portrait 映射到 720*1280 并附带裁切元数据
+      return {
+        providerSize: '720*1280',
+        orientation: 'portrait',
+        cropMode: 'FIT_OR_CROP_3_4',
+      };
+    case '16:9':
+      return { providerSize: '1280*720', orientation: 'landscape' };
+    case '900:383':
+      // 官方 wanx-v1 不支持 900:383；将 landscape 映射到 1280*720 并附带裁切元数据
+      return {
+        providerSize: '1280*720',
+        orientation: 'landscape',
+        cropMode: 'FIT_OR_CROP_900_383',
+      };
+    default:
+      return { providerSize: '1024*1024', orientation: 'square' };
+  }
+}
+
 /**
  * 通义万相 (Wanx / DashScope) 真实生图 Provider
  */
@@ -102,12 +137,9 @@ export class WanxImageGenerationProvider implements ImageGenerationProvider {
       throw new Error('UNVERIFIED_PROVIDER: 缺少 DashScope API Key (QWEN_API_KEY)');
     }
 
-    // 映射万相支持的比例规格
-    // wanx-v1 支持 1024*1024, 720*1280, 1280*720, etc.
-    let size = '1024*1024';
-    if (input.ratio === '3:4') size = '768*1024';
-    else if (input.ratio === '9:16') size = '720*1280';
-    else if (input.ratio === '16:9' || input.ratio === '900:383') size = '1280*720';
+    // 映射万相官方支持的比例规格（1024*1024, 720*1280, 1280*720）
+    const mapping = mapRatioToWanxSize(input.ratio);
+    const size = mapping.providerSize;
 
     const body = {
       model: this.modelName,
@@ -152,6 +184,9 @@ export class WanxImageGenerationProvider implements ImageGenerationProvider {
         taskId,
         safePrompt,
         warnings,
+        requestedRatio: input.ratio,
+        providerSize: size,
+        cropMode: mapping.cropMode,
         dashscopeOutput: data.output,
       },
     };
@@ -270,6 +305,8 @@ export class MockImageGenerationProvider implements ImageGenerationProvider {
         safePrompt,
         warnings,
         isMock: true,
+        requestedRatio: input.ratio,
+        providerSize: `${width}*${height}`,
         width,
         height,
       },

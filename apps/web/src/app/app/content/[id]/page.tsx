@@ -117,9 +117,14 @@ const RATIO_OPTIONS = [
 
 const CLAIM_CATEGORY_LABELS: Record<string, string> = {
   NUMERICAL_SPEC: "数值规格",
+  NUMERICAL: "数值规格",
+  SPEC: "性能规格",
   COMPARATIVE_RANKING: "排名对比",
+  RANKING: "排名榜首",
   HEALTH_MEDICAL: "医疗健康",
+  MEDICAL: "医疗健康",
   SUPERLATIVE: "极限绝对词",
+  PRICE: "价格方案",
   GENERAL: "一般断言",
 };
 
@@ -636,7 +641,7 @@ export default function ContentDraftDetailPage() {
   const filteredClaims = useMemo(() => {
     if (!claimCheckResult?.claims) return [];
     if (claimFilter === "ALL") return claimCheckResult.claims;
-    return claimCheckResult.claims.filter((c) => c.status === claimFilter);
+    return claimCheckResult.claims.filter((c: any) => (c.status || c.supportStatus) === claimFilter);
   }, [claimCheckResult, claimFilter]);
 
   if (loading) {
@@ -1206,58 +1211,64 @@ export default function ContentDraftDetailPage() {
                     </div>
 
                     <div className="space-y-2.5 max-h-72 overflow-auto pr-1">
-                      {filteredClaims.map((c) => (
-                        <div
-                          key={c.id}
-                          className={`rounded-xl border p-3 text-xs space-y-1.5 transition ${
-                            c.status === "VERIFIED"
-                              ? "border-emerald-200 bg-emerald-50/40"
-                              : c.status === "CONFLICTING"
-                              ? "border-red-300 bg-red-50/50"
-                              : "border-amber-200 bg-amber-50/40"
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="rounded bg-slate-200 px-1.5 py-0.2 font-mono text-[10px] text-slate-700">
-                                {CLAIM_CATEGORY_LABELS[c.category] || c.category}
-                              </span>
-                              <span
-                                className={`rounded px-1.5 py-0.2 text-[10px] font-bold ${
-                                  c.status === "VERIFIED"
-                                    ? "bg-emerald-200 text-emerald-800"
-                                    : c.status === "CONFLICTING"
-                                    ? "bg-red-200 text-red-800"
-                                    : "bg-amber-200 text-amber-800"
-                                }`}
-                              >
-                                {c.status === "VERIFIED" ? "已核验" : c.status === "CONFLICTING" ? "冲突违背" : "未经验证"}
+                      {filteredClaims.map((c: any, idx: number) => {
+                        const claimId = c.id || `claim-${c.category || c.type || 'item'}-${c.claim || c.originalMatch || idx}-${idx}`;
+                        const status = c.status || c.supportStatus;
+                        const category = c.category || c.type;
+                        const claimText = c.claim || c.originalMatch;
+                        return (
+                          <div
+                            key={claimId}
+                            className={`rounded-xl border p-3 text-xs space-y-1.5 transition ${
+                              status === "VERIFIED"
+                                ? "border-emerald-200 bg-emerald-50/40"
+                                : status === "CONFLICTING"
+                                ? "border-red-300 bg-red-50/50"
+                                : "border-amber-200 bg-amber-50/40"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="rounded bg-slate-200 px-1.5 py-0.2 font-mono text-[10px] text-slate-700">
+                                  {CLAIM_CATEGORY_LABELS[category] || category}
+                                </span>
+                                <span
+                                  className={`rounded px-1.5 py-0.2 text-[10px] font-bold ${
+                                    status === "VERIFIED"
+                                      ? "bg-emerald-200 text-emerald-800"
+                                      : status === "CONFLICTING"
+                                      ? "bg-red-200 text-red-800"
+                                      : "bg-amber-200 text-amber-800"
+                                  }`}
+                                >
+                                  {status === "VERIFIED" ? "已核验" : status === "CONFLICTING" ? "冲突违背" : "未经验证"}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-slate-400">
+                                置信度: {((c.confidence ?? 0.95) * 100).toFixed(0)}%
                               </span>
                             </div>
-                            <span className="text-[11px] text-slate-400">
-                              置信度: {(c.confidence * 100).toFixed(0)}%
-                            </span>
+                            <div className="font-bold text-slate-900">{claimText}</div>
+                            {c.sourceSnippet && (
+                              <div className="text-slate-500 italic">原文片段：“{c.sourceSnippet}”</div>
+                            )}
+                            {status === "UNVERIFIED" && (
+                              <div className="pt-1 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNewClaim(claimText);
+                                    setNewFactType(category === "NUMERICAL_SPEC" || category === "NUMERICAL" || category === "SPEC" ? "SPEC" : "FEATURE");
+                                  }}
+                                  className="text-[11px] text-blue-700 hover:underline font-medium"
+                                >
+                                  填入已知事实库登记 →
+                                </button>
+                              </div>
+                            )}
                           </div>
-                          <div className="font-bold text-slate-900">{c.claim}</div>
-                          {c.sourceSnippet && (
-                            <div className="text-slate-500 italic">原文片段：“{c.sourceSnippet}”</div>
-                          )}
-                          {c.status === "UNVERIFIED" && (
-                            <div className="pt-1 flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNewClaim(c.claim);
-                                  setNewFactType(c.category === "NUMERICAL_SPEC" ? "SPEC" : "FEATURE");
-                                }}
-                                className="text-[11px] text-blue-700 hover:underline font-medium"
-                              >
-                                填入已知事实库登记 →
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

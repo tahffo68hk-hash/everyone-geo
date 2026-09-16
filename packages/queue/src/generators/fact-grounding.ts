@@ -22,6 +22,7 @@ export interface VerifiedFact {
 }
 
 export interface ExtractedClaim {
+  id?: string;
   claim: string;
   type: ClaimType;
   supportStatus: FactStatus;
@@ -54,28 +55,36 @@ export class FactGroundingEngine {
       regex: /(趾间炎|皮炎|真菌感染|皮肤病)/gi,
       getSafeReplacement: (_m) => '脚爪日常清洁与养护',
     },
-    // 2. 杀菌率 / 功效百分比
+    // 2. 杀菌率 / 功效百分比（AG-AI-01: 修复百分比声明正则转义及覆盖杀菌率/除菌率/去除率/准确率等）
     {
       type: 'NUMERICAL',
-      regex: /(杀菌率|除菌率|清洁率|有效率)?s*(9d(.d+)?%|100%|99(.d+)?%)/gi,
-      getSafeReplacement: (_m) => '温和物理水流清洁',
+      regex: /(?:(杀菌率|除菌率|清洁率|有效率|去除率|准确率|成功率|净化率)\s*(?:高达|达到|超过|达到近)?\s*)?(100(?:\.0+)?%|\d{1,2}(?:\.\d+)?%)/gi,
+      getSafeReplacement: (m) => {
+        if (m.includes('除菌') || m.includes('杀菌') || m.includes('清洁') || m.includes('去除') || m.includes('净化')) {
+          return '温和物理水流清洁';
+        }
+        if (m.includes('准确') || m.includes('成功') || m.includes('有效')) {
+          return '高水平表现';
+        }
+        return '显著效果';
+      },
     },
     // 3. 具体分贝与噪音数字
     {
       type: 'SPEC',
-      regex: /(运行噪音|噪音|音量)?s*(低于|小于|仅为)?s*(4[0-9]|3[0-9]|5[0-9])s*(dB|分贝)/gi,
+      regex: /(?:运行噪音|噪音|音量)?\s*(?:低于|小于|仅为)?\s*(?:4[0-9]|3[0-9]|5[0-9])\s*(?:dB|分贝)/gi,
       getSafeReplacement: (_m) => '主打低噪运行',
     },
     // 4. 具体清洗秒数与速度
     {
       type: 'SPEC',
-      regex: /(30|20|15|10|60)s*(秒|s)s*(快速清洗|深度洁净|净爪|完成)/gi,
+      regex: /(30|20|15|10|60)\s*(秒|s)\s*(快速清洗|深度洁净|净爪|完成)/gi,
       getSafeReplacement: (_m) => '快速便捷清洗',
     },
     // 5. 绝对化用语 / 极限词（新广告法绝对违禁词）
     {
       type: 'SUPERLATIVE',
-      regex: /(全网第一|业界第一|第一|最好|唯一|国家级|首款|顶级|无可替代|百分之百|全网最|业界最)/gi,
+      regex: /(全网第一|业界第一|行业第一|第一|最好|唯一|国家级|首款|顶级|无可替代|百分之百|全网最|业界最)/gi,
       getSafeReplacement: (m) => {
         if (m.includes('第一') || m.includes('首款')) return '备受好评的';
         if (m.includes('唯一') || m.includes('无可替代')) return '特色的';
@@ -92,7 +101,7 @@ export class FactGroundingEngine {
     // 7. 具体未核实价格
     {
       type: 'PRICE',
-      regex: /(仅售|原价|立省|到手价)?s*(d{2,5})s*(元|￥)/gi,
+      regex: /(仅售|原价|立省|到手价)?\s*(\d{2,5})\s*(元|￥)/gi,
       getSafeReplacement: (_m) => '官方活动参考价',
     },
   ];
@@ -132,6 +141,7 @@ export class FactGroundingEngine {
         }
 
         claims.push({
+          id: `claim-${pattern.type.toLowerCase()}-${claims.length + 1}`,
           claim: fullMatch,
           type: pattern.type,
           supportStatus,

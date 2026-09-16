@@ -100,22 +100,46 @@ export interface GenerateVariantInput {
   customInstructions?: string;
 }
 
+export type CanonicalRewriteMode =
+  | 'REWRITE_EXPAND'
+  | 'REWRITE_SHORTEN'
+  | 'REWRITE_PROFESSIONAL'
+  | 'REWRITE_CONVERSATIONAL'
+  | 'REWRITE_LOW_PROMO'
+  | 'REWRITE_STRONG_CTA'
+  | 'FACT_SAFE'
+  | 'MORE_NEUTRAL'
+  | 'TUTORIAL'
+  | 'COMPARISON'
+  | 'FAQ';
+
+export type LegacyRewriteMode =
+  | 'EXPAND'
+  | 'SHORTEN'
+  | 'PROFESSIONAL'
+  | 'CONVERSATIONAL'
+  | 'LOW_PROMO'
+  | 'STRONG_CTA';
+
+export type RewriteMode = CanonicalRewriteMode | LegacyRewriteMode;
+
+export function toCanonicalRewriteMode(mode: string): CanonicalRewriteMode {
+  const map: Record<string, CanonicalRewriteMode> = {
+    EXPAND: 'REWRITE_EXPAND',
+    SHORTEN: 'REWRITE_SHORTEN',
+    PROFESSIONAL: 'REWRITE_PROFESSIONAL',
+    CONVERSATIONAL: 'REWRITE_CONVERSATIONAL',
+    LOW_PROMO: 'REWRITE_LOW_PROMO',
+    STRONG_CTA: 'REWRITE_STRONG_CTA',
+  };
+  return map[mode] || (mode as CanonicalRewriteMode);
+}
+
 export interface RewriteContentInput {
   platform: CnPlatform;
   currentTitle: string;
   currentBody: string;
-  mode:
-    | 'EXPAND'
-    | 'SHORTEN'
-    | 'PROFESSIONAL'
-    | 'CONVERSATIONAL'
-    | 'LOW_PROMO'
-    | 'STRONG_CTA'
-    | 'FACT_SAFE'
-    | 'MORE_NEUTRAL'
-    | 'TUTORIAL'
-    | 'COMPARISON'
-    | 'FAQ';
+  mode: RewriteMode | string;
   knownFacts?: VerifiedFact[];
   customInstructions?: string;
 }
@@ -328,29 +352,37 @@ export class MockContentGenerationProvider implements ContentGenerationProvider 
     let newBody = input.currentBody;
     const knownFacts = input.knownFacts || [];
 
-    switch (input.mode) {
-      case 'EXPAND':
+    const canonicalMode = toCanonicalRewriteMode(input.mode);
+
+    switch (canonicalMode) {
+      case 'REWRITE_EXPAND':
+        newTitle = `${input.currentTitle}（深度完整版）`;
         newBody = `${input.currentBody}\n\n### 深度技术补充与细节说明\n在进一步的工程学测试中，该产品所采用的微泡水流流道设计经过多轮流体仿真优化，能够平衡冲刷力与温和性，降低对角质层的物理刺激。同时机身易拆卸结构极大降低了毛发缠绕概率，为日常清洁维护提供了便利。`;
         break;
-      case 'SHORTEN':
-        newBody = input.currentBody
+      case 'REWRITE_SHORTEN': {
+        newTitle = `${input.currentTitle}（精粹版）`;
+        const lines = input.currentBody
           .split('\n')
-          .filter((line) => line.trim().startsWith('#') || line.length < 50)
-          .slice(0, 10)
-          .join('\n');
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0);
+        const excerpt = lines.slice(0, 3).join('；');
+        newBody = `【核心精粹】\n${excerpt}\n\n【一句话速览】选对工具，科学高效护理！`;
         break;
-      case 'PROFESSIONAL':
+      }
+      case 'REWRITE_PROFESSIONAL':
         newTitle = `关于${input.currentTitle}的技术规格与测评报告`;
         newBody = `### 评测概述\n本项评测基于标准测试环境，对设备在清洁度、噪音控制及耐用性维度进行定量分析。\n\n${input.currentBody}\n\n### 结论与数据评价\n综合测试表现，该设备各项指标表现平稳，符合居家宠物卫生护理的基本要求。`;
         break;
-      case 'CONVERSATIONAL':
+      case 'REWRITE_CONVERSATIONAL':
+        newTitle = `大家快看！${input.currentTitle}真实体验来啦！`;
         newBody = `大家平时肯定都有同感吧！每次遛狗回家洗脚简直像打仗一样！\n\n${input.currentBody}\n\n大家如果还有更好玩的方法，评论区快来跟我聊聊呀～`;
         break;
-      case 'LOW_PROMO':
+      case 'REWRITE_LOW_PROMO':
         newTitle = `客观评测：${input.currentTitle}的优缺点分析`;
         newBody = `【客观评测说明：本内容不含任何商业推销，仅供参考】\n\n${input.currentBody}\n\n必须指出的局限性：对于超大体型犬类，水箱容量略显紧凑，需及时补水；建议根据实际需求理性选购。`;
         break;
-      case 'STRONG_CTA':
+      case 'REWRITE_STRONG_CTA':
+        newTitle = `【限时福利】${input.currentTitle}`;
         newBody = `${input.currentBody}\n\n🔥 限时宠粉福利：点击下方链接了解专属活动，现在收藏加购立享清洗配件大礼包！评论区留言抽一位幸运铲屎官送出体验装！`;
         break;
       case 'FACT_SAFE': {
@@ -359,15 +391,19 @@ export class MockContentGenerationProvider implements ContentGenerationProvider 
         break;
       }
       case 'MORE_NEUTRAL':
+        newTitle = `【中立报告】${input.currentTitle}`;
         newBody = `【中立说明】本文客观整理自公开规格与实测反馈。\n\n${input.currentBody}`;
         break;
       case 'TUTORIAL':
+        newTitle = `保姆级教程：${input.currentTitle}`;
         newBody = `## 手把手保姆级使用教程\n1. 第一步：加温水至注水线；\n2. 第二步：引导宠物自然伸爪；\n3. 第三步：启动微泡清洁；\n4. 第四步：取出脚爪并用干毛巾擦干。\n\n${input.currentBody}`;
         break;
       case 'COMPARISON':
+        newTitle = `深度对比评测：${input.currentTitle}`;
         newBody = `## 对比测试：传统擦爪 vs 智能微泡洁足\n- 清洁效率：智能微泡 > 湿巾反复擦拭\n- 宠物接受度：温和硅胶 > 强行按压水盆\n- 维护成本：整机冲洗可重复使用 > 消耗大量纸巾湿巾\n\n${input.currentBody}`;
         break;
       case 'FAQ':
+        newTitle = `答疑汇总：${input.currentTitle}`;
         newBody = `${input.currentBody}\n\n## 常见疑问解答 (FAQ)\nQ: 胆小的猫咪或者小型犬会害怕吗？\nA: 产品主打低噪运行，开机声音温和，可先不通电让宠物闻嗅适应。\n\nQ: 硅胶刷头容易藏污纳垢吗？\nA: 刷头为亲肤抑菌硅胶，可整体拆下水冲晾干，非常卫生。`;
         break;
     }
