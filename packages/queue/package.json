@@ -9,6 +9,6 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test test/*.test.ts"
   },
-  "dependencies": { "@geo/database": "workspace:*", "bullmq": "^5.58.0", "zod": "^4.0.0" },
+  "dependencies": { "@geo/database": "workspace:*", "@geo/llm": "workspace:*", "bullmq": "^5.58.0", "zod": "^4.0.0" },
   "devDependencies": { "@types/node": "^24.0.0", "tsx": "^4.19.0", "typescript": "^5.5.0" }
 }

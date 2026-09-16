@@ -213,6 +213,9 @@ importers:
       '@geo/database':
         specifier: workspace:*
         version: link:../database
+      '@geo/llm':
+        specifier: workspace:*
+        version: link:../llm
       bullmq:
         specifier: ^5.58.0
         version: 5.81.4

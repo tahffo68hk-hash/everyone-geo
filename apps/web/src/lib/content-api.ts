@@ -134,3 +134,107 @@ export const generateImageBriefs = (draftId: string, body: { platform: PlatformT
 export const listImageBriefs = (draftId: string) =>
   api<ContentImageBriefRecord[]>(`/content-drafts/${encode(draftId)}/image-briefs`);
 
+// ---- V2 Content Engine Types & APIs ----
+
+export interface VerifiedFact {
+  id: string;
+  claim: string;
+  factType: string;
+  status: string;
+  sourceType: string;
+  sourceRef?: string;
+}
+
+export interface ExtractedClaim {
+  id: string;
+  claim: string;
+  category: "NUMERICAL_SPEC" | "COMPARATIVE_RANKING" | "HEALTH_MEDICAL" | "SUPERLATIVE" | "GENERAL";
+  status: "VERIFIED" | "UNVERIFIED" | "CONFLICTING";
+  sourceSnippet?: string;
+  confidence: number;
+  matchedFactId?: string;
+}
+
+export interface ClaimCheckResult {
+  claims: ExtractedClaim[];
+  blocking: boolean;
+  unverifiedCount: number;
+  conflictingCount: number;
+  blockingClaims: ExtractedClaim[];
+}
+
+export interface SafeRewriteResult {
+  sanitizedText: string;
+  resolvedClaims: string[];
+  remainingUnverifiedClaims: string[];
+  changeSummary: string[];
+  generationRunId: string;
+}
+
+export interface GenerationRun {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  draftId: string;
+  sourceRevisionId: string | null;
+  platform: string;
+  generationMode: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  status: string;
+  inputSnapshot: any;
+  outputSnapshot: any;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  imageCount: number | null;
+  costUsd: number | null;
+  errorMessage: string | null;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ImagePreviewOutput {
+  jobId: string;
+  provider: string;
+  model: string;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+  imageUrl?: string;
+  sanitizedPrompt: string;
+  warnings?: string[];
+  generationRunId: string;
+}
+
+export const listGenerationRuns = (draftId: string) =>
+  api<GenerationRun[]>(`/content-drafts/${encode(draftId)}/generation-runs`);
+
+export const getGenerationRun = (draftId: string, runId: string) =>
+  api<GenerationRun>(`/content-drafts/${encode(draftId)}/generation-runs/${encode(runId)}`);
+
+export const listVerifiedFacts = (draftId: string) =>
+  api<VerifiedFact[]>(`/content-drafts/${encode(draftId)}/facts`);
+
+export const createVerifiedFact = (
+  draftId: string,
+  body: { claim: string; factType: string; status?: string; sourceType?: string; sourceRef?: string }
+) => api<VerifiedFact>(`/content-drafts/${encode(draftId)}/facts`, { method: "POST", body: JSON.stringify(body) });
+
+export const extractClaims = (draftId: string, body: { text?: string; variantId?: string } = {}) =>
+  api<ClaimCheckResult>(`/content-drafts/${encode(draftId)}/extract-claims`, { method: "POST", body: JSON.stringify(body) });
+
+export const safeRewrite = (draftId: string, body: { text?: string; variantId?: string } = {}) =>
+  api<SafeRewriteResult>(`/content-drafts/${encode(draftId)}/safe-rewrite`, { method: "POST", body: JSON.stringify(body) });
+
+export const generateImagePreview = (
+  draftId: string,
+  body: { prompt: string; ratio?: string; style?: string; variantId?: string; textOverlay?: TextOverlayInfo; negativePrompt?: string }
+) => api<ImagePreviewOutput>(`/content-drafts/${encode(draftId)}/image-generation`, { method: "POST", body: JSON.stringify(body) });
+
+export const acceptImageAsset = (
+  draftId: string,
+  jobId: string,
+  body: { prompt: string; ratio: string; imageUrl?: string }
+) => api<Asset>(`/content-drafts/${encode(draftId)}/image-generation/${encode(jobId)}/accept`, { method: "POST", body: JSON.stringify(body) });
+
+

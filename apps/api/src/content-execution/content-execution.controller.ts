@@ -10,6 +10,7 @@ import {
   ApplyVariantToRevisionDto, AuthorizeChannelDto, CallbackQueryDto, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
   GenerateImageBriefDto, GeneratePlatformVariantDto, ListAssetsDto, ListDraftsDto, ListPublicationsDto,
   RewriteVariantDto, UpdateDraftDto, ValidatePublicationDto,
+  CreateVerifiedFactDto, ExtractClaimsDto, SafeRewriteDto, GenerateImagePreviewDto, AcceptImageAssetDto,
 } from "./dto/content-execution.dto";
 
 /**
@@ -139,6 +140,79 @@ export class ContentExecutionController {
   listImageBriefs(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
     return this.content.listImageBriefs(u.sub, id);
   }
+  // ---- V2: Generation Runs ----
+  @Get("content-drafts/:id/generation-runs")
+  listGenerationRuns(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.content.listGenerationRuns(u.sub, id);
+  }
+
+  @Get("content-drafts/:id/generation-runs/:runId")
+  getGenerationRun(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("runId", ParseUUIDPipe) runId: string,
+  ) {
+    return this.content.getGenerationRun(u.sub, id, runId);
+  }
+
+  // ---- V2: Verified Facts & Claim Guard ----
+  @Get("content-drafts/:id/facts")
+  listVerifiedFacts(@CurrentUser() u: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.content.listVerifiedFacts(u.sub, id);
+  }
+
+  @Post("content-drafts/:id/facts")
+  @HttpCode(201)
+  createVerifiedFact(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: CreateVerifiedFactDto,
+  ) {
+    return this.content.createVerifiedFact(u.sub, id, dto);
+  }
+
+  @Post("content-drafts/:id/extract-claims")
+  @HttpCode(200)
+  extractClaims(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: ExtractClaimsDto,
+  ) {
+    return this.content.extractClaims(u.sub, id, dto);
+  }
+
+  @Post("content-drafts/:id/safe-rewrite")
+  @HttpCode(200)
+  safeRewrite(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SafeRewriteDto,
+  ) {
+    return this.content.safeRewrite(u.sub, id, dto);
+  }
+
+  // ---- V2: Image Preview & Accept Asset ----
+  @Post("content-drafts/:id/image-generation")
+  @HttpCode(201)
+  generateImagePreview(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: GenerateImagePreviewDto,
+  ) {
+    return this.content.generateImagePreview(u.sub, id, dto);
+  }
+
+  @Post("content-drafts/:id/image-generation/:jobId/accept")
+  @HttpCode(201)
+  acceptImageAsset(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("jobId") jobId: string,
+    @Body() dto: AcceptImageAssetDto,
+  ) {
+    return this.content.acceptImageAsset(u.sub, id, { ...dto, jobId });
+  }
+
 
   /** 渠道能力描述符（PHASE 17）：不猜测真实 API，全部标注 mock/unverified。 */
   @Get("channels/capabilities")

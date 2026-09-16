@@ -312,6 +312,9 @@ export function friendlyError(error: unknown): string {
   const code = raw.match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/)?.[0];
   if (code === "NO_ENGINE_AVAILABLE") return "当前没有可用的 AI 引擎";
   if (code === "REAL_PROVIDER_UNAVAILABLE") return "当前 Provider 暂不可用";
+  if (code === "FACT_CHECK_REQUIRED") {
+    return raw.replace(/^FACT_CHECK_REQUIRED:\s*/, "");
+  }
   if (code || /^\s*[\[{]/.test(raw) || /\bat\s+\S+\s*\([^)]*:\d+:\d+\)/.test(raw)) {
     if (typeof console !== "undefined") console.warn("[GeoLens] 原始错误信息：", raw);
     return "操作失败，请稍后重试。";

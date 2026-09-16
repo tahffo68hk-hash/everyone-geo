@@ -21,6 +21,14 @@ import {
   applyVariantToRevision,
   generateImageBriefs,
   listImageBriefs,
+  listGenerationRuns,
+  listVerifiedFacts,
+  createVerifiedFact,
+  extractClaims,
+  safeRewrite,
+  generateImagePreview,
+  acceptImageAsset,
+  listContentAssets,
   type Approval,
   type AuditEntry,
   type Capability,
@@ -31,6 +39,13 @@ import {
   type PlatformType,
   type PlatformVariant,
   type ContentImageBriefRecord,
+  type VerifiedFact,
+  type ExtractedClaim,
+  type ClaimCheckResult,
+  type SafeRewriteResult,
+  type GenerationRun,
+  type ImagePreviewOutput,
+  type Asset,
 } from "@/lib/content-api";
 
 const channelLabel: Record<string, string> = {
@@ -64,12 +79,17 @@ const CN_PLATFORMS: { id: PlatformType; name: string; icon: string; desc: string
 ];
 
 const REWRITE_OPTIONS = [
+  { mode: "FACT_SAFE", label: "事实安全纠偏", desc: "自动净化未验证或夸大声明，中立合规" },
+  { mode: "MORE_NEUTRAL", label: "更加客观中立", desc: "弱化主观吹捧，平衡评价产品特性" },
   { mode: "REWRITE_EXPAND", label: "深度扩写", desc: "扩充细节案例与硬核论据" },
-  { mode: "REWRITE_SHORTEN", label: "精简凝练", desc: "剔除冗余修饰，直击痛点" },
+  { mode: "REWRITE_SHORTEN", label: "精简凝练", desc: "剔除冗余修饰，直击核心痛点" },
   { mode: "REWRITE_PROFESSIONAL", label: "提升专业度", desc: "强化客观数据与技术论证" },
   { mode: "REWRITE_CONVERSATIONAL", label: "更口语接地气", desc: "生动活泼，拉近受众距离" },
-  { mode: "REWRITE_LOW_PROMO", label: "弱化营销感", desc: "以客观评测视角呈现产品" },
+  { mode: "REWRITE_LOW_PROMO", label: "弱化营销感", desc: "以客观第三方测评视角呈现产品" },
   { mode: "REWRITE_STRONG_CTA", label: "强化行动号召", desc: "激发读者互动、点赞与留资" },
+  { mode: "TUTORIAL", label: "实操步骤教程", desc: "保姆级分步骤操作说明与避坑指南" },
+  { mode: "COMPARISON", label: "竞品对比评测", desc: "多维对照表与场景适配选购指南" },
+  { mode: "FAQ", label: "常见问答结构", desc: "针对用户核心疑虑与高频问题答疑" },
 ];
 
 const GENERATION_MODES = [
@@ -87,6 +107,32 @@ const IMAGE_STYLES = [
   { style: "TUTORIAL", label: "实操步骤风", desc: "编号指示、手部动作与细节放大" },
 ];
 
+const RATIO_OPTIONS = [
+  { ratio: "900:383", label: "900:383 (微信封面)" },
+  { ratio: "3:4", label: "3:4 (小红书笔记)" },
+  { ratio: "1:1", label: "1:1 (微博正方图)" },
+  { ratio: "9:16", label: "9:16 (抖音竖屏)" },
+  { ratio: "16:9", label: "16:9 (B站专栏)" },
+];
+
+const CLAIM_CATEGORY_LABELS: Record<string, string> = {
+  NUMERICAL_SPEC: "数值规格",
+  COMPARATIVE_RANKING: "排名对比",
+  HEALTH_MEDICAL: "医疗健康",
+  SUPERLATIVE: "极限绝对词",
+  GENERAL: "一般断言",
+};
+
+const FACT_TYPE_LABELS: Record<string, string> = {
+  SPEC: "数值规格 (SPEC)",
+  FEATURE: "产品特性 (FEATURE)",
+  CERTIFICATION: "资质认证 (CERTIFICATION)",
+  PRICE: "价格方案 (PRICE)",
+  COMPATIBILITY: "系统兼容 (COMPATIBILITY)",
+};
+
+type WorkbenchTab = "ai-gen" | "fact-check" | "image-gen" | "runs-history" | "draft-editor";
+
 export default function ContentDraftDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { projectId } = useProjectContext();
@@ -97,13 +143,47 @@ export default function ContentDraftDetailPage() {
   const [caps, setCaps] = useState<Capability[]>([]);
   const [variants, setVariants] = useState<PlatformVariant[]>([]);
   const [imageBriefs, setImageBriefs] = useState<ContentImageBriefRecord[]>([]);
+  const [draftAssets, setDraftAssets] = useState<Asset[]>([]);
 
+  // V2 核心状态：工作台标签
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>("ai-gen");
+
+  // V2 AI 生成状态
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformType>("WECHAT_OFFICIAL_ACCOUNT");
   const [genMode, setGenMode] = useState("STANDARD");
-  const [selectedRewriteMode, setSelectedRewriteMode] = useState("REWRITE_EXPAND");
+  const [selectedRewriteMode, setSelectedRewriteMode] = useState("FACT_SAFE");
   const [rewriteInstructions, setRewriteInstructions] = useState("");
-  const [selectedImageStyle, setSelectedImageStyle] = useState("TECH");
 
+  // V2 事实检查与声明守卫状态
+  const [verifiedFacts, setVerifiedFacts] = useState<VerifiedFact[]>([]);
+  const [claimCheckResult, setClaimCheckResult] = useState<ClaimCheckResult | null>(null);
+  const [extractingClaims, setExtractingClaims] = useState(false);
+  const [safeRewriting, setSafeRewriting] = useState(false);
+  const [safeRewriteSummary, setSafeRewriteSummary] = useState<SafeRewriteResult | null>(null);
+  const [newClaim, setNewClaim] = useState("");
+  const [newFactType, setNewFactType] = useState("SPEC");
+  const [newSourceRef, setNewSourceRef] = useState("");
+  const [addingFact, setAddingFact] = useState(false);
+  const [claimFilter, setClaimFilter] = useState<"ALL" | "UNVERIFIED" | "CONFLICTING" | "VERIFIED">("ALL");
+
+  // V2 图片生成状态
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [imageRatio, setImageRatio] = useState("900:383");
+  const [imageStyle, setImageStyle] = useState("TECH");
+  const [imageMainTitle, setImageMainTitle] = useState("");
+  const [imageSubtitle, setImageSubtitle] = useState("");
+  const [imageBadge, setImageBadge] = useState("");
+  const [imagePreview, setImagePreview] = useState<ImagePreviewOutput | null>(null);
+  const [generatingPreview, setGeneratingPreview] = useState(false);
+  const [acceptingAsset, setAcceptingAsset] = useState(false);
+  const [acceptedAsset, setAcceptedAsset] = useState<Asset | null>(null);
+
+  // V2 生成历史状态
+  const [generationRuns, setGenerationRuns] = useState<GenerationRun[]>([]);
+  const [loadingRuns, setLoadingRuns] = useState(false);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+
+  // 通用状态
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [generatingVariants, setGeneratingVariants] = useState(false);
@@ -134,18 +214,24 @@ export default function ContentDraftDetailPage() {
       setSummary(d.latestRevision?.summary ?? "");
       setBody(d.latestRevision?.body ?? "");
 
-      const [a, c, k, v, b] = await Promise.all([
+      const [a, c, k, v, b, f, r, assetsPage] = await Promise.all([
         listContentAudit(id),
         listChannelConnections(d.projectId),
         listChannelCapabilities(),
         listPlatformVariants(id),
         listImageBriefs(id),
+        listVerifiedFacts(id),
+        listGenerationRuns(id),
+        listContentAssets(d.projectId, 1, 50).catch(() => ({ items: [] as Asset[] })),
       ]);
       setAudit(a);
       setConnections(c);
       setCaps(k);
       setVariants(v);
       setImageBriefs(b);
+      setVerifiedFacts(f);
+      setGenerationRuns(r);
+      setDraftAssets((assetsPage.items || []).filter((item) => item.draftId === id));
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -174,6 +260,14 @@ export default function ContentDraftDetailPage() {
   const currentPlatformBriefs = useMemo(() => {
     return imageBriefs.filter((b) => b.platform === selectedPlatform);
   }, [imageBriefs, selectedPlatform]);
+
+  // 当切换选中平台时，同步默认生图比例
+  useEffect(() => {
+    const p = CN_PLATFORMS.find((item) => item.id === selectedPlatform);
+    if (p) {
+      setImageRatio(p.ratio);
+    }
+  }, [selectedPlatform]);
 
   async function save() {
     setBusy(true);
@@ -210,9 +304,19 @@ export default function ContentDraftDetailPage() {
       await decideContentDraft(id, decision, comment, latest?.id);
       setComment("");
       await loadData();
-      setSuccessMsg(`审核操作完成：${decision === "APPROVED" ? "已批准" : decision === "REJECTED" ? "已拒绝" : "已要求修改"}`);
+      setSuccessMsg(
+        `审核操作完成：${decision === "APPROVED" ? "已批准" : decision === "REJECTED" ? "已拒绝" : "已要求修改"}`
+      );
     } catch (err) {
-      setError(friendlyError(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("FACT_CHECK_REQUIRED")) {
+        setError(
+          "⚠️ 审批已被事实守卫拦截：草稿中包含未核验的数值、极限词或功效声明。请在「事实核查守卫」中完成安全改写或补充已核验事实后再批准！"
+        );
+        setActiveTab("fact-check");
+      } else {
+        setError(friendlyError(err));
+      }
     } finally {
       setBusy(false);
     }
@@ -252,6 +356,9 @@ export default function ContentDraftDetailPage() {
       setVariants((prev) => [v, ...prev.filter((item) => item.platform !== platform)]);
       setSelectedPlatform(platform);
       setSuccessMsg(`已成功生成 ${CN_PLATFORMS.find((p) => p.id === platform)?.name ?? platform} 版本文案！`);
+      // 重新加载运行历史
+      const runs = await listGenerationRuns(id);
+      setGenerationRuns(runs);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -274,7 +381,9 @@ export default function ContentDraftDetailPage() {
       );
       const results = await Promise.all(promises);
       setVariants(results);
-      setSuccessMsg("已一键生成全部 5 大平台（公众号、小红书、微博、抖音、B站）适配版本！");
+      setSuccessMsg("已一键生成全部 5 大平台（微信公众号、小红书、微博、抖音、B站）适配版本！");
+      const runs = await listGenerationRuns(id);
+      setGenerationRuns(runs);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -296,6 +405,8 @@ export default function ContentDraftDetailPage() {
       setVariants((prev) => [rewritten, ...prev.filter((item) => item.id !== currentPlatformVariant.id)]);
       setRewriteInstructions("");
       setSuccessMsg(`改写成功！已更新当前 ${CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.name} 版本。`);
+      const runs = await listGenerationRuns(id);
+      setGenerationRuns(runs);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -332,18 +443,167 @@ export default function ContentDraftDetailPage() {
       const briefs = await generateImageBriefs(id, {
         platform: selectedPlatform,
         variantId: currentPlatformVariant?.id,
-        style: selectedImageStyle,
+        style: imageStyle,
         count: 2,
       });
       setImageBriefs((prev) => [
         ...briefs,
-        ...prev.filter((b) => b.platform !== selectedPlatform || (currentPlatformVariant && b.variantId !== currentPlatformVariant.id)),
+        ...prev.filter(
+          (b) => b.platform !== selectedPlatform || (currentPlatformVariant && b.variantId !== currentPlatformVariant.id)
+        ),
       ]);
-      setSuccessMsg(`已成功为 ${CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.name} 生成视觉封面与插图 Brief！`);
+      setSuccessMsg(`已成功为 ${CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.name} 提炼视觉 Brief 方案！`);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
       setGeneratingBriefs(false);
+    }
+  }
+
+  // 6. 事实检查与声明抽取
+  async function handleExtractClaims() {
+    setExtractingClaims(true);
+    setError("");
+    try {
+      const res = await extractClaims(id, {
+        variantId: currentPlatformVariant?.id,
+      });
+      setClaimCheckResult(res);
+      setSafeRewriteSummary(null);
+      if (res.blocking) {
+        setError(
+          `事实核验提示：检测到 ${res.unverifiedCount} 项未核验声明，已触发阻断。请点击「一键自动安全改写」或录入事实依据。${res.conflictingCount ? `（含 ${res.conflictingCount} 项冲突）` : ""}`
+        );
+      } else {
+        setSuccessMsg("事实核验通过：当前内容所有核心声明均已核验或符合中立安全规范。");
+      }
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setExtractingClaims(false);
+    }
+  }
+
+  // 7. 一键自动安全改写
+  async function handleSafeRewrite() {
+    setSafeRewriting(true);
+    setError("");
+    try {
+      const res = await safeRewrite(id, {
+        variantId: currentPlatformVariant?.id,
+      });
+      setSafeRewriteSummary(res);
+      // 重新加载变体列表和运行记录
+      const [updatedVariants, runs] = await Promise.all([listPlatformVariants(id), listGenerationRuns(id)]);
+      setVariants(updatedVariants);
+      setGenerationRuns(runs);
+
+      // 重新执行声明抽取以验证阻断状态
+      const recheck = await extractClaims(id, {
+        variantId: currentPlatformVariant?.id,
+      });
+      setClaimCheckResult(recheck);
+      setSuccessMsg("自动安全改写完成！已将未核验的极端词与具体参数转换为客观合规表达。");
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setSafeRewriting(false);
+    }
+  }
+
+  // 8. 录入已知事实
+  async function handleAddFact(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newClaim.trim()) return;
+    setAddingFact(true);
+    setError("");
+    try {
+      const created = await createVerifiedFact(id, {
+        claim: newClaim.trim(),
+        factType: newFactType,
+        sourceType: "USER_INPUT",
+        sourceRef: newSourceRef.trim() || undefined,
+      });
+      setVerifiedFacts((prev) => [created, ...prev]);
+      setNewClaim("");
+      setNewSourceRef("");
+      setSuccessMsg("已成功录入已核验事实！重新执行事实核查即可匹配此声明。");
+      // 重新抽取以自动匹配
+      void handleExtractClaims();
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setAddingFact(false);
+    }
+  }
+
+  // 9. 图片生成预览
+  async function handleGenerateImagePreview() {
+    if (!imagePrompt.trim()) {
+      setError("请输入图片生成提示词。");
+      return;
+    }
+    setGeneratingPreview(true);
+    setError("");
+    setImagePreview(null);
+    setAcceptedAsset(null);
+    try {
+      const preview = await generateImagePreview(id, {
+        prompt: imagePrompt.trim(),
+        ratio: imageRatio,
+        style: imageStyle,
+        variantId: currentPlatformVariant?.id,
+        textOverlay: imageMainTitle
+          ? {
+              mainTitle: imageMainTitle,
+              subtitle: imageSubtitle || undefined,
+              badge: imageBadge || undefined,
+            }
+          : undefined,
+      });
+      setImagePreview(preview);
+      setSuccessMsg("视觉图片预览生成完成！");
+      const runs = await listGenerationRuns(id);
+      setGenerationRuns(runs);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setGeneratingPreview(false);
+    }
+  }
+
+  // 10. 采纳为正式资产
+  async function handleAcceptImageAsset() {
+    if (!imagePreview) return;
+    setAcceptingAsset(true);
+    setError("");
+    try {
+      const asset = await acceptImageAsset(id, imagePreview.jobId, {
+        prompt: imagePreview.sanitizedPrompt,
+        ratio: imageRatio,
+        imageUrl: imagePreview.imageUrl,
+      });
+      setAcceptedAsset(asset);
+      setDraftAssets((prev) => [asset, ...prev]);
+      setSuccessMsg(`已成功将图片采纳并归档入库为草稿资产（ID: ${asset.id.slice(0, 8)}…）！`);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setAcceptingAsset(false);
+    }
+  }
+
+  // 11. 刷新生成运行历史
+  async function handleRefreshRuns() {
+    setLoadingRuns(true);
+    try {
+      const runs = await listGenerationRuns(id);
+      setGenerationRuns(runs);
+      setSuccessMsg("已刷新生成运行记录。");
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setLoadingRuns(false);
     }
   }
 
@@ -357,6 +617,27 @@ export default function ContentDraftDetailPage() {
       // 忽略非安全上下文复制错误
     }
   }
+
+  // 从 Brief 载入生图参数
+  function loadBriefToStudio(brief: ContentImageBriefRecord) {
+    setImagePrompt(brief.prompt);
+    setImageRatio(brief.ratio);
+    setImageStyle(brief.style);
+    if (brief.textOverlay) {
+      setImageMainTitle(brief.textOverlay.mainTitle || "");
+      setImageSubtitle(brief.textOverlay.subtitle || "");
+      setImageBadge(brief.textOverlay.badge || "");
+    }
+    setActiveTab("image-gen");
+    setSuccessMsg(`已从「${brief.title}」载入提示词与比例配置。`);
+  }
+
+  // 过滤展示的声明
+  const filteredClaims = useMemo(() => {
+    if (!claimCheckResult?.claims) return [];
+    if (claimFilter === "ALL") return claimCheckResult.claims;
+    return claimCheckResult.claims.filter((c) => c.status === claimFilter);
+  }, [claimCheckResult, claimFilter]);
 
   if (loading) {
     return (
@@ -452,450 +733,1028 @@ export default function ContentDraftDetailPage() {
           </div>
         )}
 
-        {/* 主体工作区 */}
-        <section className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-          {/* 左侧：国内平台生成增强 + 图片 Brief + 基础底稿 */}
+        {/* 主体工作区：左侧 4 大工作台板块 + 底稿编辑；右侧 审批、版本、发布、连接 */}
+        <section className="grid gap-6 lg:grid-cols-[1.65fr_1fr]">
+          {/* 左侧主要区域 */}
           <div className="space-y-6">
-            {/* 核心卡片：国内 5 大平台文案工作台 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">国内平台文案工作台</h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    针对微信公众号、小红书、微博、抖音、B站受众与排版规律专属适配，支持多次迭代与采纳。
-                  </p>
-                </div>
-                {currentPlatformVariant && (
-                  <button
-                    type="button"
-                    disabled={applying || locked}
-                    onClick={() => void handleApplyVariant()}
-                    className="ui-button font-medium border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                  >
-                    {applying ? "应用中…" : "采纳为此草稿新版本"}
-                  </button>
+            {/* 工作台 5 标签导航栏 */}
+            <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab("ai-gen")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                  activeTab === "ai-gen" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span>✨</span>
+                <span>AI 平台生成</span>
+                <span
+                  className={`rounded-full px-2 py-0.2 text-xs ${
+                    activeTab === "ai-gen" ? "bg-blue-800 text-white" : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {variants.length}/5
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("fact-check")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                  activeTab === "fact-check" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span>🛡️</span>
+                <span>事实核查守卫</span>
+                {claimCheckResult?.blocking && (
+                  <span className="rounded-full bg-red-500 px-2 py-0.2 text-xs text-white">拦截中</span>
                 )}
-              </div>
+                {!claimCheckResult?.blocking && verifiedFacts.length > 0 && (
+                  <span
+                    className={`rounded-full px-2 py-0.2 text-xs ${
+                      activeTab === "fact-check" ? "bg-blue-800 text-white" : "bg-slate-200 text-slate-700"
+                    }`}
+                  >
+                    {verifiedFacts.length}事实
+                  </span>
+                )}
+              </button>
 
-              {/* 平台切换标签 */}
-              <div className="mt-5 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-                {CN_PLATFORMS.map((p) => {
-                  const hasVariant = variants.some((v) => v.platform === p.id);
-                  const isSelected = selectedPlatform === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setSelectedPlatform(p.id)}
-                      className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition ${
-                        isSelected
-                          ? "bg-blue-700 text-white shadow-xs"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      }`}
-                    >
-                      <span>{p.icon}</span>
-                      <span>{p.name}</span>
-                      {hasVariant && (
-                        <span
-                          className={`ml-1 h-2 w-2 rounded-full ${isSelected ? "bg-emerald-300" : "bg-emerald-500"}`}
-                          title="已生成此平台版本"
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab("image-gen")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                  activeTab === "image-gen" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span>🎨</span>
+                <span>图片生成工坊</span>
+                {draftAssets.length > 0 && (
+                  <span
+                    className={`rounded-full px-2 py-0.2 text-xs ${
+                      activeTab === "image-gen" ? "bg-blue-800 text-white" : "bg-slate-200 text-slate-700"
+                    }`}
+                  >
+                    {draftAssets.length}资产
+                  </span>
+                )}
+              </button>
 
-              {/* 平台特性描述 */}
-              <div className="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2 text-xs text-slate-600">
-                <span>
-                  <strong>平台定位：</strong>
-                  {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.desc}
+              <button
+                type="button"
+                onClick={() => setActiveTab("runs-history")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                  activeTab === "runs-history" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span>📜</span>
+                <span>生成历史追溯</span>
+                <span
+                  className={`rounded-full px-2 py-0.2 text-xs ${
+                    activeTab === "runs-history" ? "bg-blue-800 text-white" : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {generationRuns.length}
                 </span>
-                <span className="font-mono text-slate-400">
-                  封面规格 {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.ratio}
-                </span>
-              </div>
+              </button>
 
-              {/* 若当前平台已有版本 */}
-              {currentPlatformVariant ? (
-                <div className="mt-5 space-y-5">
-                  {/* 版本元信息条 */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-md bg-blue-100 px-2 py-0.5 font-semibold text-blue-800">
-                        {currentPlatformVariant.contentType}
-                      </span>
-                      <span className="rounded-md bg-slate-200 px-2 py-0.5 text-slate-700">
-                        {currentPlatformVariant.generationMode}
-                      </span>
-                      <span className="text-slate-500">
-                        生成于：{new Date(currentPlatformVariant.createdAt).toLocaleString("zh-CN", { hour12: false })}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={generatingVariants}
-                      onClick={() => void handleGeneratePlatform(selectedPlatform)}
-                      className="text-xs text-blue-700 hover:underline"
-                    >
-                      {generatingVariants ? "重新生成中…" : "重新为此平台生成"}
-                    </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("draft-editor")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                  activeTab === "draft-editor" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span>📝</span>
+                <span>草稿底稿直接编辑</span>
+              </button>
+            </div>
+
+            {/* 板块 1: AI 平台生成 */}
+            {activeTab === "ai-gen" && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">国内平台文案生成与适配</h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      针对微信公众号、小红书、微博、抖音、B站受众与排版规律专属适配，支持多轮润色与采纳。
+                    </p>
                   </div>
+                  {currentPlatformVariant && (
+                    <button
+                      type="button"
+                      disabled={applying || locked}
+                      onClick={() => void handleApplyVariant()}
+                      className="ui-button font-medium border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                    >
+                      {applying ? "应用中…" : "采纳为此草稿新版本"}
+                    </button>
+                  )}
+                </div>
 
-                  {/* 标题与封面文案 */}
-                  <div className="space-y-3 rounded-xl border border-slate-200 p-4">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500">适配主标题</span>
-                      <h3 className="mt-1 text-base font-bold text-slate-900">{currentPlatformVariant.title}</h3>
+                {/* 平台切换标签 */}
+                <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+                  {CN_PLATFORMS.map((p) => {
+                    const hasVariant = variants.some((v) => v.platform === p.id);
+                    const isSelected = selectedPlatform === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedPlatform(p.id)}
+                        className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition ${
+                          isSelected
+                            ? "bg-blue-700 text-white shadow-xs"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        <span>{p.icon}</span>
+                        <span>{p.name}</span>
+                        {hasVariant ? (
+                          <span
+                            className={`ml-1 h-2 w-2 rounded-full ${isSelected ? "bg-emerald-300" : "bg-emerald-500"}`}
+                            title="已生成此平台版本"
+                          />
+                        ) : (
+                          <span className="ml-1 h-1.5 w-1.5 rounded-full bg-slate-300" title="未生成" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* 平台特性描述 */}
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2 text-xs text-slate-600">
+                  <span>
+                    <strong>平台定位：</strong>
+                    {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.desc}
+                  </span>
+                  <span className="font-mono text-slate-400">
+                    封面规格 {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.ratio}
+                  </span>
+                </div>
+
+                {/* 若当前平台已有版本 */}
+                {currentPlatformVariant ? (
+                  <div className="space-y-5">
+                    {/* 版本元信息条 */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-md bg-blue-100 px-2 py-0.5 font-semibold text-blue-800">
+                          {currentPlatformVariant.contentType}
+                        </span>
+                        <span className="rounded-md bg-slate-200 px-2 py-0.5 text-slate-700">
+                          {currentPlatformVariant.generationMode}
+                        </span>
+                        <span className="text-slate-500">
+                          生成时间：{new Date(currentPlatformVariant.createdAt).toLocaleString("zh-CN", { hour12: false })}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={generatingVariants}
+                        onClick={() => void handleGeneratePlatform(selectedPlatform)}
+                        className="text-xs text-blue-700 hover:underline font-medium"
+                      >
+                        {generatingVariants ? "重新生成中…" : "重新为此平台生成"}
+                      </button>
                     </div>
 
-                    {currentPlatformVariant.coverText && (
-                      <div className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-900">
-                        <span className="font-semibold">建议封面主大字：</span>
-                        <span>{currentPlatformVariant.coverText}</span>
+                    {/* 标题与封面文案 */}
+                    <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+                      <div>
+                        <span className="text-xs font-semibold text-slate-500">适配主标题</span>
+                        <h3 className="mt-1 text-base font-bold text-slate-900">{currentPlatformVariant.title}</h3>
                       </div>
-                    )}
 
-                    {currentPlatformVariant.platformMetadata?.hook && (
-                      <div className="rounded-lg bg-indigo-50 p-2.5 text-xs text-indigo-950">
-                        <span className="font-semibold">开篇黄金抓手 (Hook)：</span>
-                        <p className="mt-0.5">{currentPlatformVariant.platformMetadata.hook}</p>
+                      {currentPlatformVariant.coverText && (
+                        <div className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-900">
+                          <span className="font-semibold">建议封面主大字：</span>
+                          <span>{currentPlatformVariant.coverText}</span>
+                        </div>
+                      )}
+
+                      {currentPlatformVariant.platformMetadata?.hook && (
+                        <div className="rounded-lg bg-indigo-50 p-2.5 text-xs text-indigo-950">
+                          <span className="font-semibold">开篇黄金抓手 (Hook)：</span>
+                          <p className="mt-0.5">{currentPlatformVariant.platformMetadata.hook}</p>
+                        </div>
+                      )}
+
+                      {currentPlatformVariant.platformMetadata?.coverSuggestions &&
+                        currentPlatformVariant.platformMetadata.coverSuggestions.length > 0 && (
+                          <div>
+                            <span className="text-xs font-semibold text-slate-500">备选高点击标题方案：</span>
+                            <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                              {currentPlatformVariant.platformMetadata.coverSuggestions.map((alt, idx) => (
+                                <li key={idx} className="flex items-start gap-1.5">
+                                  <span className="font-mono text-slate-400">方案{idx + 1}.</span>
+                                  <span>{alt}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                    </div>
+
+                    {/* 正文 / 脚本大纲展示 */}
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
+                        <span className="font-semibold text-slate-600">正文内容与分段脚本</span>
+                        {currentPlatformVariant.platformMetadata?.wordCountTarget && (
+                          <span className="text-slate-400">
+                            目标字数：{currentPlatformVariant.platformMetadata.wordCountTarget}
+                          </span>
+                        )}
                       </div>
-                    )}
+                      <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-800">
+                        {currentPlatformVariant.body}
+                      </pre>
 
-                    {currentPlatformVariant.platformMetadata?.coverSuggestions &&
-                      currentPlatformVariant.platformMetadata.coverSuggestions.length > 0 && (
-                        <div>
-                          <span className="text-xs font-semibold text-slate-500">备选高点击标题方案：</span>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {currentPlatformVariant.platformMetadata.coverSuggestions.map((alt, idx) => (
-                              <li key={idx} className="flex items-start gap-1.5">
-                                <span className="font-mono text-slate-400">方案{idx + 1}.</span>
-                                <span>{alt}</span>
-                              </li>
+                      {/* 行动号召 CTA */}
+                      {currentPlatformVariant.platformMetadata?.cta && (
+                        <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 p-2.5 text-xs text-blue-900">
+                          <span className="font-semibold">结尾行动号召 (CTA)：</span>
+                          <span>{currentPlatformVariant.platformMetadata.cta}</span>
+                        </div>
+                      )}
+
+                      {/* 话题标签 */}
+                      {currentPlatformVariant.tags && currentPlatformVariant.tags.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {currentPlatformVariant.tags.map((tag, idx) => (
+                            <span
+                              key={idx}
+                              className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 真实性核对与合规守卫提示 */}
+                    {currentPlatformVariant.platformMetadata?.safeNotes &&
+                      currentPlatformVariant.platformMetadata.safeNotes.length > 0 && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs text-amber-900">
+                          <div className="flex items-center gap-1.5 font-semibold">
+                            <span>⚠️</span>
+                            <span>事实准确性与平台合规审查提示</span>
+                          </div>
+                          <ul className="mt-2 space-y-1 list-disc list-inside">
+                            {currentPlatformVariant.platformMetadata.safeNotes.map((note, idx) => (
+                              <li key={idx}>{note}</li>
                             ))}
                           </ul>
                         </div>
                       )}
-                  </div>
 
-                  {/* 正文 / 脚本大纲展示 */}
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
-                      <span className="font-semibold text-slate-600">正文内容与分段脚本</span>
-                      {currentPlatformVariant.platformMetadata?.wordCountTarget && (
-                        <span className="text-slate-400">
-                          目标字数：{currentPlatformVariant.platformMetadata.wordCountTarget}
-                        </span>
-                      )}
-                    </div>
-                    <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-800">
-                      {currentPlatformVariant.body}
-                    </pre>
-
-                    {/* 行动号召 CTA */}
-                    {currentPlatformVariant.platformMetadata?.cta && (
-                      <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 p-2.5 text-xs text-blue-900">
-                        <span className="font-semibold">结尾行动号召 (CTA)：</span>
-                        <span>{currentPlatformVariant.platformMetadata.cta}</span>
+                    {/* 智能改写与微调工具箱（11 种模式） */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-700">定向改写与语气调优（支持 11 种模式）</h4>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            针对当前版本进行专项润色，自动生成不可篡改的 Generation Run 记录。
+                          </p>
+                        </div>
                       </div>
-                    )}
 
-                    {/* 话题标签 */}
-                    {currentPlatformVariant.tags && currentPlatformVariant.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {currentPlatformVariant.tags.map((tag, idx) => (
-                          <span
-                            key={idx}
-                            className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {REWRITE_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.mode}
+                            type="button"
+                            onClick={() => setSelectedRewriteMode(opt.mode)}
+                            className={`rounded-lg border p-2 text-left transition ${
+                              selectedRewriteMode === opt.mode
+                                ? "border-blue-600 bg-blue-50 text-blue-900 shadow-2xs"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                            }`}
                           >
-                            {tag}
-                          </span>
+                            <div className="text-xs font-bold">{opt.label}</div>
+                            <div className="text-[11px] text-slate-500 leading-tight mt-0.5">{opt.desc}</div>
+                          </button>
                         ))}
                       </div>
-                    )}
-                  </div>
 
-                  {/* 真实性核对与合规守卫提示 */}
-                  {currentPlatformVariant.platformMetadata?.safeNotes &&
-                    currentPlatformVariant.platformMetadata.safeNotes.length > 0 && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs text-amber-900">
-                        <div className="flex items-center gap-1.5 font-semibold">
-                          <span>⚠️</span>
-                          <span>事实准确性与平台合规审查提示</span>
-                        </div>
-                        <ul className="mt-2 space-y-1 list-disc list-inside">
-                          {currentPlatformVariant.platformMetadata.safeNotes.map((note, idx) => (
-                            <li key={idx}>{note}</li>
-                          ))}
-                        </ul>
+                      <div className="mt-3 flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="可输入具体改写说明（例如：重点突出夜间静音体验）"
+                          value={rewriteInstructions}
+                          onChange={(e) => setRewriteInstructions(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs placeholder:text-slate-400"
+                        />
+                        <button
+                          type="button"
+                          disabled={rewriting}
+                          onClick={() => void handleRewriteVariant()}
+                          className="ui-button primary shrink-0 text-xs px-4"
+                        >
+                          {rewriting ? "改写中…" : "立即执行改写"}
+                        </button>
                       </div>
-                    )}
-
-                  {/* 智能改写与微调工具箱 */}
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                    <h4 className="text-xs font-bold text-slate-700">定向改写与语气调优</h4>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      针对当前版本进行专项润色，每次改写将安全留存，不破坏既有底稿。
+                    </div>
+                  </div>
+                ) : (
+                  /* 当前平台尚未生成版本时的引导卡片 */
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-2xl">
+                      {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.icon}
+                    </div>
+                    <h3 className="mt-3 text-sm font-semibold text-slate-800">
+                      尚未生成 {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.name} 版本文案
+                    </h3>
+                    <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
+                      选择生成模式后，一键为该平台生成定制化的标题、正文结构、封面文案及标签。
                     </p>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {REWRITE_OPTIONS.map((opt) => (
+                    <div className="mx-auto mt-4 flex max-w-sm flex-wrap justify-center gap-2">
+                      {GENERATION_MODES.map((mode) => (
                         <button
-                          key={opt.mode}
+                          key={mode.mode}
                           type="button"
-                          onClick={() => setSelectedRewriteMode(opt.mode)}
-                          className={`rounded-lg border p-2 text-left transition ${
-                            selectedRewriteMode === opt.mode
-                              ? "border-blue-600 bg-blue-50 text-blue-900 shadow-2xs"
-                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                          onClick={() => setGenMode(mode.mode)}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                            genMode === mode.mode
+                              ? "bg-blue-700 text-white shadow-2xs"
+                              : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
                           }`}
                         >
-                          <div className="text-xs font-bold">{opt.label}</div>
-                          <div className="text-[11px] text-slate-500 leading-tight mt-0.5">{opt.desc}</div>
+                          {mode.label}
                         </button>
                       ))}
                     </div>
 
-                    <div className="mt-3 flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="可输入具体改写说明（例如：重点突出夜间静音体验）"
-                        value={rewriteInstructions}
-                        onChange={(e) => setRewriteInstructions(e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs placeholder:text-slate-400"
-                      />
+                    <div className="mt-5">
                       <button
                         type="button"
-                        disabled={rewriting}
-                        onClick={() => void handleRewriteVariant()}
-                        className="ui-button primary shrink-0 text-xs px-4"
+                        disabled={generatingVariants}
+                        onClick={() => void handleGeneratePlatform(selectedPlatform)}
+                        className="ui-button primary text-sm px-5 py-2 font-medium"
                       >
-                        {rewriting ? "改写中…" : "立即执行改写"}
+                        {generatingVariants
+                          ? "正在定制生成中…"
+                          : `一键生成 ${CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.name} 版本`}
                       </button>
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* 板块 2: 事实检查与声明守卫 (Fact Check & Claim Guard) */}
+            {activeTab === "fact-check" && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">事实核查与声明守卫 (Fact Grounding)</h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      自动提取正文中的参数、排名、极限词与功效断言，比对已知事实库，阻断未核验内容的审批发布。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={extractingClaims}
+                    onClick={() => void handleExtractClaims()}
+                    className="ui-button primary text-xs"
+                  >
+                    {extractingClaims ? "正在抽取核对中…" : "一键抽取并核查当前文本声明"}
+                  </button>
                 </div>
-              ) : (
-                /* 当前平台尚未生成版本时的引导卡片 */
-                <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-2xl">
-                    {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.icon}
-                  </div>
-                  <h3 className="mt-3 text-sm font-semibold text-slate-800">
-                    尚未生成 {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.name} 版本文案
-                  </h3>
-                  <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
-                    选择生成模式后，一键为该平台生成定制化的标题、正文结构、封面文案及标签。
-                  </p>
 
-                  <div className="mx-auto mt-4 flex max-w-sm flex-wrap justify-center gap-2">
-                    {GENERATION_MODES.map((mode) => (
+                {/* 阻断状态横幅 */}
+                {claimCheckResult?.blocking && (
+                  <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-xs text-red-900 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold flex items-center gap-1.5 text-sm">
+                        <span>⚠️</span>
+                        <span>事实核查未通过：检测到未验证的核心事实声明（审批强制拦截中）</span>
+                      </span>
                       <button
-                        key={mode.mode}
                         type="button"
-                        onClick={() => setGenMode(mode.mode)}
-                        className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-                          genMode === mode.mode
-                            ? "bg-blue-700 text-white shadow-2xs"
-                            : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-                        }`}
+                        disabled={safeRewriting}
+                        onClick={() => void handleSafeRewrite()}
+                        className="ui-button primary font-medium text-xs bg-red-700 hover:bg-red-800 text-white"
                       >
-                        {mode.label}
+                        {safeRewriting ? "正在安全净化改写中…" : "一键自动安全改写"}
                       </button>
-                    ))}
+                    </div>
+                    <p className="text-slate-700">
+                      当前文本包含 <strong>{claimCheckResult.unverifiedCount}</strong> 项未验证断言（含{" "}
+                      <strong>{claimCheckResult.conflictingCount}</strong> 项冲突）。根据规则，包含未核验参数、极限绝对词或医疗功效的内容禁止审批通过。
+                    </p>
+                  </div>
+                )}
+
+                {claimCheckResult && !claimCheckResult.blocking && (
+                  <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-900">
+                    <div className="flex items-center gap-2 font-bold text-sm">
+                      <span>✅</span>
+                      <span>事实核查全部通过</span>
+                    </div>
+                    <p className="mt-1 text-slate-700">
+                      所有抽取的断言均已成功与已知事实库核验，或表述符合客观中立安全规范，允许提交审批与发布。
+                    </p>
+                  </div>
+                )}
+
+                {/* 安全改写成果提示 */}
+                {safeRewriteSummary && (
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-xs text-indigo-950 space-y-2">
+                    <div className="font-bold text-sm">安全改写已生效并留存运行快照</div>
+                    <p className="text-slate-600">已对以下未验证断言执行中立化脱敏重构：</p>
+                    <ul className="space-y-1 list-disc list-inside">
+                      {safeRewriteSummary.changeSummary.map((item, idx) => (
+                        <li key={idx}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 抽取声明列表 */}
+                {claimCheckResult?.claims && claimCheckResult.claims.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold text-slate-800">
+                        抽取的断言清单 ({claimCheckResult.claims.length})
+                      </h3>
+                      <div className="flex gap-1 text-xs">
+                        {(["ALL", "UNVERIFIED", "CONFLICTING", "VERIFIED"] as const).map((filter) => (
+                          <button
+                            key={filter}
+                            type="button"
+                            onClick={() => setClaimFilter(filter)}
+                            className={`rounded px-2 py-0.5 transition ${
+                              claimFilter === filter
+                                ? "bg-slate-800 text-white font-medium"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            }`}
+                          >
+                            {filter === "ALL"
+                              ? "全部"
+                              : filter === "UNVERIFIED"
+                              ? "未验证"
+                              : filter === "CONFLICTING"
+                              ? "冲突"
+                              : "已验证"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5 max-h-72 overflow-auto pr-1">
+                      {filteredClaims.map((c) => (
+                        <div
+                          key={c.id}
+                          className={`rounded-xl border p-3 text-xs space-y-1.5 transition ${
+                            c.status === "VERIFIED"
+                              ? "border-emerald-200 bg-emerald-50/40"
+                              : c.status === "CONFLICTING"
+                              ? "border-red-300 bg-red-50/50"
+                              : "border-amber-200 bg-amber-50/40"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="rounded bg-slate-200 px-1.5 py-0.2 font-mono text-[10px] text-slate-700">
+                                {CLAIM_CATEGORY_LABELS[c.category] || c.category}
+                              </span>
+                              <span
+                                className={`rounded px-1.5 py-0.2 text-[10px] font-bold ${
+                                  c.status === "VERIFIED"
+                                    ? "bg-emerald-200 text-emerald-800"
+                                    : c.status === "CONFLICTING"
+                                    ? "bg-red-200 text-red-800"
+                                    : "bg-amber-200 text-amber-800"
+                                }`}
+                              >
+                                {c.status === "VERIFIED" ? "已核验" : c.status === "CONFLICTING" ? "冲突违背" : "未经验证"}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-400">
+                              置信度: {(c.confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="font-bold text-slate-900">{c.claim}</div>
+                          {c.sourceSnippet && (
+                            <div className="text-slate-500 italic">原文片段：“{c.sourceSnippet}”</div>
+                          )}
+                          {c.status === "UNVERIFIED" && (
+                            <div className="pt-1 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNewClaim(c.claim);
+                                  setNewFactType(c.category === "NUMERICAL_SPEC" ? "SPEC" : "FEATURE");
+                                }}
+                                className="text-[11px] text-blue-700 hover:underline font-medium"
+                              >
+                                填入已知事实库登记 →
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 已知事实库维护 (Verified Facts) */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">草稿与项目已知事实库 (Verified Facts)</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      登记由产品说明书、检测报告或用户明确确认的客观事实，供 LLM 生成与合规审查时自动采纳为事实依据。
+                    </p>
                   </div>
 
-                  <div className="mt-5">
+                  {/* 录入新事实表单 */}
+                  <form onSubmit={handleAddFact} className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+                    <div className="text-xs font-semibold text-slate-700">录入新的核验事实</div>
+                    <div className="grid gap-2 sm:grid-cols-[2fr_1fr]">
+                      <input
+                        type="text"
+                        placeholder="客观事实声明（例如：工作噪音45分贝、电池容量5000mAh）"
+                        value={newClaim}
+                        onChange={(e) => setNewClaim(e.target.value)}
+                        className="rounded-lg border border-slate-300 p-1.5 text-xs placeholder:text-slate-400"
+                        required
+                      />
+                      <select
+                        value={newFactType}
+                        onChange={(e) => setNewFactType(e.target.value)}
+                        className="rounded-lg border border-slate-300 p-1.5 text-xs"
+                      >
+                        {Object.entries(FACT_TYPE_LABELS).map(([k, label]) => (
+                          <option key={k} value={k}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="凭据来源（例如：国家质检报告编号 CNAS-2026 或官网规格页）"
+                        value={newSourceRef}
+                        onChange={(e) => setNewSourceRef(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 p-1.5 text-xs placeholder:text-slate-400"
+                      />
+                      <button
+                        type="submit"
+                        disabled={addingFact}
+                        className="ui-button primary shrink-0 text-xs px-4"
+                      >
+                        {addingFact ? "登记中…" : "添加核验事实"}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* 已录入事实列表 */}
+                  {verifiedFacts.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-auto pr-1">
+                      {verifiedFacts.map((fact) => (
+                        <div
+                          key={fact.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-xs"
+                        >
+                          <div>
+                            <span className="rounded bg-blue-100 px-1.5 py-0.2 text-[10px] font-semibold text-blue-800 mr-2">
+                              {FACT_TYPE_LABELS[fact.factType] || fact.factType}
+                            </span>
+                            <span className="font-medium text-slate-800">{fact.claim}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            {fact.sourceRef ? `凭据: ${fact.sourceRef}` : "人工录入确认"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-xs text-slate-400 py-3">
+                      暂无登记的核验事实。录入后系统将自动放行匹配的事实断言。
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 板块 3: 图片生成工坊 (Image Generation & Assets) */}
+            {activeTab === "image-gen" && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">视觉设计与图片生成工坊</h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      支持从平台 Brief 快速导入或自由配置提示词。通过合规安全审查后，一键生成预览并采纳为草稿资产。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={generatingBriefs}
+                    onClick={() => void handleGenerateImageBriefs()}
+                    className="ui-button primary text-xs"
+                  >
+                    {generatingBriefs ? "正在提炼 Brief…" : "提炼当前平台视觉 Brief"}
+                  </button>
+                </div>
+
+                {/* 从当前平台 Brief 快捷载入 */}
+                {currentPlatformBriefs.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold text-slate-700">从推荐 Brief 方案载入参数：</h3>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {currentPlatformBriefs.map((b) => (
+                        <div
+                          key={b.id}
+                          className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800">{b.title}</span>
+                            <span className="rounded bg-slate-200 px-1.5 py-0.2 font-mono text-[10px]">
+                              {b.ratio}
+                            </span>
+                          </div>
+                          <p className="text-slate-600 line-clamp-2">{b.prompt}</p>
+                          <button
+                            type="button"
+                            onClick={() => loadBriefToStudio(b)}
+                            className="text-xs text-blue-700 hover:underline font-semibold"
+                          >
+                            载入此 Brief 到生图器 →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 图片生成控制面板 */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+                  <h3 className="text-xs font-bold text-slate-700">图片生成参数与提示词</h3>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">图片比例与平台适配</label>
+                      <select
+                        value={imageRatio}
+                        onChange={(e) => setImageRatio(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs"
+                      >
+                        {RATIO_OPTIONS.map((ro) => (
+                          <option key={ro.ratio} value={ro.ratio}>
+                            {ro.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">视觉艺术风格</label>
+                      <select
+                        value={imageStyle}
+                        onChange={(e) => setImageStyle(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs"
+                      >
+                        {IMAGE_STYLES.map((st) => (
+                          <option key={st.style} value={st.style}>
+                            {st.label} ({st.desc})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 封面排版压字 */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      建议排版压字（可选，渲染至图片）
+                    </label>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <input
+                        type="text"
+                        placeholder="主大字标题（例如：超薄机身）"
+                        value={imageMainTitle}
+                        onChange={(e) => setImageMainTitle(e.target.value)}
+                        className="rounded-lg border border-slate-300 bg-white p-1.5 text-xs placeholder:text-slate-400"
+                      />
+                      <input
+                        type="text"
+                        placeholder="副标题说明（例如：深度静音降噪）"
+                        value={imageSubtitle}
+                        onChange={(e) => setImageSubtitle(e.target.value)}
+                        className="rounded-lg border border-slate-300 bg-white p-1.5 text-xs placeholder:text-slate-400"
+                      />
+                      <input
+                        type="text"
+                        placeholder="角标/特性标贴（例如：官方实测）"
+                        value={imageBadge}
+                        onChange={(e) => setImageBadge(e.target.value)}
+                        className="rounded-lg border border-slate-300 bg-white p-1.5 text-xs placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 提示词输入 */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">生图提示词 (Prompt)</label>
+                    <textarea
+                      rows={3}
+                      placeholder="描述主体构图、光影材质与氛围细节（例如：现代极简桌面，高反光磨砂金属质感）"
+                      value={imagePrompt}
+                      onChange={(e) => setImagePrompt(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs font-mono placeholder:text-slate-400"
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
                     <button
                       type="button"
-                      disabled={generatingVariants}
-                      onClick={() => void handleGeneratePlatform(selectedPlatform)}
-                      className="ui-button primary text-sm px-5 py-2 font-medium"
+                      disabled={generatingPreview}
+                      onClick={() => void handleGenerateImagePreview()}
+                      className="ui-button primary text-xs px-5 py-2 font-medium"
                     >
-                      {generatingVariants ? "正在定制生成中…" : `一键生成 ${CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.name} 版本`}
+                      {generatingPreview ? "正在生成预览中…" : "生成图片预览 (Image Preview)"}
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* 第二卡片：视觉封面与生图 Brief 工作台 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">视觉生图与封面 Brief 工作台</h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    根据平台规范自动提炼比例规格、风格提示词及文字排版建议，可一键复制或供生图模型消费。
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={generatingBriefs}
-                  onClick={() => void handleGenerateImageBriefs()}
-                  className="ui-button primary text-xs"
-                >
-                  {generatingBriefs ? "正在提炼 Brief…" : "一键生成视觉 Brief"}
-                </button>
-              </div>
-
-              {/* 视觉风格选择 */}
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-medium text-slate-500">推荐视觉风格：</span>
-                {IMAGE_STYLES.map((st) => (
-                  <button
-                    key={st.style}
-                    type="button"
-                    onClick={() => setSelectedImageStyle(st.style)}
-                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                      selectedImageStyle === st.style
-                        ? "bg-slate-800 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                  >
-                    {st.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Brief 列表卡片 */}
-              {currentPlatformBriefs.length > 0 ? (
-                <div className="mt-5 space-y-4">
-                  {currentPlatformBriefs.map((brief) => (
-                    <div key={brief.id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
-                        <div className="flex items-center gap-2">
-                          <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">
-                            {brief.assetType === "COVER_IMAGE" ? "封面首图" : "内容插图"}
-                          </span>
-                          <span className="text-sm font-bold text-slate-800">{brief.title}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-mono text-slate-500">
-                          <span>比例：{brief.ratio}</span>
-                          <span>·</span>
-                          <span>风格：{brief.style}</span>
-                        </div>
+                {/* 生成预览展示与采纳操作 */}
+                {imagePreview && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                          {imagePreview.status === "COMPLETED" ? "生成就绪" : imagePreview.status}
+                        </span>
+                        <span className="text-xs text-slate-500 font-mono">
+                          {imagePreview.provider} · {imagePreview.model}
+                        </span>
                       </div>
+                      <button
+                        type="button"
+                        disabled={acceptingAsset}
+                        onClick={() => void handleAcceptImageAsset()}
+                        className="ui-button primary text-xs px-4"
+                      >
+                        {acceptingAsset ? "入库中…" : "采纳为此草稿正式资产 (Accept Asset)"}
+                      </button>
+                    </div>
 
-                      {/* 建议排版文字 */}
-                      {brief.textOverlay && (
-                        <div className="rounded-lg bg-amber-50/80 p-2.5 text-xs text-amber-950">
-                          <span className="font-semibold">建议封面压字排版：</span>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            <span className="rounded bg-white px-2 py-0.5 border border-amber-200">
-                              主标：{brief.textOverlay.mainTitle}
-                            </span>
-                            {brief.textOverlay.subtitle && (
-                              <span className="rounded bg-white px-2 py-0.5 border border-amber-200">
-                                副标：{brief.textOverlay.subtitle}
-                              </span>
-                            )}
-                            {brief.textOverlay.badge && (
-                              <span className="rounded bg-white px-2 py-0.5 border border-amber-200">
-                                标贴：{brief.textOverlay.badge}
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                    {/* 图片预览展示 */}
+                    <div className="flex flex-col items-center justify-center rounded-xl bg-slate-900/5 p-4">
+                      {imagePreview.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={imagePreview.imageUrl}
+                          alt="AI 生成图片预览"
+                          className="max-h-96 rounded-lg shadow-md object-contain"
+                        />
+                      ) : (
+                        <div className="text-xs text-slate-400 py-8">图片预览已就绪</div>
                       )}
+                    </div>
 
-                      {/* 结构化生图 Prompt */}
-                      <div>
-                        <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-                          <span>生图提示词 (Prompt)</span>
-                          <button
-                            type="button"
-                            onClick={() => void copyToClipboard(brief.prompt, brief.id)}
-                            className="text-blue-700 hover:underline font-normal"
-                          >
-                            {copiedPromptId === brief.id ? "已复制提示词！" : "复制提示词"}
-                          </button>
-                        </div>
-                        <pre className="mt-1 rounded-lg border border-slate-200 bg-white p-2.5 text-xs font-mono text-slate-800 whitespace-pre-wrap">
-                          {brief.prompt}
-                        </pre>
-                      </div>
-
-                      {/* 负向提示词 */}
-                      {brief.negativePrompt && (
-                        <div>
-                          <div className="text-xs font-semibold text-slate-500">负向提示词 (Negative Prompt)</div>
-                          <pre className="mt-1 rounded-lg border border-slate-200 bg-white p-2 text-xs font-mono text-slate-600 whitespace-pre-wrap">
-                            {brief.negativePrompt}
-                          </pre>
-                        </div>
-                      )}
-
-                      {/* 真实性安全核查 */}
-                      {brief.safeFactCheck && (
-                        <div className="text-xs text-slate-500 italic">
-                          <span>真实性审查：</span> {brief.safeFactCheck}
+                    {/* 净化后的提示词与警告信息 */}
+                    <div className="text-xs space-y-1.5 rounded-lg bg-slate-50 p-3">
+                      <div className="font-semibold text-slate-700">实际生效的安全提示词：</div>
+                      <p className="font-mono text-slate-600 text-[11px]">{imagePreview.sanitizedPrompt}</p>
+                      {imagePreview.warnings && imagePreview.warnings.length > 0 && (
+                        <div className="text-amber-800">
+                          <strong>合规净化提示：</strong> {imagePreview.warnings.join("；")}
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500">
-                  当前平台尚未生成生图 Brief。点击上方「一键生成视觉 Brief」按钮即可自动构建符合该平台比例规格的专业视觉方案。
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
 
-            {/* 第三卡片：草稿基础底稿与手工保存 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-              <h2 className="text-lg font-bold text-slate-900">草稿底稿直接编辑</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                保存会创建新的 Revision；历史版本只读。已批准后再次编辑会退回到草稿状态并需重新审核。
-              </p>
-              <label className="mt-4 block text-sm font-medium">
-                标题
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  disabled={locked}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
-                />
-              </label>
-              <label className="mt-3 block text-sm font-medium">
-                主题
-                <input
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  disabled={locked}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
-                />
-              </label>
-              <label className="mt-3 block text-sm font-medium">
-                正文 / 脚本 / 标签 / CTA
-                <textarea
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  disabled={locked}
-                  rows={8}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 font-mono text-sm"
-                />
-              </label>
-              <label className="mt-3 block text-sm font-medium">
-                摘要
-                <textarea
-                  value={summary}
-                  onChange={(e) => setSummary(e.target.value)}
-                  disabled={locked}
-                  rows={2}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={busy || locked}
-                onClick={() => void save()}
-                className="ui-button primary mt-4 font-medium"
-              >
-                {busy ? "保存中…" : "保存底稿为新版本"}
-              </button>
-            </div>
+                {/* 采纳成功提示 */}
+                {acceptedAsset && (
+                  <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-900">
+                    <div className="font-bold flex items-center gap-2 text-sm">
+                      <span>🎉</span>
+                      <span>资产成功入库！</span>
+                    </div>
+                    <p className="mt-1 text-slate-700">
+                      已将当前视觉图片保存为草稿资产库封面 (COVER)，存储键：
+                      <span className="font-mono text-slate-800">{acceptedAsset.storage}</span>，大小：
+                      {(acceptedAsset.sizeBytes / 1024).toFixed(1)} KB。
+                    </p>
+                  </div>
+                )}
+
+                {/* 草稿资产库列表 */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-700">当前草稿关联的图片资产库 ({draftAssets.length})</h3>
+                  </div>
+                  {draftAssets.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {draftAssets.map((asset) => (
+                        <div
+                          key={asset.id}
+                          className="rounded-lg border border-slate-200 bg-white p-3 text-xs space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="rounded bg-blue-100 px-1.5 py-0.2 font-semibold text-blue-800">
+                              {asset.type}
+                            </span>
+                            <span className="text-[11px] text-slate-400">
+                              {(asset.sizeBytes / 1024).toFixed(1)} KB
+                            </span>
+                          </div>
+                          <div className="font-mono text-[10px] text-slate-500 truncate" title={asset.storage}>
+                            存储: {asset.storage}
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            创建时间：{new Date(asset.createdAt).toLocaleDateString("zh-CN")}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-xs text-slate-400 py-3">
+                      草稿资产库暂无图片，点击上方「采纳为此草稿正式资产」即可沉淀入库。
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 板块 4: 生成运行历史追溯 (Generation Runs) */}
+            {activeTab === "runs-history" && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">不可篡改生成记录 (Generation Runs)</h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      全面追溯所有文本与图片模型调用的提示词版本、输入输出快照与 Token 计费。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={loadingRuns}
+                    onClick={() => void handleRefreshRuns()}
+                    className="ui-button text-xs"
+                  >
+                    {loadingRuns ? "正在刷新…" : "刷新运行记录"}
+                  </button>
+                </div>
+
+                {generationRuns.length > 0 ? (
+                  <div className="space-y-3">
+                    {generationRuns.map((run) => (
+                      <div
+                        key={run.id}
+                        className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 text-xs space-y-2.5 transition hover:border-slate-300"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-800">#{run.id.slice(0, 8)}</span>
+                            <span className="rounded bg-blue-100 px-2 py-0.5 font-semibold text-blue-800">
+                              {run.platform}
+                            </span>
+                            <span className="rounded bg-slate-200 px-2 py-0.5 text-slate-700">
+                              {run.generationMode}
+                            </span>
+                            <span
+                              className={`rounded px-1.5 py-0.5 font-bold ${
+                                run.status === "COMPLETED"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}
+                            >
+                              {run.status === "COMPLETED" ? "生成成功" : "执行失败"}
+                            </span>
+                          </div>
+                          <span className="text-slate-400">
+                            {new Date(run.createdAt).toLocaleString("zh-CN", { hour12: false })}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-slate-600 sm:grid-cols-4 pt-1 border-t border-slate-200/60">
+                          <div>
+                            <span className="text-slate-400">模型引擎：</span>
+                            <span className="font-mono">{run.provider} / {run.model}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">提示词版本：</span>
+                            <span className="font-mono">{run.promptVersion}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Token 消耗：</span>
+                            <span className="font-mono">入 {run.inputTokens ?? 0} / 出 {run.outputTokens ?? 0}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">核算费用：</span>
+                            <span className="font-semibold text-slate-800">
+                              {run.costUsd === null ? "免费 / Mock" : `$${run.costUsd}`}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 查看快照展开 */}
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedRunId(expandedRunId === run.id ? null : run.id)}
+                            className="text-blue-700 hover:underline text-xs font-semibold"
+                          >
+                            {expandedRunId === run.id ? "收起快照数据 ↑" : "查看输入与输出快照 ↓"}
+                          </button>
+                        </div>
+
+                        {expandedRunId === run.id && (
+                          <div className="mt-2 space-y-2 rounded-lg bg-slate-900 p-3 text-slate-200 font-mono text-[11px] overflow-auto max-h-80">
+                            <div>
+                              <div className="text-emerald-400 font-bold mb-1">输入快照 (Input Snapshot):</div>
+                              <pre className="whitespace-pre-wrap">
+                                {JSON.stringify(run.inputSnapshot, null, 2)}
+                              </pre>
+                            </div>
+                            <div className="pt-2 border-t border-slate-700">
+                              <div className="text-cyan-400 font-bold mb-1">输出快照 (Output Snapshot):</div>
+                              <pre className="whitespace-pre-wrap">
+                                {JSON.stringify(run.outputSnapshot, null, 2)}
+                              </pre>
+                            </div>
+                            {run.errorMessage && (
+                              <div className="pt-2 border-t border-slate-700 text-red-400">
+                                <div className="font-bold mb-1">异常错误：</div>
+                                <div>{run.errorMessage}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
+                    暂无生成运行记录。发起文本生成、改写或生图后将在此处记录不可篡改的 Run 账本。
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 板块 5: 草稿基础底稿与手工保存 */}
+            {activeTab === "draft-editor" && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+                <h2 className="text-lg font-bold text-slate-900">草稿底稿直接编辑</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  保存会创建新的 Revision；历史版本只读。已批准后再次编辑会退回到草稿状态并需重新审核。
+                </p>
+                <label className="mt-4 block text-sm font-medium">
+                  标题
+                  <input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    disabled={locked}
+                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
+                  />
+                </label>
+                <label className="mt-3 block text-sm font-medium">
+                  主题
+                  <input
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    disabled={locked}
+                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
+                  />
+                </label>
+                <label className="mt-3 block text-sm font-medium">
+                  正文 / 脚本 / 标签 / CTA
+                  <textarea
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    disabled={locked}
+                    rows={8}
+                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 font-mono text-sm"
+                  />
+                </label>
+                <label className="mt-3 block text-sm font-medium">
+                  摘要
+                  <textarea
+                    value={summary}
+                    onChange={(e) => setSummary(e.target.value)}
+                    disabled={locked}
+                    rows={2}
+                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={busy || locked}
+                  onClick={() => void save()}
+                  className="ui-button primary mt-4 font-medium"
+                >
+                  {busy ? "保存中…" : "保存底稿为新版本"}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 右侧：审核流、Revision 历史、发布模拟与渠道连接 */}
@@ -904,7 +1763,7 @@ export default function ContentDraftDetailPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
               <h2 className="text-base font-semibold text-slate-900">审批与流转</h2>
               <p className="mt-1 text-xs text-slate-500">
-                审核针对当前最新版本；历史版本不可跨越审批。未通过审批的内容受保护，严禁对外发布。
+                审核针对当前最新版本；未通过审批的内容受保护，严禁对外发布。
               </p>
 
               {["DRAFT", "CHANGES_REQUESTED", "REJECTED"].includes(draft.status) && (
@@ -925,7 +1784,7 @@ export default function ContentDraftDetailPage() {
                     onChange={(e) => setComment(e.target.value)}
                     rows={3}
                     placeholder="输入审核评语（可选）"
-                    className="w-full rounded-lg border border-slate-300 p-2 text-sm"
+                    className="w-full rounded-lg border border-slate-300 p-2 text-sm placeholder:text-slate-400"
                   />
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -979,7 +1838,7 @@ export default function ContentDraftDetailPage() {
                 <span className="text-xs text-slate-400">共 {draft.revisions?.length ?? 0} 个版本</span>
               </div>
               {draft.revisions?.length ? (
-                <ol className="mt-3 space-y-2.5 max-h-96 overflow-auto pr-1">
+                <ol className="mt-3 space-y-2.5 max-h-80 overflow-auto pr-1">
                   {draft.revisions.map((rev) => (
                     <li
                       key={rev.id}
@@ -1042,7 +1901,7 @@ export default function ContentDraftDetailPage() {
                     ))}
                   </select>
                   {connected.length === 0 && (
-                    <p className="text-xs text-amber-700">暂无可用账号连接；REVOKED / EXPIRED 连接不能用于发布。</p>
+                    <p className="text-xs text-amber-700">暂无可用账号连接；不可用连接无法用于发布。</p>
                   )}
                   <button
                     type="button"

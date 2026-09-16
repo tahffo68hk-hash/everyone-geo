@@ -232,6 +232,17 @@ export const REWRITE_MODES = [
   'REWRITE_STRONG_CTA',
   'REWRITE_STYLE_TUTORIAL',
   'REWRITE_STYLE_RECOMMENDATION',
+  'EXPAND',
+  'SHORTEN',
+  'PROFESSIONAL',
+  'CONVERSATIONAL',
+  'LOW_PROMO',
+  'STRONG_CTA',
+  'FACT_SAFE',
+  'MORE_NEUTRAL',
+  'TUTORIAL',
+  'COMPARISON',
+  'FAQ',
 ] as const;
 
 export class GeneratePlatformVariantDto {
@@ -258,15 +269,7 @@ export class GeneratePlatformVariantDto {
 
 export class RewriteVariantDto {
   @IsIn(REWRITE_MODES as unknown as string[])
-  mode!:
-    | 'REWRITE_EXPAND'
-    | 'REWRITE_SHORTEN'
-    | 'REWRITE_PROFESSIONAL'
-    | 'REWRITE_CONVERSATIONAL'
-    | 'REWRITE_LOW_PROMO'
-    | 'REWRITE_STRONG_CTA'
-    | 'REWRITE_STYLE_TUTORIAL'
-    | 'REWRITE_STYLE_RECOMMENDATION';
+  mode!: string;
 
   @IsOptional()
   @IsString()
@@ -293,5 +296,94 @@ export class GenerateImageBriefDto {
   @IsOptional()
   @IsUUID()
   variantId?: string;
+}
+
+export class CreateVerifiedFactDto {
+  @IsString()
+  @Length(1, 1000)
+  claim!: string;
+
+  @IsString()
+  factType!: 'SPEC' | 'NUMERICAL' | 'FEATURE' | 'CERTIFICATION' | 'AWARD' | 'PRICE' | 'MEDICAL';
+
+  @IsOptional()
+  @IsIn(['VERIFIED', 'USER_CONFIRMED', 'UNVERIFIED', 'CONFLICTING'])
+  status?: 'VERIFIED' | 'USER_CONFIRMED' | 'UNVERIFIED' | 'CONFLICTING';
+
+  @IsOptional()
+  @IsString()
+  sourceType?: 'TARGET_ENTITY' | 'SITE_ASSET' | 'USER_INPUT' | 'EVIDENCE';
+
+  @IsOptional()
+  @IsString()
+  sourceRef?: string;
+}
+
+export class ExtractClaimsDto {
+  @IsOptional()
+  @IsString()
+  text?: string;
+
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+}
+
+export class SafeRewriteDto {
+  @IsOptional()
+  @IsString()
+  text?: string;
+
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+}
+
+export class GenerateImagePreviewDto {
+  @IsString()
+  prompt!: string;
+
+  @IsOptional()
+  @IsString()
+  negativePrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  ratio?: string;
+
+  @IsOptional()
+  @IsString()
+  style?: string;
+
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  @IsOptional()
+  textOverlay?: {
+    mainTitle: string;
+    subtitle?: string;
+    badge?: string;
+  };
+}
+
+export class AcceptImageAssetDto {
+  @IsOptional()
+  @IsString()
+  jobId?: string;
+
+  @IsString()
+  prompt!: string;
+
+  @IsString()
+  ratio!: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsUUID()
+  generationRunId?: string;
 }
 

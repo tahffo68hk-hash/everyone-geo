@@ -10,6 +10,7 @@ import {
   ASSET_TYPES, AuthorizeChannelDto, CreateConnectionDto, CreateDraftDto, CreatePublicationDto, DecideApprovalDto,
   GenerateImageBriefDto, GeneratePlatformVariantDto, ListAssetsDto, ListDraftsDto, ListPublicationsDto,
   RewriteVariantDto, UpdateDraftDto, ValidatePublicationDto,
+  CreateVerifiedFactDto, ExtractClaimsDto, SafeRewriteDto, GenerateImagePreviewDto, AcceptImageAssetDto,
 } from "./dto/content-execution.dto";
 import {
   createPublicationQueue, defaultConnectorRegistry, defaultCredentialVault, defaultOAuthStateSecurity,
@@ -17,6 +18,10 @@ import {
   generatePlatformVariant as generatePlatformVariantHelper,
   rewriteContent as rewriteContentHelper,
   extractSafeFactCheckNotes,
+  FactGroundingEngine, type VerifiedFact, type ExtractedClaim,
+  RealContentGenerationProvider, MockContentGenerationProvider,
+  MockImageGenerationProvider, WanxImageGenerationProvider,
+  PROMPT_VERSIONS,
   type ChannelCapabilityDescriptor, type PublicationQueue,
   type CnPlatform, type ImageBrief,
 } from "@geo/queue";
@@ -100,6 +105,9 @@ export interface UploadedBuffer {
 
 @Injectable()
 export class ContentExecutionService implements OnModuleDestroy {
+  private readonly textGenProvider = new RealContentGenerationProvider();
+  private readonly mockImageProvider = new MockImageGenerationProvider();
+  private readonly wanxImageProvider = new WanxImageGenerationProvider();
   private readonly logger = new Logger(ContentExecutionService.name);
   private readonly queue: PublicationQueue | null;
   // DEV_ONLY 本地存储适配器（未接入正式对象存储）。
@@ -317,6 +325,16 @@ export class ContentExecutionService implements OnModuleDestroy {
     let nextStatus: Prisma.ContentDraftUpdateInput["status"];
     let action: "APPROVED" | "REJECTED" | "CHANGES_REQUESTED";
     if (dto.decision === "APPROVED") {
+      const knownFacts = await this.listFactsInternal(draft.id, draft.projectId);
+      const claims = FactGroundingEngine.extractClaims(latest.body, knownFacts);
+      const blockCheck = FactGroundingEngine.checkBlockingRule(claims);
+      if (!blockCheck.passed) {
+        throw new BadRequestException({
+          error: "FACT_CHECK_REQUIRED",
+          message: "草稿包含未核实的事实声明，请先在事实检查面板核验或执行安全改写",
+          blockingClaims: blockCheck.blockingClaims,
+        });
+      }
       nextStatus = "APPROVED";
       action = "APPROVED";
     } else if (dto.decision === "REJECTED") {
@@ -1114,6 +1132,56 @@ export class ContentExecutionService implements OnModuleDestroy {
       }
     }
 
+    // 记录 Generation Run
+    const runId = randomUUID();
+    const promptVersion = PROMPT_VERSIONS[dto.platform] || 'geolens-cn-v1';
+    await this.db.client.$executeRawUnsafe(
+      `INSERT INTO content_generation_runs (
+        id, organization_id, project_id, draft_id, source_revision_id,
+        platform, generation_mode, provider, model, prompt_version,
+        status, input_snapshot, output_snapshot, input_tokens, output_tokens,
+        image_count, cost_usd, created_by_id, created_at, updated_at
+      ) VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
+        $6, $7, 'geolens-gen', 'cn-v2', $8,
+        'COMPLETED', $9::jsonb, $10::jsonb, $11, $12,
+        0, NULL, $13::uuid, NOW(), NOW()
+      )`,
+      runId,
+      draft.organizationId,
+      draft.projectId,
+      draft.id,
+      targetRev.id,
+      dto.platform,
+      dto.generationMode || 'STANDARD',
+      promptVersion,
+      JSON.stringify({ title: draft.title, body: plainBody, topic: draft.topic, generationMode: dto.generationMode }),
+      JSON.stringify(generated),
+      Math.round(plainBody.length * 1.1),
+      Math.round(generated.body.length * 1.2),
+      userId,
+    );
+
+    // 记录 Claim Extractions
+    const knownFacts = await this.listFactsInternal(draft.id, draft.projectId);
+    const claims = FactGroundingEngine.extractClaims(generated.body, knownFacts);
+    for (const c of claims) {
+      await this.db.client.$executeRawUnsafe(
+        `INSERT INTO content_claim_extractions (
+          id, generation_run_id, draft_id, claim, claim_type, support_status, support_source_ids, created_at
+        ) VALUES (
+          $1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::jsonb, NOW()
+        )`,
+        randomUUID(),
+        runId,
+        draft.id,
+        c.claim,
+        c.type,
+        c.supportStatus,
+        JSON.stringify(c.supportSourceIds || []),
+      );
+    }
+
     await this.audit(
       draft.organizationId,
       userId,
@@ -1194,6 +1262,34 @@ export class ContentExecutionService implements OnModuleDestroy {
       JSON.stringify(orig.imageBriefs),
       JSON.stringify(updatedMetadata),
       "ADAPTED",
+      userId,
+    );
+
+    // 记录改写 Generation Run
+    const rewriteRunId = randomUUID();
+    await this.db.client.$executeRawUnsafe(
+      `INSERT INTO content_generation_runs (
+        id, organization_id, project_id, draft_id, source_revision_id,
+        platform, generation_mode, provider, model, prompt_version,
+        status, input_snapshot, output_snapshot, input_tokens, output_tokens,
+        image_count, cost_usd, created_by_id, created_at, updated_at
+      ) VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
+        $6, $7, 'geolens-rewrite', 'cn-rewrite-v2', 'geolens-cn-rewrite-v1',
+        'COMPLETED', $8::jsonb, $9::jsonb, $10, $11,
+        0, NULL, $12::uuid, NOW(), NOW()
+      )`,
+      rewriteRunId,
+      draft.organizationId,
+      draft.projectId,
+      draft.id,
+      orig.sourceRevisionId,
+      orig.platform,
+      dto.mode,
+      JSON.stringify({ currentTitle: orig.title, currentBody: orig.body, mode: dto.mode }),
+      JSON.stringify(rewritten),
+      Math.round(orig.body.length * 1.1),
+      Math.round(rewritten.body.length * 1.2),
       userId,
     );
 
@@ -1325,4 +1421,321 @@ export class ContentExecutionService implements OnModuleDestroy {
       updatedAt: r.updated_at,
     };
   }
+
+  private async listFactsInternal(draftId: string, projectId: string): Promise<VerifiedFact[]> {
+    const rows = await this.db.client.$queryRawUnsafe<any[]>(
+      `SELECT id, claim, fact_type as "factType", status, source_type as "sourceType", source_ref as "sourceRef"
+       FROM content_verified_facts
+       WHERE draft_id = $1::uuid OR project_id = $2::uuid`,
+      draftId,
+      projectId,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      claim: r.claim,
+      factType: r.factType,
+      status: r.status,
+      sourceType: r.sourceType,
+      sourceRef: r.sourceRef ?? undefined,
+    }));
+  }
+
+  async listGenerationRuns(userId: string, draftId: string) {
+    await this.requireDraft(userId, draftId);
+    const rows = await this.db.client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM content_generation_runs WHERE draft_id = $1::uuid ORDER BY created_at DESC`,
+      draftId,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      organizationId: r.organization_id,
+      projectId: r.project_id,
+      draftId: r.draft_id,
+      sourceRevisionId: r.source_revision_id,
+      platform: r.platform,
+      generationMode: r.generation_mode,
+      provider: r.provider,
+      model: r.model,
+      promptVersion: r.prompt_version,
+      status: r.status,
+      inputSnapshot: typeof r.input_snapshot === 'string' ? JSON.parse(r.input_snapshot) : r.input_snapshot,
+      outputSnapshot: typeof r.output_snapshot === 'string' ? JSON.parse(r.output_snapshot) : r.output_snapshot,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      imageCount: r.image_count,
+      costUsd: r.cost_usd,
+      errorMessage: r.error_message,
+      createdById: r.created_by_id,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  async getGenerationRun(userId: string, draftId: string, runId: string) {
+    await this.requireDraft(userId, draftId);
+    const rows = await this.db.client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM content_generation_runs WHERE id = $1::uuid AND draft_id = $2::uuid`,
+      runId,
+      draftId,
+    );
+    if (!rows.length) throw new NotFoundException("生成记录不存在");
+    const r = rows[0];
+    return {
+      id: r.id,
+      organizationId: r.organization_id,
+      projectId: r.project_id,
+      draftId: r.draft_id,
+      sourceRevisionId: r.source_revision_id,
+      platform: r.platform,
+      generationMode: r.generation_mode,
+      provider: r.provider,
+      model: r.model,
+      promptVersion: r.prompt_version,
+      status: r.status,
+      inputSnapshot: typeof r.input_snapshot === 'string' ? JSON.parse(r.input_snapshot) : r.input_snapshot,
+      outputSnapshot: typeof r.output_snapshot === 'string' ? JSON.parse(r.output_snapshot) : r.output_snapshot,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      imageCount: r.image_count,
+      costUsd: r.cost_usd,
+      errorMessage: r.error_message,
+      createdById: r.created_by_id,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    };
+  }
+
+  async listVerifiedFacts(userId: string, draftId: string) {
+    const draft = await this.requireDraft(userId, draftId);
+    return this.listFactsInternal(draftId, draft.projectId);
+  }
+
+  async createVerifiedFact(userId: string, draftId: string, dto: CreateVerifiedFactDto) {
+    const draft = await this.requireDraft(userId, draftId);
+    const id = randomUUID();
+    const status = dto.status || 'USER_CONFIRMED';
+    const sourceType = dto.sourceType || 'USER_INPUT';
+    await this.db.client.$executeRawUnsafe(
+      `INSERT INTO content_verified_facts (
+        id, organization_id, project_id, draft_id, claim, fact_type, status, source_type, source_ref, created_by_id, created_at, updated_at
+      ) VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10::uuid, NOW(), NOW()
+      )`,
+      id,
+      draft.organizationId,
+      draft.projectId,
+      draft.id,
+      dto.claim,
+      dto.factType,
+      status,
+      sourceType,
+      dto.sourceRef ?? null,
+      userId,
+    );
+    return {
+      id,
+      claim: dto.claim,
+      factType: dto.factType,
+      status,
+      sourceType,
+      sourceRef: dto.sourceRef,
+    };
+  }
+
+  async extractClaims(userId: string, draftId: string, dto: ExtractClaimsDto) {
+    const draft = await this.requireDraft(userId, draftId);
+    let targetText = dto.text || '';
+    if (!targetText && dto.variantId) {
+      const variant = await this.getPlatformVariant(userId, draftId, dto.variantId);
+      targetText = variant.body;
+    }
+    if (!targetText) {
+      const latest = await this.latestRevision(draftId);
+      targetText = latest?.body || '';
+    }
+
+    const knownFacts = await this.listFactsInternal(draftId, draft.projectId);
+    const claims = FactGroundingEngine.extractClaims(targetText, knownFacts);
+    const check = FactGroundingEngine.checkBlockingRule(claims);
+
+    return {
+      claims,
+      blocking: !check.passed,
+      unverifiedCount: check.unverifiedCount,
+      conflictingCount: check.conflictingCount,
+      blockingClaims: check.blockingClaims,
+    };
+  }
+
+  async safeRewrite(userId: string, draftId: string, dto: SafeRewriteDto) {
+    const draft = await this.requireDraft(userId, draftId);
+    let targetText = dto.text || '';
+    let variant: any = null;
+    if (dto.variantId) {
+      variant = await this.getPlatformVariant(userId, draftId, dto.variantId);
+      targetText = targetText || variant.body;
+    }
+    if (!targetText) {
+      const latest = await this.latestRevision(draftId);
+      targetText = latest?.body || '';
+    }
+
+    const knownFacts = await this.listFactsInternal(draftId, draft.projectId);
+    const result = FactGroundingEngine.safeRewrite(targetText, knownFacts);
+
+    const runId = randomUUID();
+    await this.db.client.$executeRawUnsafe(
+      `INSERT INTO content_generation_runs (
+        id, organization_id, project_id, draft_id, source_revision_id,
+        platform, generation_mode, provider, model, prompt_version,
+        status, input_snapshot, output_snapshot, input_tokens, output_tokens,
+        image_count, cost_usd, created_by_id, created_at, updated_at
+      ) VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
+        $6, 'FACT_SAFE', 'engine-claimguard', 'geolens-claimguard-v1', $7,
+        'COMPLETED', $8::jsonb, $9::jsonb, $10, $11,
+        0, NULL, $12::uuid, NOW(), NOW()
+      )`,
+      runId,
+      draft.organizationId,
+      draft.projectId,
+      draft.id,
+      variant?.sourceRevisionId ?? null,
+      variant?.platform ?? 'UNIVERSAL',
+      PROMPT_VERSIONS.CLAIM_GUARD,
+      JSON.stringify({ originalText: targetText }),
+      JSON.stringify(result),
+      Math.round(targetText.length * 1.1),
+      Math.round(result.sanitizedText.length * 1.1),
+      userId,
+    );
+
+    if (dto.variantId && variant) {
+      await this.db.client.$executeRawUnsafe(
+        `UPDATE platform_content_variants
+         SET body = $1, updated_at = NOW()
+         WHERE id = $2::uuid`,
+        result.sanitizedText,
+        dto.variantId,
+      );
+    }
+
+    return {
+      sanitizedText: result.sanitizedText,
+      resolvedClaims: result.resolvedClaims,
+      remainingUnverifiedClaims: result.remainingUnverifiedClaims,
+      changeSummary: result.changeSummary,
+      generationRunId: runId,
+    };
+  }
+
+  async generateImagePreview(userId: string, draftId: string, dto: GenerateImagePreviewDto) {
+    const draft = await this.requireDraft(userId, draftId);
+    const knownFacts = await this.listFactsInternal(draftId, draft.projectId);
+
+    let output;
+    if (process.env.GENERATION_PROVIDER_MODE === 'real' && process.env.QWEN_API_KEY) {
+      try {
+        output = await this.wanxImageProvider.generateImage({
+          prompt: dto.prompt,
+          negativePrompt: dto.negativePrompt,
+          ratio: dto.ratio || '1:1',
+          style: dto.style || 'TECH',
+          textOverlay: dto.textOverlay,
+          draftId,
+          variantId: dto.variantId,
+          knownFacts,
+        });
+      } catch {
+        output = await this.mockImageProvider.generateImage({
+          prompt: dto.prompt,
+          negativePrompt: dto.negativePrompt,
+          ratio: dto.ratio || '1:1',
+          style: dto.style || 'TECH',
+          textOverlay: dto.textOverlay,
+          draftId,
+          variantId: dto.variantId,
+          knownFacts,
+        });
+      }
+    } else {
+      output = await this.mockImageProvider.generateImage({
+        prompt: dto.prompt,
+        negativePrompt: dto.negativePrompt,
+        ratio: dto.ratio || '1:1',
+        style: dto.style || 'TECH',
+        textOverlay: dto.textOverlay,
+        draftId,
+        variantId: dto.variantId,
+        knownFacts,
+      });
+    }
+
+    const runId = randomUUID();
+    await this.db.client.$executeRawUnsafe(
+      `INSERT INTO content_generation_runs (
+        id, organization_id, project_id, draft_id, source_revision_id,
+        platform, generation_mode, provider, model, prompt_version,
+        status, input_snapshot, output_snapshot, input_tokens, output_tokens,
+        image_count, cost_usd, created_by_id, created_at, updated_at
+      ) VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, NULL,
+        'IMAGE', 'IMAGE_PREVIEW', $5, $6, 'geolens-image-v1',
+        $7, $8::jsonb, $9::jsonb, 0, 0,
+        1, NULL, $10::uuid, NOW(), NOW()
+      )`,
+      runId,
+      draft.organizationId,
+      draft.projectId,
+      draft.id,
+      output.provider,
+      output.model,
+      output.status,
+      JSON.stringify(dto),
+      JSON.stringify(output),
+      userId,
+    );
+
+    return {
+      ...output,
+      generationRunId: runId,
+    };
+  }
+
+  async acceptImageAsset(userId: string, draftId: string, dto: AcceptImageAssetDto) {
+    const draft = await this.requireDraft(userId, draftId);
+
+    let buf: Buffer;
+    if (dto.imageUrl && dto.imageUrl.startsWith("data:image/svg+xml;base64,")) {
+      const base64Data = dto.imageUrl.replace(/^data:image\/svg\+xml;base64,/, "");
+      buf = Buffer.from(base64Data, "base64");
+    } else {
+      const res = await this.mockImageProvider.generateImage({
+        prompt: dto.prompt,
+        ratio: dto.ratio,
+        style: "TECH",
+      });
+      buf = res.imageBuffer!;
+    }
+
+    const checksum = createHash("sha256").update(buf).digest("hex");
+    const stored = await this.storage.put(draft.organizationId, buf);
+
+    const asset = await this.db.client.contentAsset.create({
+      data: {
+        organizationId: draft.organizationId,
+        projectId: draft.projectId,
+        draftId,
+        type: "COVER",
+        mimeType: "image/svg+xml",
+        sizeBytes: buf.length,
+        checksum,
+        storageKey: stored.storageKey,
+        ownerId: userId,
+      },
+    });
+
+    return this.toAssetView(asset);
+  }
+
 }
