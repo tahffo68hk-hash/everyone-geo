@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { generateContentStrategy } from "@/lib/content-api";
 import {
   formatAssetMappingType, formatCategory, formatChangePlanStatus, formatContentIntent,
   formatEffortLevel, formatExpectedSignal, formatOpportunityAsset, formatOpportunityPriority,
@@ -13,7 +14,7 @@ import {
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
 
 type OppRun = {
-  id: string; opportunityVersion: string; status: string; generatedAt: string;
+  id: string; projectId?: string; opportunityVersion: string; status: string; generatedAt: string;
   summary: { opportunityCount: number; blockedByDataQuality: boolean; dataQualityLimited: boolean } | null;
   metadata: { metricSource?: string | null; suiteName?: string; suiteVersion?: string; hasDataQualityIssue?: boolean; engineDurationMs?: number };
 };
@@ -66,6 +67,7 @@ function engineLabel(e: { engineName: string; engineKey: string }): string {
 
 export default function OpportunityDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [opp, setOpp] = useState<Opportunity | null>(null);
   const [run, setRun] = useState<OppRun | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -145,6 +147,27 @@ export default function OpportunityDetailPage() {
       await load();
     } catch (err) { setError(friendlyError(err)); }
     finally { setOperating(false); }
+  }
+
+  async function createContentStrategy() {
+    if (!opp) return;
+    const targetProjectId = run?.projectId || (opp as any).projectId;
+    if (!targetProjectId) {
+      setError("无法获取关联项目 ID，请刷新页面重试");
+      return;
+    }
+    setOperating(true);
+    setError("");
+    try {
+      const res = await generateContentStrategy(targetProjectId, {
+        opportunityId: opp.id,
+      });
+      router.push(`/app/content?tab=strategy&strategyId=${res.id}`);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setOperating(false);
+    }
   }
 
   const metricSource = run?.metadata?.metricSource ?? null;
@@ -299,6 +322,23 @@ export default function OpportunityDetailPage() {
                   )}
                 </div>
                 <p className="mt-2 text-[11px] text-slate-400">{CHANGE_PLAN_NAV.noAutoPublish}</p>
+              </div>
+
+              <div className="mt-3 border-t border-indigo-200 pt-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-900">✨ GEO 内容战略与生产计划 (M9A)</span>
+                    <p className="mt-0.5 text-xs text-slate-500">回答 9 大战略问题，并一键生成覆盖微信、小红书、B站、抖音、微博的多平台生产计划与草稿。</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={operating}
+                    onClick={() => void createContentStrategy()}
+                    className="rounded-lg bg-indigo-700 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800 disabled:opacity-50"
+                  >
+                    {operating ? "正在生成战略…" : "生成内容战略与计划 →"}
+                  </button>
+                </div>
               </div>
             </section>
 

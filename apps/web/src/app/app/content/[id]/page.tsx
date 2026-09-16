@@ -704,7 +704,11 @@ export default function ContentDraftDetailPage() {
 
           {/* 溯源链路 */}
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 text-xs">
-            <span className="font-semibold text-slate-500">溯源依据：</span>
+            {draft.sourceStrategyId && (
+              <Link href={`/app/content?tab=strategy&strategyId=${draft.sourceStrategyId}`} className="font-semibold text-indigo-700 hover:underline">
+                查看 GEO 战略与生产计划 →
+              </Link>
+            )}
             {draft.sourceOpportunityId && (
               <Link href={`/app/opportunities/${draft.sourceOpportunityId}`} className="text-blue-700 hover:underline">
                 查看来源机会 →
@@ -720,8 +724,8 @@ export default function ContentDraftDetailPage() {
                 查看来源诊断 →
               </Link>
             )}
-            {!draft.sourceOpportunityId && !draft.sourceRecommendationId && !draft.sourceDiagnosisId && (
-              <span className="text-slate-400">未关联外部诊断或建议来源</span>
+            {!draft.sourceStrategyId && !draft.sourceOpportunityId && !draft.sourceRecommendationId && !draft.sourceDiagnosisId && (
+              <span className="text-slate-400">未关联外部战略、诊断或建议来源</span>
             )}
           </div>
         </header>

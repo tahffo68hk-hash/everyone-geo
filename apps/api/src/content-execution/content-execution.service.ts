@@ -144,6 +144,8 @@ export class ContentExecutionService implements OnModuleDestroy {
         sourceOpportunityId: sources.opportunityId,
         sourceRecommendationId: sources.recommendationId,
         sourceDiagnosisId: sources.diagnosisId,
+        sourceStrategyId: sources.strategyId,
+        sourcePlanItemId: sources.planItemId,
         createdById: userId,
         revisions: {
           create: {
@@ -172,10 +174,13 @@ export class ContentExecutionService implements OnModuleDestroy {
    */
   private async resolveSources(projectId: string, dto: {
     sourceOpportunityId?: string; sourceRecommendationId?: string; sourceDiagnosisId?: string;
-  }): Promise<{ opportunityId: string | null; recommendationId: string | null; diagnosisId: string | null; summary: string }> {
+    sourceStrategyId?: string; sourcePlanItemId?: string;
+  }): Promise<{ opportunityId: string | null; recommendationId: string | null; diagnosisId: string | null; strategyId: string | null; planItemId: string | null; summary: string }> {
     let opportunityId: string | null = null;
     let recommendationId: string | null = null;
     let diagnosisId: string | null = null;
+    let strategyId: string | null = null;
+    let planItemId: string | null = null;
     if (dto.sourceOpportunityId) {
       // ContentOpportunity 无 projectId：经 opportunityRun 关联校验。
       const row = await this.db.client.contentOpportunity.findFirst({
@@ -199,12 +204,28 @@ export class ContentExecutionService implements OnModuleDestroy {
       if (!row) throw new NotFoundException("来源 DiagnosisRun 不存在或不属于该项目");
       diagnosisId = row.id;
     }
+    if (dto.sourceStrategyId) {
+      const row = await this.db.client.contentStrategy.findFirst({
+        where: { id: dto.sourceStrategyId, projectId }, select: { id: true },
+      });
+      if (!row) throw new NotFoundException("来源 ContentStrategy 不存在或不属于该项目");
+      strategyId = row.id;
+    }
+    if (dto.sourcePlanItemId) {
+      const row = await this.db.client.contentPlanItem.findFirst({
+        where: { id: dto.sourcePlanItemId, projectId }, select: { id: true },
+      });
+      if (!row) throw new NotFoundException("来源 ContentPlanItem 不存在或不属于该项目");
+      planItemId = row.id;
+    }
     const summary = [
       opportunityId ? `opportunity=${opportunityId.slice(0, 8)}` : null,
       recommendationId ? `recommendation=${recommendationId.slice(0, 8)}` : null,
       diagnosisId ? `diagnosis=${diagnosisId.slice(0, 8)}` : null,
+      strategyId ? `strategy=${strategyId.slice(0, 8)}` : null,
+      planItemId ? `planItem=${planItemId.slice(0, 8)}` : null,
     ].filter(Boolean).join(",");
-    return { opportunityId, recommendationId, diagnosisId, summary };
+    return { opportunityId, recommendationId, diagnosisId, strategyId, planItemId, summary };
   }
 
   async listDrafts(userId: string, projectId: string, dto: ListDraftsDto) {
@@ -969,6 +990,8 @@ export class ContentExecutionService implements OnModuleDestroy {
       sourceOpportunityId: d.sourceOpportunityId,
       sourceRecommendationId: d.sourceRecommendationId,
       sourceDiagnosisId: d.sourceDiagnosisId,
+      sourceStrategyId: (d as any).sourceStrategyId ?? null,
+      sourcePlanItemId: (d as any).sourcePlanItemId ?? null,
       createdById: d.createdById,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,

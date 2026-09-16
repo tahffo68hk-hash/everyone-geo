@@ -11,7 +11,7 @@ export type PublicationStatus = "PENDING" | "QUEUED" | "PUBLISHING" | "PUBLISHED
 
 export interface Revision { id: string; draftId?: string; version: number; body?: string; summary: string | null; changeNote: string | null; generationMode?: GenerationMode; generatedById: string; createdAt: string; }
 export interface Approval { id: string; decision: Decision; reviewerId: string; comment: string | null; revisionId: string; createdAt: string; }
-export interface Draft { id: string; organizationId: string; projectId: string; title: string; topic: string | null; generationMode: GenerationMode; status: DraftStatus; sourceOpportunityId: string | null; sourceRecommendationId: string | null; sourceDiagnosisId: string | null; createdById: string; createdAt: string; updatedAt: string; latestRevision: Revision | null; revisionCount: number; revisions?: Revision[]; approvals?: Approval[]; }
+export interface Draft { id: string; organizationId: string; projectId: string; title: string; topic: string | null; generationMode: GenerationMode; status: DraftStatus; sourceOpportunityId: string | null; sourceRecommendationId: string | null; sourceDiagnosisId: string | null; sourceStrategyId?: string | null; sourcePlanItemId?: string | null; createdById: string; createdAt: string; updatedAt: string; latestRevision: Revision | null; revisionCount: number; revisions?: Revision[]; approvals?: Approval[]; }
 export interface Connection { id: string; channel: Channel; displayName: string; status: ConnectionStatus; lastVerifiedAt: string | null; createdAt: string; updatedAt: string; }
 export interface Capability { channel: Channel; label: string; titleMax: number; bodyMax: number; supportsImages: boolean; publisher: "mock"; oauthImplemented: false; apiDetails: "unverified"; }
 export interface PublicationAttempt { id: string; idempotencyKey: string; channel: Channel; attemptNo: number; status: PublicationStatus; publisher: string; externalId: string | null; externalUrl: string | null; errorMessage: string | null; durationMs: number | null; createdAt: string; }
@@ -236,5 +236,139 @@ export const acceptImageAsset = (
   jobId: string,
   body: { prompt: string; ratio: string; imageUrl?: string }
 ) => api<Asset>(`/content-drafts/${encode(draftId)}/image-generation/${encode(jobId)}/accept`, { method: "POST", body: JSON.stringify(body) });
+
+// ============================================================
+// M9A - Content Strategy & Planning Types & APIs
+// ============================================================
+
+export interface StrategicPriorityQuestion {
+  question: string;
+  intent: string;
+  urgency: "P0" | "P1" | "P2";
+  targetEngines: string[];
+  rationale: string;
+}
+
+export interface StrategicKeyTheme {
+  theme: string;
+  focus: string;
+  outlinePoints: string[];
+}
+
+export interface StrategicPlatformPriority {
+  platform: string;
+  platformLabel: string;
+  priority: number;
+  role: string;
+  rationale: string;
+  shareOfVoiceTarget: string;
+}
+
+export interface StrategicContentFormat {
+  platform: string;
+  format: string;
+  recommendedLength: string;
+  structuralTemplate: string;
+  tone: string;
+}
+
+export interface StrategicEvidenceItem {
+  claim: string;
+  evidenceType: string;
+  verified: boolean;
+  sourceRef?: string;
+}
+
+export interface StrategicValidationMetric {
+  metric: string;
+  target: string;
+  evaluationMethod: string;
+  timeframe: string;
+}
+
+export interface ContentPlanItem {
+  id: string;
+  strategyId: string;
+  organizationId: string;
+  projectId: string;
+  title: string;
+  platform: string;
+  format: string;
+  objective: string;
+  geoTarget: string;
+  targetQueries: string[];
+  keyClaims: string[];
+  status: "PLANNED" | "DRAFTED" | "IN_PRODUCTION" | "COMPLETED" | "DISMISSED";
+  draftId: string | null;
+  sourceOpportunityId: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentStrategy {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  title: string;
+  sourceOpportunityId: string | null;
+  sourceRecommendationId: string | null;
+  sourceDiagnosisId: string | null;
+  status: string;
+  geoGap: string;
+  priorityQuestions: StrategicPriorityQuestion[];
+  targetAudience: string;
+  perceptionGoal: string;
+  keyThemes: StrategicKeyTheme[];
+  platformPriorities: StrategicPlatformPriority[];
+  contentFormats: StrategicContentFormat[];
+  evidenceRequired: StrategicEvidenceItem[];
+  validationMetrics: StrategicValidationMetric[];
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  planItems?: ContentPlanItem[];
+  planItemCount?: number;
+}
+
+export const generateContentStrategy = (
+  projectId: string,
+  body: {
+    opportunityId?: string;
+    recommendationId?: string;
+    diagnosisRunId?: string;
+    title?: string;
+    customGuidance?: string;
+    targetEntity?: string;
+  }
+) => api<ContentStrategy>(`/projects/${encode(projectId)}/content-strategies/generate`, {
+  method: "POST",
+  body: JSON.stringify(body),
+});
+
+export const listContentStrategies = (projectId: string) =>
+  api<{ total: number; strategies: ContentStrategy[] }>(`/projects/${encode(projectId)}/content-strategies`);
+
+export const getContentStrategy = (strategyId: string) =>
+  api<ContentStrategy>(`/content-strategies/${encode(strategyId)}`);
+
+export const updateContentPlanItem = (
+  strategyId: string,
+  itemId: string,
+  body: Partial<ContentPlanItem>
+) => api<ContentPlanItem>(`/content-strategies/${encode(strategyId)}/plan-items/${encode(itemId)}`, {
+  method: "PATCH",
+  body: JSON.stringify(body),
+});
+
+export const createDraftFromPlanItem = (
+  strategyId: string,
+  itemId: string,
+  body: { body?: string; summary?: string; changeNote?: string } = {}
+) => api<{ draft: Draft; planItem: ContentPlanItem; reused: boolean }>(
+  `/content-strategies/${encode(strategyId)}/plan-items/${encode(itemId)}/create-draft`,
+  { method: "POST", body: JSON.stringify(body) }
+);
+
 
 

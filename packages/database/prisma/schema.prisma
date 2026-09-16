@@ -42,12 +42,14 @@ model Organization {
   monitorTasks MonitorTask[]
   benchmarkRuns BenchmarkRun[]
 
-  // —— 内容执行领域（M9，独立但可追溯）——
+  // —— 内容执行领域（M9/M9A，独立但可追溯）——
   contentDrafts      ContentDraft[]
   contentAssets      ContentAsset[]
   contentPublications Publication[]
   channelConnections ChannelAccountConnection[]
   contentAudits      ContentAuditLog[]
+  contentStrategies  ContentStrategy[]
+  contentPlanItems   ContentPlanItem[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -116,10 +118,12 @@ model Project {
   sites            Site[]
   changePlans      OptimizationChangePlan[]
 
-  // —— 内容执行领域（M9，独立但可追溯）——
-  contentDrafts    ContentDraft[]
-  contentAssets    ContentAsset[]
+  // —— 内容执行与战略领域（M9/M9A，独立但可追溯）——
+  contentDrafts      ContentDraft[]
+  contentAssets      ContentAsset[]
   contentPublications Publication[]
+  contentStrategies  ContentStrategy[]
+  contentPlanItems   ContentPlanItem[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -1620,6 +1624,8 @@ model ContentDraft {
   sourceOpportunityId    String? @db.Uuid
   sourceRecommendationId String? @db.Uuid
   sourceDiagnosisId      String? @db.Uuid
+  sourceStrategyId       String? @db.Uuid
+  sourcePlanItemId       String? @db.Uuid
   createdById    String         @db.Uuid
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -1804,3 +1810,72 @@ model ContentUsageEvent {
   @@index([organizationId])
   @@index([eventType])
 }
+
+// ============================================================
+// M9A - 内容战略与内容计划（Content Strategy & Planning）
+// ============================================================
+model ContentStrategy {
+  id                     String   @id @default(uuid()) @db.Uuid
+  organizationId         String   @map("organization_id") @db.Uuid
+  projectId              String   @map("project_id") @db.Uuid
+  title                  String
+  sourceOpportunityId    String?  @map("source_opportunity_id") @db.Uuid
+  sourceRecommendationId String?  @map("source_recommendation_id") @db.Uuid
+  sourceDiagnosisId      String?  @map("source_diagnosis_id") @db.Uuid
+  status                 String   @default("ACTIVE") // ACTIVE / ARCHIVED
+  geoGap                 String   @map("geo_gap")
+  priorityQuestions      Json     @default("[]") @map("priority_questions")
+  targetAudience         String   @map("target_audience")
+  perceptionGoal         String   @map("perception_goal")
+  keyThemes              Json     @default("[]") @map("key_themes")
+  platformPriorities     Json     @default("[]") @map("platform_priorities")
+  contentFormats         Json     @default("[]") @map("content_formats")
+  evidenceRequired       Json     @default("[]") @map("evidence_required")
+  validationMetrics      Json     @default("[]") @map("validation_metrics")
+  metadata               Json     @default("{}")
+  createdById            String   @map("created_by_id") @db.Uuid
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  planItems    ContentPlanItem[]
+
+  @@map("content_strategies")
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([status])
+}
+
+model ContentPlanItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  strategyId          String   @map("strategy_id") @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
+  projectId           String   @map("project_id") @db.Uuid
+  title               String
+  platform            String
+  format              String
+  objective           String
+  geoTarget           String   @map("geo_target")
+  targetQueries       Json     @default("[]") @map("target_queries")
+  keyClaims           Json     @default("[]") @map("key_claims")
+  status              String   @default("PLANNED") // PLANNED / DRAFTED / COMPLETED / DISMISSED
+  draftId             String?  @map("draft_id") @db.Uuid
+  sourceOpportunityId String?  @map("source_opportunity_id") @db.Uuid
+  sortOrder           Int      @default(0) @map("sort_order")
+  metadata            Json     @default("{}")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  strategy     ContentStrategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("content_plan_items")
+  @@index([strategyId])
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([status])
+  @@index([draftId])
+}
+

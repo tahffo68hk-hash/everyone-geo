@@ -41,6 +41,14 @@ export class CreateDraftDto {
   @IsUUID()
   sourceDiagnosisId?: string;
 
+  @IsOptional()
+  @IsUUID()
+  sourceStrategyId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  sourcePlanItemId?: string;
+
   /** 首版内容主体（渠道中立，通常为 JSON 字符串或纯文本）。 */
   @IsString()
   @Length(1, 20000)
