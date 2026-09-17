@@ -18,6 +18,7 @@ import {
   generateContentStrategy,
   updateContentPlanItem,
   createDraftFromPlanItem,
+  listContentCampaigns,
   type Asset,
   type Capability,
   type Connection,
@@ -27,7 +28,12 @@ import {
   type PublicationStatus,
   type ContentStrategy,
   type ContentPlanItem,
+  type ContentCampaign,
 } from "@/lib/content-api";
+import { ProductionQueueView } from "@/components/content/production-queue-view";
+import { ContentCalendarView } from "@/components/content/content-calendar-view";
+import { CampaignWorkspaceView } from "@/components/content/campaign-workspace-view";
+import { CreateCampaignModal } from "@/components/content/create-campaign-modal";
 
 const statusLabel: Record<string, string> = {
   DRAFT: "草稿",
@@ -72,9 +78,24 @@ export default function ContentWorkspacePage() {
   const { projectId } = useProjectContext();
   const searchParams = useSearchParams();
 
-  // Tab 状态：strategy (M9A 战略与计划) 或 drafts (草稿与发布)
-  const initialTab = searchParams.get("tab") === "strategy" ? "strategy" : "drafts";
-  const [activeTab, setActiveTab] = useState<"strategy" | "drafts">(initialTab);
+  // Tab 状态：operations (M9B 运营执行), strategy (M9A 战略与计划), drafts (草稿与资产库)
+  const tabParam = searchParams.get("tab");
+  const initialTab =
+    tabParam === "strategy" ? "strategy" : tabParam === "drafts" ? "drafts" : "operations";
+  const [activeTab, setActiveTab] = useState<"operations" | "strategy" | "drafts">(initialTab);
+
+  // 运营执行二级视图状态 (queue / calendar / campaigns)
+  const initialOpView =
+    tabParam === "calendar" ? "calendar" : tabParam === "campaigns" ? "campaigns" : "queue";
+  const [opView, setOpView] = useState<"queue" | "calendar" | "campaigns">(initialOpView);
+  const [targetCampaignId, setTargetCampaignId] = useState<string | undefined>(
+    searchParams.get("campaignId") || undefined
+  );
+
+  // 运营战役状态
+  const [campaigns, setCampaigns] = useState<ContentCampaign[]>([]);
+  const [showCreateCampaignModal, setShowCreateCampaignModal] = useState(false);
+  const [createCampaignStrategy, setCreateCampaignStrategy] = useState<ContentStrategy | null>(null);
 
   // 草稿与发布执行状态
   const [rows, setRows] = useState<Draft[]>([]);
@@ -147,6 +168,17 @@ export default function ContentWorkspacePage() {
     }
   }
 
+  // 加载战役列表
+  async function loadCampaignsData() {
+    if (!projectId) return;
+    try {
+      const data = await listContentCampaigns(projectId);
+      setCampaigns(data);
+    } catch (err) {
+      console.error("加载运营战役失败", err);
+    }
+  }
+
   // 加载特定战略详情
   async function loadSelectedStrategy(id: string) {
     setLoadingStrategy(true);
@@ -161,12 +193,45 @@ export default function ContentWorkspacePage() {
     }
   }
 
+  // 跨 Tab 联动导航辅助函数
+  function handleNavigateToQueue(campaignId?: string) {
+    if (campaignId) setTargetCampaignId(campaignId);
+    setActiveTab("operations");
+    setOpView("queue");
+  }
+
+  function handleNavigateToCalendar(campaignId?: string) {
+    if (campaignId) setTargetCampaignId(campaignId);
+    setActiveTab("operations");
+    setOpView("calendar");
+  }
+
+  function handleNavigateToCampaigns(campaignId?: string) {
+    if (campaignId) setTargetCampaignId(campaignId);
+    setActiveTab("operations");
+    setOpView("campaigns");
+  }
+
+  function handleNavigateToStrategy(strategyId?: string) {
+    if (strategyId) {
+      setSelectedStrategyId(strategyId);
+    }
+    setActiveTab("strategy");
+  }
+
+  function handleOpenCreateCampaign(strategy?: ContentStrategy) {
+    setCreateCampaignStrategy(
+      strategy || selectedStrategy || (strategies.length > 0 ? strategies[0] : null)
+    );
+    setShowCreateCampaignModal(true);
+  }
+
   useEffect(() => {
     async function init() {
       if (!projectId) return;
       setLoading(true);
       setError("");
-      await Promise.all([loadDraftsData(), loadStrategiesData()]);
+      await Promise.all([loadDraftsData(), loadStrategiesData(), loadCampaignsData()]);
       setLoading(false);
     }
     void init();
@@ -300,25 +365,32 @@ export default function ContentWorkspacePage() {
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">内容执行与生产战略</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">内容运营与执行工作台</h1>
               <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-800">
-                M9A GEO Content Engine
+                M9B Campaign &amp; Execution
               </span>
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              从 GEO 诊断与优化机会自动形成内容战略与生产计划，驱动真实内容生成、事实核验与闭环执行。
+              从 GEO 诊断与战略规划驱动日常运营战役、内容排期日历与生产队列，实现闭环内容生产与事实核验。
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowNewStrategyModal(true)}
+              onClick={() => handleOpenCreateCampaign()}
               className="rounded-lg bg-indigo-700 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800"
             >
-              ✨ 生成新战略与生产计划
+              🚀 新建运营战役
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNewStrategyModal(true)}
+              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              ✨ 生成新战略 (M9A)
             </button>
             <Link href="/app/content/new" className="ui-button primary text-xs">
-              创建内容草稿
+              创建单篇草稿
             </Link>
           </div>
         </header>
@@ -339,6 +411,20 @@ export default function ContentWorkspacePage() {
         <div className="flex border-b border-slate-200">
           <button
             type="button"
+            onClick={() => setActiveTab("operations")}
+            className={`border-b-2 px-5 py-2.5 text-sm font-semibold transition-colors ${
+              activeTab === "operations"
+                ? "border-indigo-600 text-indigo-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            ⚡ 运营执行 (M9B)
+            <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+              {campaigns.length} 战役
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab("strategy")}
             className={`border-b-2 px-5 py-2.5 text-sm font-semibold transition-colors ${
               activeTab === "strategy"
@@ -347,7 +433,7 @@ export default function ContentWorkspacePage() {
             }`}
           >
             🎯 GEO 战略与生产计划 (M9A)
-            <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
               {strategies.length}
             </span>
           </button>
@@ -360,9 +446,88 @@ export default function ContentWorkspacePage() {
                 : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
-            📝 草稿与发布执行 ({rows.length})
+            📝 草稿与资产库 ({rows.length})
           </button>
         </div>
+
+        {/* TAB 0: 运营执行 (M9B) */}
+        {activeTab === "operations" && (
+          <div className="space-y-6">
+            {/* 运营执行二级视图切换 */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-100/80 p-1.5">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setOpView("queue")}
+                  className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                    opView === "queue"
+                      ? "bg-white text-indigo-700 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  📋 今日生产队列
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpView("calendar")}
+                  className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                    opView === "calendar"
+                      ? "bg-white text-indigo-700 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  📅 内容生产日历
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpView("campaigns")}
+                  className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                    opView === "campaigns"
+                      ? "bg-white text-indigo-700 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  🚀 运营战役全景
+                </button>
+              </div>
+            </div>
+
+            {/* 三种子视图 */}
+            {opView === "queue" && (
+              <ProductionQueueView
+                projectId={projectId}
+                campaigns={campaigns}
+                onNavigateToCampaigns={handleNavigateToCampaigns}
+                onNavigateToCalendar={handleNavigateToCalendar}
+                onNavigateToStrategy={handleNavigateToStrategy}
+              />
+            )}
+
+            {opView === "calendar" && (
+              <ContentCalendarView
+                projectId={projectId}
+                campaigns={campaigns}
+                initialCampaignId={targetCampaignId}
+                onNavigateToQueue={handleNavigateToQueue}
+                onNavigateToCampaigns={handleNavigateToCampaigns}
+                onNavigateToStrategy={handleNavigateToStrategy}
+              />
+            )}
+
+            {opView === "campaigns" && (
+              <CampaignWorkspaceView
+                projectId={projectId}
+                campaigns={campaigns}
+                initialCampaignId={targetCampaignId}
+                onRefreshCampaigns={loadCampaignsData}
+                onNavigateToQueue={handleNavigateToQueue}
+                onNavigateToCalendar={handleNavigateToCalendar}
+                onNavigateToStrategy={handleNavigateToStrategy}
+                onOpenCreateCampaign={() => handleOpenCreateCampaign()}
+              />
+            )}
+          </div>
+        )}
 
         {/* TAB 1: GEO 战略与生产计划 (M9A) */}
         {activeTab === "strategy" && (
@@ -445,14 +610,23 @@ export default function ContentWorkspacePage() {
                               <span className="font-semibold text-emerald-700">{selectedStrategy.status}</span>
                             </p>
                           </div>
-                          {selectedStrategy.sourceOpportunityId && (
-                            <Link
-                              href={`/app/opportunities/${selectedStrategy.sourceOpportunityId}`}
-                              className="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCreateCampaign(selectedStrategy)}
+                              className="inline-flex items-center rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800"
                             >
-                              查看关联优化机会 →
-                            </Link>
-                          )}
+                              🚀 转化为运营战役 (Campaign)
+                            </button>
+                            {selectedStrategy.sourceOpportunityId && (
+                              <Link
+                                href={`/app/opportunities/${selectedStrategy.sourceOpportunityId}`}
+                                className="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                              >
+                                查看关联优化机会 →
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       </section>
 
@@ -1161,7 +1335,24 @@ export default function ContentWorkspacePage() {
             </div>
           </div>
         )}
+
+        {/* 实例化运营战役弹窗 (M9B) */}
+        <CreateCampaignModal
+          strategies={strategies}
+          initialStrategyId={createCampaignStrategy?.id}
+          isOpen={showCreateCampaignModal}
+          onClose={() => setShowCreateCampaignModal(false)}
+          onCreated={async (newCampaign) => {
+            setShowCreateCampaignModal(false);
+            setSuccessMsg(`已成功创建运营战役「${newCampaign.name}」！`);
+            await loadCampaignsData();
+            setTargetCampaignId(newCampaign.id);
+            setActiveTab("operations");
+            setOpView("campaigns");
+          }}
+        />
       </div>
     </main>
   );
 }
+
