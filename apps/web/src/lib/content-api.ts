@@ -380,5 +380,202 @@ export const createDraftFromPlanItem = (
   { method: "POST", body: JSON.stringify(body) }
 );
 
+// ============================================================
+// M9B - 营销战役 (Campaign)、内容日历与生产队列 API
+// ============================================================
 
+export type CampaignStatus = "DRAFT" | "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED";
 
+export type ProductionStatus =
+  | "PLANNED"
+  | "BLOCKED_FACTS"
+  | "BLOCKED_ASSETS"
+  | "READY"
+  | "IN_PROGRESS"
+  | "DRAFT_CREATED"
+  | "IN_REVIEW"
+  | "APPROVED"
+  | "READY_TO_PUBLISH"
+  | "DONE";
+
+export interface CampaignProgress {
+  totalItems: number;
+  draftedCount: number;
+  approvedCount: number;
+  publishedCount: number;
+  blockedCount: number;
+  readyCount: number;
+  progressRate: number;
+}
+
+export interface ContentScheduleItem {
+  id: string;
+  campaignId: string;
+  planItemId: string;
+  scheduledDate: string;
+  scheduledTime: string | null;
+  timezone: string;
+  productionStatus: ProductionStatus;
+  blockReason: string | null;
+  assignedToId: string | null;
+  dependsOnItemId: string | null;
+  dependsOn?: {
+    id: string;
+    scheduledDate: string;
+    productionStatus: ProductionStatus;
+    planItem?: { title: string; platform: string };
+  } | null;
+  isOverdue?: boolean;
+  nextAction?: string;
+  planItem?: ContentPlanItem;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentCampaign {
+  id: string;
+  organizationId?: string;
+  projectId?: string;
+  name: string;
+  description: string | null;
+  status: CampaignStatus;
+  objective: string;
+  primaryGeoGap: string;
+  startDate: string;
+  endDate: string;
+  strategyId: string;
+  strategyName?: string;
+  createdAt: string;
+  updatedAt: string;
+  lineage?: {
+    strategyId: string;
+    strategyName?: string;
+    opportunityId: string | null;
+    recommendationId: string | null;
+    diagnosisId: string | null;
+  };
+  progress?: CampaignProgress;
+  scheduleItems?: ContentScheduleItem[];
+}
+
+export interface ProductionQueueResponse {
+  summary: {
+    total: number;
+    overdueCount: number;
+    blockedCount: number;
+    readyCount: number;
+    inProgressCount: number;
+    doneCount: number;
+  };
+  items: (ContentScheduleItem & {
+    campaignName?: string;
+    campaignStatus?: string;
+    strategyId?: string;
+  })[];
+}
+
+export interface CalendarViewResponse {
+  campaign: Partial<ContentCampaign>;
+  timezone: string;
+  items: ContentScheduleItem[];
+  byDate: Record<string, ContentScheduleItem[]>;
+}
+
+export const createContentCampaign = (body: {
+  strategyId: string;
+  projectId?: string;
+  name?: string;
+  description?: string;
+  objective?: string;
+  primaryGeoGap?: string;
+  startDate?: string;
+  endDate?: string;
+}) =>
+  api<ContentCampaign>("/api/content/campaigns", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const listContentCampaigns = (projectId: string) =>
+  api<ContentCampaign[]>(`/api/content/campaigns?projectId=${encode(projectId)}`);
+
+export const getContentCampaign = (campaignId: string) =>
+  api<ContentCampaign>(`/api/content/campaigns/${encode(campaignId)}`);
+
+export const updateContentCampaign = (
+  campaignId: string,
+  body: Partial<{
+    name: string;
+    description: string;
+    objective: string;
+    primaryGeoGap: string;
+    startDate: string;
+    endDate: string;
+    status: CampaignStatus;
+  }>
+) =>
+  api<ContentCampaign>(`/api/content/campaigns/${encode(campaignId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const generateCampaignCalendar = (
+  campaignId: string,
+  body: {
+    startDate?: string;
+    pacingStrategy?: "WORKDAYS_ONLY" | "DAILY" | "SPREAD";
+    maxItemsPerDay?: number;
+    timezone?: string;
+  } = {}
+) =>
+  api<ContentCampaign>(`/api/content/campaigns/${encode(campaignId)}/calendar/generate`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getCampaignCalendar = (campaignId: string, timezone?: string) =>
+  api<CalendarViewResponse>(
+    `/api/content/campaigns/${encode(campaignId)}/calendar${timezone ? `?timezone=${encode(timezone)}` : ""}`
+  );
+
+export const updateContentScheduleItem = (
+  itemId: string,
+  body: Partial<{
+    scheduledDate: string;
+    scheduledTime: string;
+    timezone: string;
+    productionStatus: ProductionStatus;
+    blockReason: string;
+    assignedToId: string;
+    dependsOnItemId: string;
+  }>
+) =>
+  api<ContentScheduleItem>(`/api/content/schedule-items/${encode(itemId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const getProductionQueue = (filters: {
+  projectId: string;
+  campaignId?: string;
+  productionStatus?: ProductionStatus;
+  assignedToId?: string;
+  platform?: string;
+  overdueOnly?: boolean;
+}) => {
+  const q = new URLSearchParams();
+  q.set("projectId", filters.projectId);
+  if (filters.campaignId) q.set("campaignId", filters.campaignId);
+  if (filters.productionStatus) q.set("productionStatus", filters.productionStatus);
+  if (filters.assignedToId) q.set("assignedToId", filters.assignedToId);
+  if (filters.platform) q.set("platform", filters.platform);
+  if (filters.overdueOnly) q.set("overdueOnly", "true");
+  return api<ProductionQueueResponse>(`/api/content/production-queue?${q}`);
+};
+
+export const startScheduleItemProduction = (itemId: string) =>
+  api<{ scheduleItem: ContentScheduleItem; draft: Draft; reused: boolean }>(
+    `/api/content/schedule-items/${encode(itemId)}/start-production`,
+    { method: "POST" }
+  );

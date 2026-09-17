@@ -50,6 +50,8 @@ model Organization {
   contentAudits      ContentAuditLog[]
   contentStrategies  ContentStrategy[]
   contentPlanItems   ContentPlanItem[]
+  contentCampaigns     ContentCampaign[]
+  contentScheduleItems ContentScheduleItem[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -124,6 +126,8 @@ model Project {
   contentPublications Publication[]
   contentStrategies  ContentStrategy[]
   contentPlanItems   ContentPlanItem[]
+  contentCampaigns     ContentCampaign[]
+  contentScheduleItems ContentScheduleItem[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -1840,6 +1844,7 @@ model ContentStrategy {
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   planItems    ContentPlanItem[]
+  campaigns    ContentCampaign[]
 
   @@map("content_strategies")
   @@index([organizationId])
@@ -1867,9 +1872,10 @@ model ContentPlanItem {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
-  strategy     ContentStrategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  strategy      ContentStrategy       @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  organization  Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scheduleItems ContentScheduleItem[]
 
   @@map("content_plan_items")
   @@index([strategyId])
@@ -1877,5 +1883,70 @@ model ContentPlanItem {
   @@index([projectId])
   @@index([status])
   @@index([draftId])
+}
+
+// ============================================================
+// M9B - 营销战役与内容排期（Campaign, Content Calendar & Production Queue）
+// ============================================================
+model ContentCampaign {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  projectId      String    @map("project_id") @db.Uuid
+  name           String
+  description    String?
+  strategyId     String    @map("strategy_id") @db.Uuid
+  objective      String
+  primaryGeoGap  String    @map("primary_geo_gap")
+  startDate      DateTime  @map("start_date")
+  endDate        DateTime  @map("end_date")
+  status         String    @default("ACTIVE") // DRAFT, ACTIVE, PAUSED, COMPLETED, ARCHIVED
+  metadata       Json      @default("{}")
+  createdById    String    @map("created_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization  Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  strategy      ContentStrategy       @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  scheduleItems ContentScheduleItem[]
+
+  @@map("content_campaigns")
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([strategyId])
+  @@index([status])
+}
+
+model ContentScheduleItem {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  campaignId       String    @map("campaign_id") @db.Uuid
+  planItemId       String    @map("plan_item_id") @db.Uuid
+  scheduledDate    DateTime  @map("scheduled_date")
+  scheduledTime    String?   @map("scheduled_time")
+  timezone         String    @default("Asia/Shanghai")
+  productionStatus String    @default("PLANNED") @map("production_status") // PLANNED, BLOCKED_FACTS, BLOCKED_ASSETS, READY, IN_PROGRESS, DRAFT_CREATED, IN_REVIEW, APPROVED, READY_TO_PUBLISH, DONE
+  blockReason      String?   @map("block_reason") // MISSING_REQUIRED_FACTS, MISSING_VIDEO_ASSET, MISSING_IMAGE_ASSET, DRAFT_NOT_CREATED, REVIEW_REQUIRED, APPROVAL_REJECTED
+  assignedToId     String?   @map("assigned_to_id") @db.Uuid
+  dependsOnItemId  String?   @map("depends_on_item_id") @db.Uuid
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  campaign     ContentCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  planItem     ContentPlanItem      @relation(fields: [planItemId], references: [id], onDelete: Cascade)
+  dependsOn    ContentScheduleItem? @relation("ScheduleDependencies", fields: [dependsOnItemId], references: [id], onDelete: SetNull)
+  dependents   ContentScheduleItem[] @relation("ScheduleDependencies")
+
+  @@map("content_schedule_items")
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([campaignId])
+  @@index([planItemId])
+  @@index([scheduledDate])
+  @@index([productionStatus])
 }
 
