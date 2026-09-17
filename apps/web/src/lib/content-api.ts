@@ -298,10 +298,19 @@ export interface ContentPlanItem {
   geoTarget: string;
   targetQueries: string[];
   keyClaims: string[];
-  status: "PLANNED" | "DRAFTED" | "IN_PRODUCTION" | "COMPLETED" | "DISMISSED";
+  status: "PLANNED" | "FACT_INPUT_REQUIRED" | "ASSET_INPUT_REQUIRED" | "READY" | "DRAFTED" | "IN_PRODUCTION" | "COMPLETED" | "DISMISSED";
   draftId: string | null;
   sourceOpportunityId: string | null;
   sortOrder: number;
+  metadata?: {
+    platformEligibilityReason?: string;
+    assetRequirements?: Array<{ type: string; status: "REQUIRED" | "RECOMMENDED"; description: string }>;
+    missingAssets?: string[];
+    requiredFacts?: Array<{ name: string; importance: "REQUIRED" | "OPTIONAL"; status: "SATISFIED" | "MISSING" }>;
+    missingFacts?: string[];
+    sourceOpportunityIds?: string[];
+    opportunityCount?: number;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -335,6 +344,7 @@ export const generateContentStrategy = (
   projectId: string,
   body: {
     opportunityId?: string;
+    opportunityIds?: string[];
     recommendationId?: string;
     diagnosisRunId?: string;
     title?: string;

@@ -33,14 +33,18 @@ export class ContentStrategyService {
   async generateStrategy(userId: string, projectId: string, dto: GenerateStrategyDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
 
-    let opportunity = null;
-    let recommendation = null;
-    let diagnosisRun = null;
+    const targetOppIds: string[] = [];
+    if (Array.isArray(dto.opportunityIds) && dto.opportunityIds.length > 0) {
+      targetOppIds.push(...dto.opportunityIds);
+    } else if (dto.opportunityId) {
+      targetOppIds.push(dto.opportunityId);
+    }
 
-    if (dto.opportunityId) {
-      opportunity = await this.db.client.contentOpportunity.findFirst({
+    let opportunities: any[] = [];
+    if (targetOppIds.length > 0) {
+      opportunities = await this.db.client.contentOpportunity.findMany({
         where: {
-          id: dto.opportunityId,
+          id: { in: targetOppIds },
           opportunityRun: { projectId },
         },
         include: {
@@ -49,10 +53,13 @@ export class ContentStrategyService {
           recommendations: { include: { recommendation: true } },
         },
       });
-      if (!opportunity) {
+      if (opportunities.length === 0) {
         throw new NotFoundException("来源 Opportunity 不存在或不属于该项目");
       }
     }
+
+    let recommendation = null;
+    let diagnosisRun = null;
 
     if (dto.recommendationId) {
       recommendation = await this.db.client.recommendation.findFirst({
@@ -88,6 +95,21 @@ export class ContentStrategyService {
       facts = [];
     }
 
+    // 读取该项目已上传的物料资产（如视频素材）
+    let assets: any[] = [];
+    try {
+      const dbAssets = await this.db.client.contentAsset.findMany({
+        where: { projectId },
+        select: { id: true, type: true, storageKey: true },
+      });
+      assets = dbAssets.map((a) => ({
+        id: a.id,
+        assetType: a.type,
+      }));
+    } catch {
+      assets = [];
+    }
+
     const fullProject = await this.db.client.project.findUnique({ where: { id: projectId } });
     const projectName = fullProject?.name || "项目";
     const targetEntity = dto.targetEntity || (fullProject as any)?.targetEntity || projectName;
@@ -97,14 +119,19 @@ export class ContentStrategyService {
       projectName,
       industry: (fullProject as any)?.industry || null,
       customGuidance: dto.customGuidance,
-      opportunity,
+      opportunity: opportunities[0] || null,
+      opportunities,
       recommendation,
       diagnosisRun,
       verifiedFacts: facts,
+      availableAssets: assets,
+      baselineMetrics: dto.baselineMetrics,
+      targetMetrics: dto.targetMetrics,
     };
 
     const output = ContentStrategyEngine.generateStrategy(engineInput);
     const strategyTitle = dto.title || output.title;
+    const primaryOppId = opportunities[0]?.id ?? dto.opportunityId ?? null;
 
     // 事务写入战略及计划项
     const strategy = await this.db.client.$transaction(async (tx) => {
@@ -113,7 +140,7 @@ export class ContentStrategyService {
           organizationId: project.organizationId,
           projectId,
           title: strategyTitle,
-          sourceOpportunityId: dto.opportunityId ?? null,
+          sourceOpportunityId: primaryOppId,
           sourceRecommendationId: dto.recommendationId ?? null,
           sourceDiagnosisId: dto.diagnosisRunId ?? null,
           status: "ACTIVE",
@@ -126,6 +153,7 @@ export class ContentStrategyService {
           contentFormats: output.contentFormats as unknown as Prisma.InputJsonValue,
           evidenceRequired: output.evidenceRequired as unknown as Prisma.InputJsonValue,
           validationMetrics: output.validationMetrics as unknown as Prisma.InputJsonValue,
+          metadata: output.metadata ? (output.metadata as unknown as Prisma.InputJsonValue) : {},
           createdById: userId,
         },
       });
@@ -141,8 +169,8 @@ export class ContentStrategyService {
         geoTarget: item.geoTarget,
         targetQueries: item.targetQueries as unknown as Prisma.InputJsonValue,
         keyClaims: item.keyClaims as unknown as Prisma.InputJsonValue,
-        status: "PLANNED",
-        sourceOpportunityId: dto.opportunityId ?? null,
+        status: item.status,
+        sourceOpportunityId: item.metadata?.sourceOpportunityIds?.[0] ?? primaryOppId,
         sortOrder: item.sortOrder,
         metadata: item.metadata ? (item.metadata as unknown as Prisma.InputJsonValue) : {},
       }));
@@ -264,7 +292,26 @@ export class ContentStrategyService {
       throw new NotFoundException("计划项不存在或不属于该战略");
     }
 
-    // 若已经创建过草稿且仍然存在，直接幂等返回已有关联
+    // AG-M9A-05 & AG-M9A-06: 服务端准入安全阻断守卫 (Server-side guards)
+    if (item.status === "FACT_INPUT_REQUIRED" && !dto.force) {
+      const missingFacts = (item.metadata as any)?.missingFacts || [];
+      throw new BadRequestException({
+        error: "PLAN_FACT_INPUT_REQUIRED",
+        message: "该计划项尚缺少关键核验事实依据，无法直接生成草稿，请先在知识库中补充事实依据",
+        missingFacts,
+      });
+    }
+
+    if (item.status === "ASSET_INPUT_REQUIRED" && !dto.force) {
+      const missingAssets = (item.metadata as any)?.missingAssets || [];
+      throw new BadRequestException({
+        error: "PLAN_ASSET_INPUT_REQUIRED",
+        message: "该计划项需要视频物料前置就绪，当前项目暂无可用视频资产",
+        missingAssets,
+      });
+    }
+
+    // AG-M9A-05 (Requirement 15): 重复 Draft 防护 - 默认幂等复用，除非要求 createNewRevision
     if (item.draftId) {
       const existingDraft = await this.db.client.contentDraft.findFirst({
         where: { id: item.draftId },
@@ -274,11 +321,51 @@ export class ContentStrategyService {
         },
       });
       if (existingDraft) {
-        return {
-          draft: this.toDraftView(existingDraft),
-          planItem: item,
-          reused: true,
-        };
+        if (!dto.createNewRevision) {
+          return {
+            draft: this.toDraftView(existingDraft),
+            planItem: item,
+            reused: true,
+          };
+        } else {
+          // 在已有草稿上增加新版本 Revision，防止创建孤儿/重复草稿
+          const maxRev = await this.db.client.contentRevision.aggregate({
+            where: { draftId: existingDraft.id },
+            _max: { version: true },
+          });
+          const nextVer = (maxRev._max.version ?? 0) + 1;
+          const generatedBody = dto.body || ContentStrategyEngine.generateDraftBody({
+            title: item.title,
+            platform: item.platform,
+            format: item.format,
+            objective: item.objective,
+            geoTarget: item.geoTarget,
+            targetQueries: Array.isArray(item.targetQueries) ? (item.targetQueries as string[]) : [],
+            keyClaims: Array.isArray(item.keyClaims) ? (item.keyClaims as string[]) : [],
+          });
+          await this.db.client.contentRevision.create({
+            data: {
+              draftId: existingDraft.id,
+              version: nextVer,
+              body: generatedBody,
+              summary: dto.summary ?? item.objective,
+              changeNote: dto.changeNote ?? `自计划项重新派生新版本 v${nextVer}`,
+              generatedById: userId,
+            },
+          });
+          const updatedDraft = await this.db.client.contentDraft.findUniqueOrThrow({
+            where: { id: existingDraft.id },
+            include: {
+              revisions: { orderBy: [{ version: "desc" }], take: 1 },
+              _count: { select: { revisions: true } },
+            },
+          });
+          return {
+            draft: this.toDraftView(updatedDraft),
+            planItem: item,
+            reused: false,
+          };
+        }
       }
     }
 

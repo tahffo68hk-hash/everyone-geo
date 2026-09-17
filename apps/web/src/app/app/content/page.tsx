@@ -660,27 +660,44 @@ export default function ContentWorkspacePage() {
                                       <span
                                         className={`rounded px-2 py-0.5 text-xs font-semibold ${
                                           item.status === "DRAFTED"
-                                            ? "bg-emerald-100 text-emerald-800"
+                                            ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                            : item.status === "READY"
+                                            ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                            : item.status === "FACT_INPUT_REQUIRED"
+                                            ? "bg-red-100 text-red-800 border border-red-300"
+                                            : item.status === "ASSET_INPUT_REQUIRED"
+                                            ? "bg-amber-100 text-amber-800 border border-amber-300"
                                             : item.status === "IN_PRODUCTION"
-                                            ? "bg-amber-100 text-amber-800"
+                                            ? "bg-blue-100 text-blue-800 border border-blue-300"
                                             : item.status === "COMPLETED"
-                                            ? "bg-blue-100 text-blue-800"
-                                            : "bg-slate-200 text-slate-700"
+                                            ? "bg-blue-100 text-blue-800 border border-blue-300"
+                                            : "bg-slate-200 text-slate-700 border border-slate-300"
                                         }`}
                                       >
                                         {item.status === "DRAFTED"
                                           ? "已生成草稿"
+                                          : item.status === "READY"
+                                          ? "可生成内容"
+                                          : item.status === "FACT_INPUT_REQUIRED"
+                                          ? "缺少事实依据"
+                                          : item.status === "ASSET_INPUT_REQUIRED"
+                                          ? "需要视频素材"
                                           : item.status === "IN_PRODUCTION"
                                           ? "制作中"
                                           : item.status === "COMPLETED"
                                           ? "已发布"
                                           : "计划中"}
                                       </span>
+                                      {item.metadata?.opportunityCount && item.metadata.opportunityCount > 1 && (
+                                        <span className="rounded border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                                          📌 聚类关联 {item.metadata.opportunityCount} 个机会
+                                        </span>
+                                      )}
                                     </div>
                                     <h4 className="text-base font-bold text-slate-900">{item.title}</h4>
                                   </div>
 
-                                  {/* 操作按钮：一键生成草稿 或 查看已生成草稿 */}
+                                  {/* 操作按钮：一键生成草稿 或 查看已生成草稿 或 阻断禁用 */}
                                   <div className="flex items-center gap-2">
                                     {item.draftId ? (
                                       <Link
@@ -689,6 +706,24 @@ export default function ContentWorkspacePage() {
                                       >
                                         查看草稿与变体 →
                                       </Link>
+                                    ) : item.status === "FACT_INPUT_REQUIRED" ? (
+                                      <button
+                                        type="button"
+                                        disabled
+                                        className="cursor-not-allowed rounded-lg bg-slate-200 px-3.5 py-1.5 text-xs font-bold text-slate-500 shadow-xs"
+                                        title="该计划缺少关键核实事实，请先在知识库中补充事实依据"
+                                      >
+                                        需要补充事实依据
+                                      </button>
+                                    ) : item.status === "ASSET_INPUT_REQUIRED" ? (
+                                      <button
+                                        type="button"
+                                        disabled
+                                        className="cursor-not-allowed rounded-lg bg-amber-100 px-3.5 py-1.5 text-xs font-bold text-amber-800 shadow-xs"
+                                        title="该视频计划缺少实拍视频素材，请先上传物料"
+                                      >
+                                        需要视频素材
+                                      </button>
                                     ) : (
                                       <button
                                         type="button"
@@ -705,6 +740,9 @@ export default function ContentWorkspacePage() {
                                       onChange={(e) => void handleStatusChange(item, e.target.value)}
                                       className="rounded-lg border border-slate-300 bg-white p-1 text-xs text-slate-600"
                                     >
+                                      <option value="READY">可生成内容</option>
+                                      <option value="FACT_INPUT_REQUIRED">缺少事实</option>
+                                      <option value="ASSET_INPUT_REQUIRED">缺少素材</option>
                                       <option value="PLANNED">计划中</option>
                                       <option value="IN_PRODUCTION">制作中</option>
                                       <option value="COMPLETED">已完成</option>
@@ -712,6 +750,28 @@ export default function ContentWorkspacePage() {
                                     </select>
                                   </div>
                                 </div>
+
+                                {/* 准入理由与缺失告警 */}
+                                {item.metadata?.platformEligibilityReason && (
+                                  <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/50 p-2.5 text-xs">
+                                    <span className="font-semibold text-indigo-900">🎯 平台入选理由：</span>
+                                    <span className="text-indigo-950">{item.metadata.platformEligibilityReason}</span>
+                                  </div>
+                                )}
+
+                                {item.metadata?.missingFacts && item.metadata.missingFacts.length > 0 && (
+                                  <div className="mt-2 rounded-lg border border-red-200 bg-red-50/60 p-2.5 text-xs text-red-800">
+                                    <span className="font-bold text-red-900">⚠️ 缺少事实依据：</span>
+                                    <span>{item.metadata.missingFacts.join("、")}（请在知识库中补充核验事实以解锁生成）</span>
+                                  </div>
+                                )}
+
+                                {item.metadata?.missingAssets && item.metadata.missingAssets.length > 0 && (
+                                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-xs text-amber-800">
+                                    <span className="font-bold text-amber-900">🎬 缺少前置物料：</span>
+                                    <span>需要实拍或分镜视频素材（请在素材库中上传物料）</span>
+                                  </div>
+                                )}
 
                                 <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
                                   <div className="rounded-lg border border-slate-200 bg-white p-3">

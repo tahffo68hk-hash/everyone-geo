@@ -2,10 +2,25 @@ import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min } 
 import { Type } from "class-transformer";
 
 export const STRATEGY_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
-export const PLAN_ITEM_STATUSES = ["PLANNED", "DRAFTED", "IN_PRODUCTION", "COMPLETED", "DISMISSED"] as const;
+export const PLAN_ITEM_STATUSES = [
+  "PLANNED",
+  "FACT_INPUT_REQUIRED",
+  "ASSET_INPUT_REQUIRED",
+  "READY",
+  "DRAFTED",
+  "IN_PRODUCTION",
+  "COMPLETED",
+  "DISMISSED",
+] as const;
 
 export class GenerateStrategyDto {
-  /** 可选关联的 Opportunity ID */
+  /** 可选支持批量关联的 Opportunity IDs（用于多 Opportunity 语义聚类） */
+  @IsOptional()
+  @IsArray()
+  @IsUUID("all", { each: true })
+  opportunityIds?: string[];
+
+  /** 可选关联的 Opportunity ID（向后兼容） */
   @IsOptional()
   @IsUUID()
   opportunityId?: string;
@@ -37,6 +52,14 @@ export class GenerateStrategyDto {
   @IsString()
   @Length(1, 100)
   targetEntity?: string;
+
+  /** 可选基线度量数据（用于校准数值 KPI） */
+  @IsOptional()
+  baselineMetrics?: Record<string, any>;
+
+  /** 可选目标度量配置 */
+  @IsOptional()
+  targetMetrics?: Record<string, any>;
 }
 
 export class UpdatePlanItemDto {
@@ -103,6 +126,14 @@ export class CreateDraftFromPlanItemDto {
   @IsString()
   @Length(0, 500)
   changeNote?: string;
+
+  /** 若已存在草稿，是否允许创建新版本（默认直接幂等复用已有草稿） */
+  @IsOptional()
+  createNewRevision?: boolean;
+
+  /** 是否强制跳过非阻塞警告 */
+  @IsOptional()
+  force?: boolean;
 }
 
 export class ListStrategiesDto {
