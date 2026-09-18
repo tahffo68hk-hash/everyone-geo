@@ -22,9 +22,10 @@ import { ContentExecutionModule } from "./content-execution/content-execution.mo
 import { ContentStrategyModule } from "./content-strategy/content-strategy.module";
 import { ContentCampaignModule } from "./content-campaign/content-campaign.module";
 import { RetestOrchestrationModule } from "./retest-orchestration/retest-orchestration.module";
+import { OutcomeComparisonModule } from "./outcome-comparison/outcome-comparison.module";
 
 @Module({
-  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule, ExperimentsModule, SitesModule, ChangePlansModule, PilotReviewsModule, QueryWorkspaceModule, ManualMeasurementsModule, ActivityModule, ContentExecutionModule, ContentStrategyModule, ContentCampaignModule, RetestOrchestrationModule],
+  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule, ExperimentsModule, SitesModule, ChangePlansModule, PilotReviewsModule, QueryWorkspaceModule, ManualMeasurementsModule, ActivityModule, ContentExecutionModule, ContentStrategyModule, ContentCampaignModule, RetestOrchestrationModule, OutcomeComparisonModule],
   controllers: [HealthController],
 })
 export class AppModule {}

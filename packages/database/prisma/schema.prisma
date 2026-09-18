@@ -54,6 +54,7 @@ model Organization {
   contentScheduleItems ContentScheduleItem[]
   publishedAssets      PublishedAsset[]
   retestRuns           RetestRun[]
+  outcomeComparisons   OutcomeComparison[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -132,6 +133,7 @@ model Project {
   contentScheduleItems ContentScheduleItem[]
   publishedAssets      PublishedAsset[]
   retestRuns           RetestRun[]
+  outcomeComparisons   OutcomeComparison[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -1843,6 +1845,7 @@ model PublishedAsset {
   draft              ContentDraft         @relation(fields: [draftId], references: [id], onDelete: Restrict)
   revision           ContentRevision      @relation(fields: [revisionId], references: [id], onDelete: Restrict)
   retestRuns         RetestRun[]
+  outcomeComparisons OutcomeComparison[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -2081,6 +2084,7 @@ model RetestRun {
   project              Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   publishedAsset       PublishedAsset   @relation(fields: [publishedAssetId], references: [id], onDelete: Cascade)
   items                RetestItem[]
+  outcomes             OutcomeComparison[]
 
   @@map("retest_runs")
   @@index([organizationId, createdAt])
@@ -2116,6 +2120,7 @@ model RetestItem {
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
   retestRun            RetestRun        @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
+  outcomes             OutcomeComparison[]
 
   @@map("retest_items")
   @@index([retestRunId])
@@ -2123,4 +2128,41 @@ model RetestItem {
   @@index([status])
 }
 
+model OutcomeComparison {
+  id                    String         @id @default(uuid()) @db.Uuid
+  organizationId        String         @map("organization_id") @db.Uuid
+  projectId             String         @map("project_id") @db.Uuid
+  publishedAssetId      String         @map("published_asset_id") @db.Uuid
+  retestRunId           String         @map("retest_run_id") @db.Uuid
+  retestItemId          String         @map("retest_item_id") @db.Uuid
+  queryId               String         @map("query_id") @db.Uuid
+  queryText             String         @map("query_text")
+  baselineEvidenceId    String?        @map("baseline_evidence_id") @db.Uuid
+  retestEvidenceId      String?        @map("retest_evidence_id") @db.Uuid
+  baselineCompatibility String         @map("baseline_compatibility") // EXACT_MATCH, COMPARABLE_WITH_WARNING, INCOMPATIBLE, MISSING_BASELINE
+  comparisonStatus      String         @map("comparison_status") // COMPARABLE, COMPARABLE_WITH_WARNING, INCOMPATIBLE, MISSING_BASELINE, MISSING_RETEST_EVIDENCE
+  comparisonVersion     String         @default("m10c-outcome-v1") @map("comparison_version")
+  beforeSnapshot        Json           @default("{}") @map("before_snapshot")
+  afterSnapshot         Json           @default("{}") @map("after_snapshot")
+  deltaSnapshot         Json           @default("{}") @map("delta_snapshot")
+  summary               String         @default("")
+  metadata              Json           @default("{}")
+  createdById           String?        @map("created_by_id") @db.Uuid
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
 
+  organization          Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project               Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  publishedAsset        PublishedAsset @relation(fields: [publishedAssetId], references: [id], onDelete: Cascade)
+  retestRun             RetestRun      @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
+  retestItem            RetestItem     @relation(fields: [retestItemId], references: [id], onDelete: Cascade)
+
+  @@unique([retestItemId, comparisonVersion])
+  @@map("outcome_comparisons")
+  @@index([organizationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([publishedAssetId, createdAt])
+  @@index([retestRunId])
+  @@index([queryId])
+  @@index([comparisonStatus])
+}
