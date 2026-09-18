@@ -890,4 +890,45 @@ export class ContentCampaignService {
       reused: draftResult.reused ?? false,
     };
   }
+
+  /**
+   * 战役关联的发布记录列表
+   */
+  async listCampaignPublications(userId: string, campaignId: string) {
+    const campaign = await this.db.client.contentCampaign.findUnique({
+      where: { id: campaignId },
+    });
+    if (!campaign) throw new NotFoundException("战役不存在");
+    await this.tenant.assertUserInOrganization(userId, campaign.organizationId);
+
+    const publications = await this.db.client.publication.findMany({
+      where: { campaignId },
+      include: {
+        connection: { select: { id: true, channel: true, displayName: true, status: true } },
+        attempts: { orderBy: [{ attemptNo: "desc" }] },
+        publishedAssets: true,
+      },
+      orderBy: [{ createdAt: "desc" }],
+    });
+
+    return publications;
+  }
+
+  /**
+   * 战役关联的落地资产列表
+   */
+  async listCampaignPublishedAssets(userId: string, campaignId: string) {
+    const campaign = await this.db.client.contentCampaign.findUnique({
+      where: { id: campaignId },
+    });
+    if (!campaign) throw new NotFoundException("战役不存在");
+    await this.tenant.assertUserInOrganization(userId, campaign.organizationId);
+
+    const assets = await this.db.client.publishedAsset.findMany({
+      where: { campaignId },
+      orderBy: [{ createdAt: "desc" }],
+    });
+
+    return assets;
+  }
 }

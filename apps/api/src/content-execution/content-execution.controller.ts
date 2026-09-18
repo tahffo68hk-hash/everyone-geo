@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UploadedFile,
   UseGuards, UseInterceptors,
 } from "@nestjs/common";
@@ -11,6 +12,7 @@ import {
   GenerateImageBriefDto, GeneratePlatformVariantDto, ListAssetsDto, ListDraftsDto, ListPublicationsDto,
   RewriteVariantDto, UpdateDraftDto, ValidatePublicationDto,
   CreateVerifiedFactDto, ExtractClaimsDto, SafeRewriteDto, GenerateImagePreviewDto, AcceptImageAssetDto,
+  ConfirmPublishedAssetDto, CreatePublishedAssetDto, ListPublishedAssetsDto,
 } from "./dto/content-execution.dto";
 
 /**
@@ -349,5 +351,80 @@ export class ContentExecutionController {
     @Body() body: { type?: string; draftId?: string },
   ) {
     return this.content.createAsset(u.sub, id, file, { type: body?.type, draftId: body?.draftId });
+  }
+
+  // ---- M10A 发布资产与血缘 (Published Asset & Lineage) ----
+
+  /**
+   * 将发布记录确认为落地资产 (PublishedAsset)
+   * POST /publications/:id/confirm-asset 或 POST /api/content/publications/:id/confirm-asset
+   */
+  @Post(["publications/:id/confirm-asset", "api/content/publications/:id/confirm-asset"])
+  @HttpCode(201)
+  confirmPublishedAsset(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: ConfirmPublishedAssetDto,
+  ) {
+    return this.content.confirmPublishedAsset(u.sub, id, dto);
+  }
+
+  /**
+   * 手动录入/导入已发布资产
+   * POST /projects/:id/published-assets 或 POST /api/content/published-assets
+   */
+  @Post(["projects/:id/published-assets", "api/content/published-assets", "content/published-assets"])
+  @HttpCode(201)
+  createPublishedAsset(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id") paramProjectId: string | undefined,
+    @Body() dto: CreatePublishedAssetDto,
+  ) {
+    const projectId = paramProjectId || dto.projectId;
+    if (!projectId) {
+      throw new BadRequestException("缺少 projectId 参数");
+    }
+    return this.content.createPublishedAsset(u.sub, projectId, dto);
+  }
+
+  /**
+   * 读取单个已发布资产
+   * GET /published-assets/:id 或 GET /api/content/published-assets/:id
+   */
+  @Get(["published-assets/:id", "api/content/published-assets/:id", "content/published-assets/:id"])
+  getPublishedAsset(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.content.getPublishedAsset(u.sub, id);
+  }
+
+  /**
+   * 完整发布血缘反向追溯
+   * GET /published-assets/:id/lineage 或 GET /api/content/published-assets/:id/lineage
+   */
+  @Get(["published-assets/:id/lineage", "api/content/published-assets/:id/lineage", "content/published-assets/:id/lineage"])
+  getPublishedAssetLineage(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.content.getPublishedAssetLineage(u.sub, id);
+  }
+
+  /**
+   * 项目下的已发布资产列表
+   * GET /projects/:id/published-assets 或 GET /api/content/published-assets?projectId=...
+   */
+  @Get(["projects/:id/published-assets", "api/content/published-assets", "content/published-assets"])
+  listPublishedAssets(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id") paramProjectId: string | undefined,
+    @Query() dto: ListPublishedAssetsDto,
+  ) {
+    const projectId = paramProjectId || dto.projectId;
+    if (!projectId) {
+      throw new BadRequestException("缺少 projectId 参数");
+    }
+    return this.content.listPublishedAssets(u.sub, projectId, dto);
   }
 }

@@ -52,6 +52,7 @@ model Organization {
   contentPlanItems   ContentPlanItem[]
   contentCampaigns     ContentCampaign[]
   contentScheduleItems ContentScheduleItem[]
+  publishedAssets      PublishedAsset[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -128,6 +129,7 @@ model Project {
   contentPlanItems   ContentPlanItem[]
   contentCampaigns     ContentCampaign[]
   contentScheduleItems ContentScheduleItem[]
+  publishedAssets      PublishedAsset[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -1641,6 +1643,7 @@ model ContentDraft {
   assets      ContentAsset[]
   publications Publication[]
   auditLogs   ContentAuditLog[]
+  publishedAssets PublishedAsset[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -1661,6 +1664,7 @@ model ContentRevision {
   draft    ContentDraft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
   approvals ContentApproval[]
   publications Publication[] // Publication.revision 的反向关系
+  publishedAssets PublishedAsset[]
 
   @@unique([draftId, version])
   @@index([draftId])
@@ -1734,6 +1738,9 @@ model Publication {
   draftId        String           @db.Uuid
   revisionId     String           @db.Uuid
   connectionId   String           @db.Uuid
+  campaignId     String?          @db.Uuid
+  scheduleItemId String?          @db.Uuid
+  planItemId     String?          @db.Uuid
   channel        Channel
   title          String?
   payload        String   // 渠道中立的序列化内容（JSON）
@@ -1744,23 +1751,33 @@ model Publication {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project     Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  draft       ContentDraft           @relation(fields: [draftId], references: [id], onDelete: Restrict)
-  revision    ContentRevision        @relation(fields: [revisionId], references: [id], onDelete: Restrict)
-  connection  ChannelAccountConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
-  attempts    PublicationAttempt[]
-  auditLogs   ContentAuditLog[]
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  draft          ContentDraft             @relation(fields: [draftId], references: [id], onDelete: Restrict)
+  revision       ContentRevision          @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  connection     ChannelAccountConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  campaign       ContentCampaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  scheduleItem   ContentScheduleItem?     @relation(fields: [scheduleItemId], references: [id], onDelete: SetNull)
+  planItem       ContentPlanItem?         @relation(fields: [planItemId], references: [id], onDelete: SetNull)
+  attempts       PublicationAttempt[]
+  auditLogs      ContentAuditLog[]
+  publishedAssets PublishedAsset[]
 
   @@index([organizationId])
   @@index([projectId])
   @@index([draftId])
   @@index([status])
+  @@index([campaignId])
+  @@index([scheduleItemId])
+  @@index([planItemId])
 }
 
 model PublicationAttempt {
   id             String           @id @default(uuid()) @db.Uuid
   publicationId  String           @db.Uuid
+  campaignId     String?          @db.Uuid
+  scheduleItemId String?          @db.Uuid
+  planItemId     String?          @db.Uuid
   idempotencyKey String           @unique
   channel        Channel
   attemptNo      Int              @default(1)
@@ -1773,9 +1790,66 @@ model PublicationAttempt {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  publication Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  publication    Publication          @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  campaign       ContentCampaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  scheduleItem   ContentScheduleItem? @relation(fields: [scheduleItemId], references: [id], onDelete: SetNull)
+  planItem       ContentPlanItem?     @relation(fields: [planItemId], references: [id], onDelete: SetNull)
+  publishedAssets PublishedAsset[]
 
   @@index([publicationId])
+  @@index([campaignId])
+  @@index([scheduleItemId])
+  @@index([planItemId])
+}
+
+model PublishedAsset {
+  id                   String              @id @default(uuid()) @db.Uuid
+  organizationId       String              @db.Uuid
+  projectId            String              @db.Uuid
+  publicationId        String?             @db.Uuid
+  publicationAttemptId String?             @db.Uuid
+
+  campaignId           String?             @db.Uuid
+  scheduleItemId       String?             @db.Uuid
+  planItemId           String?             @db.Uuid
+  draftId              String              @db.Uuid
+  revisionId           String              @db.Uuid
+
+  platform             String              // WECHAT, XIAOHONGSHU, BILIBILI, DOUYIN, WEIBO, etc.
+  title                String
+  canonicalUrl         String?
+  externalAssetId      String?
+
+  verificationStatus   String              @default("UNVERIFIED") // UNVERIFIED, PLATFORM_CONFIRMED, MANUAL_VERIFIED
+  sourceType           String              @default("PLATFORM_PUBLISH") // PLATFORM_PUBLISH, MANUAL_VERIFIED, IMPORTED
+  verifiedAt           DateTime?
+  verifiedById         String?             @db.Uuid
+  verificationNote     String?
+
+  publishedAt          DateTime            @default(now())
+  metadata             Json                @default("{}")
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project            Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  publication        Publication?         @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  publicationAttempt PublicationAttempt?  @relation(fields: [publicationAttemptId], references: [id], onDelete: SetNull)
+  campaign           ContentCampaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  scheduleItem       ContentScheduleItem? @relation(fields: [scheduleItemId], references: [id], onDelete: SetNull)
+  planItem           ContentPlanItem?     @relation(fields: [planItemId], references: [id], onDelete: SetNull)
+  draft              ContentDraft         @relation(fields: [draftId], references: [id], onDelete: Restrict)
+  revision           ContentRevision      @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([campaignId])
+  @@index([planItemId])
+  @@index([scheduleItemId])
+  @@index([draftId])
+  @@index([publicationId])
+  @@index([platform])
+  @@index([verificationStatus])
 }
 
 model ContentAuditLog {
@@ -1875,7 +1949,10 @@ model ContentPlanItem {
   strategy      ContentStrategy       @relation(fields: [strategyId], references: [id], onDelete: Cascade)
   organization  Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  scheduleItems ContentScheduleItem[]
+  scheduleItems       ContentScheduleItem[]
+  publications        Publication[]
+  publicationAttempts PublicationAttempt[]
+  publishedAssets     PublishedAsset[]
 
   @@map("content_plan_items")
   @@index([strategyId])
@@ -1908,7 +1985,10 @@ model ContentCampaign {
   organization  Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   strategy      ContentStrategy       @relation(fields: [strategyId], references: [id], onDelete: Cascade)
-  scheduleItems ContentScheduleItem[]
+  scheduleItems       ContentScheduleItem[]
+  publications        Publication[]
+  publicationAttempts PublicationAttempt[]
+  publishedAssets     PublishedAsset[]
 
   @@map("content_campaigns")
   @@index([organizationId])
@@ -1939,7 +2019,10 @@ model ContentScheduleItem {
   campaign     ContentCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   planItem     ContentPlanItem      @relation(fields: [planItemId], references: [id], onDelete: Cascade)
   dependsOn    ContentScheduleItem? @relation("ScheduleDependencies", fields: [dependsOnItemId], references: [id], onDelete: SetNull)
-  dependents   ContentScheduleItem[] @relation("ScheduleDependencies")
+  dependents          ContentScheduleItem[] @relation("ScheduleDependencies")
+  publications        Publication[]
+  publicationAttempts PublicationAttempt[]
+  publishedAssets     PublishedAsset[]
 
   @@map("content_schedule_items")
   @@index([organizationId])

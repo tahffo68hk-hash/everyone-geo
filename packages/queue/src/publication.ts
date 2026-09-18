@@ -122,6 +122,9 @@ export async function executePublication(
   await db.publicationAttempt.create({
     data: {
       publicationId: pub.id,
+      campaignId: (pub as any).campaignId ?? null,
+      scheduleItemId: (pub as any).scheduleItemId ?? null,
+      planItemId: (pub as any).planItemId ?? null,
       idempotencyKey: idemKey,
       channel: pub.channel,
       attemptNo,

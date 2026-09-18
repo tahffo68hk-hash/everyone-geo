@@ -153,4 +153,28 @@ export class ContentCampaignController {
   ) {
     return this.service.startProduction(u.sub, id);
   }
+
+  /**
+   * 10. 战役关联的发布记录列表
+   * GET /api/content/campaigns/:id/publications 或 GET /content/campaigns/:id/publications
+   */
+  @Get(["api/content/campaigns/:id/publications", "content/campaigns/:id/publications"])
+  listCampaignPublications(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.service.listCampaignPublications(u.sub, id);
+  }
+
+  /**
+   * 11. 战役关联的落地资产列表
+   * GET /api/content/campaigns/:id/published-assets 或 GET /content/campaigns/:id/published-assets
+   */
+  @Get(["api/content/campaigns/:id/published-assets", "content/campaigns/:id/published-assets"])
+  listCampaignPublishedAssets(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.service.listCampaignPublishedAssets(u.sub, id);
+  }
 }

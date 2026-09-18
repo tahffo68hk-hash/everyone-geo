@@ -11,6 +11,7 @@ import {
   GenerateImageBriefDto, GeneratePlatformVariantDto, ListAssetsDto, ListDraftsDto, ListPublicationsDto,
   RewriteVariantDto, UpdateDraftDto, ValidatePublicationDto,
   CreateVerifiedFactDto, ExtractClaimsDto, SafeRewriteDto, GenerateImagePreviewDto, AcceptImageAssetDto,
+  ConfirmPublishedAssetDto, CreatePublishedAssetDto, ListPublishedAssetsDto,
 } from "./dto/content-execution.dto";
 import {
   createPublicationQueue, defaultConnectorRegistry, defaultCredentialVault, defaultOAuthStateSecurity,
@@ -664,6 +665,58 @@ export class ContentExecutionService implements OnModuleDestroy {
     // 出站写闸门：本回合仅 Mock；真实适配器需 EXTERNAL_PUBLISHING_ENABLED=true（当前恒 false）。
     this.assertExternalGuard();
 
+    // M10A 发布血缘推断与校验 (Campaign -> PlanItem -> ScheduleItem -> Draft -> Revision -> Publication)
+    let campaignId = dto.campaignId ?? null;
+    let scheduleItemId = dto.scheduleItemId ?? null;
+    let planItemId = dto.planItemId ?? null;
+
+    if (!planItemId && draft.sourcePlanItemId) {
+      planItemId = draft.sourcePlanItemId;
+    }
+
+    if (!scheduleItemId && planItemId) {
+      const scheduleItem = await this.db.client.contentScheduleItem.findFirst({
+        where: { planItemId, projectId },
+        select: { id: true, campaignId: true },
+      });
+      if (scheduleItem) {
+        scheduleItemId = scheduleItem.id;
+        if (!campaignId) campaignId = scheduleItem.campaignId;
+      }
+    }
+
+    if (scheduleItemId) {
+      const scheduleItem = await this.db.client.contentScheduleItem.findFirst({
+        where: { id: scheduleItemId, projectId },
+        select: { id: true, campaignId: true, planItemId: true },
+      });
+      if (!scheduleItem) {
+        throw new NotFoundException("排期项不存在或不属于该项目");
+      }
+      if (!campaignId) campaignId = scheduleItem.campaignId;
+      if (!planItemId) planItemId = scheduleItem.planItemId;
+    }
+
+    if (campaignId) {
+      const campaign = await this.db.client.contentCampaign.findFirst({
+        where: { id: campaignId, projectId },
+        select: { id: true },
+      });
+      if (!campaign) {
+        throw new NotFoundException("营销战役不存在或不属于该项目");
+      }
+    }
+
+    if (planItemId) {
+      const pItem = await this.db.client.contentPlanItem.findFirst({
+        where: { id: planItemId, organizationId: draft.organizationId },
+        select: { id: true },
+      });
+      if (!pItem) {
+        throw new NotFoundException("内容规划项不存在");
+      }
+    }
+
     const idempotencyKey = randomUUID();
     const pub = await this.db.client.publication.create({
       data: {
@@ -673,6 +726,9 @@ export class ContentExecutionService implements OnModuleDestroy {
         revisionId: latest.id,
         connectionId: conn.id,
         channel: conn.channel,
+        campaignId,
+        scheduleItemId,
+        planItemId,
         title: dto.title ?? null,
         payload: dto.payload,
         status: "PENDING",
@@ -1021,13 +1077,19 @@ export class ContentExecutionService implements OnModuleDestroy {
   private async publicationWithAttempts(publicationId: string) {
     const pub = await this.db.client.publication.findUnique({
       where: { id: publicationId },
-      include: { attempts: { orderBy: [{ attemptNo: "asc" }] } },
+      include: {
+        attempts: { orderBy: [{ attemptNo: "asc" }] },
+        publishedAssets: true,
+      },
     });
     if (!pub) throw new NotFoundException("发布不存在");
     return {
       id: pub.id,
       organizationId: pub.organizationId,
       projectId: pub.projectId,
+      campaignId: pub.campaignId,
+      scheduleItemId: pub.scheduleItemId,
+      planItemId: pub.planItemId,
       draftId: pub.draftId,
       revisionId: pub.revisionId,
       connectionId: pub.connectionId,
@@ -1051,7 +1113,11 @@ export class ContentExecutionService implements OnModuleDestroy {
         errorMessage: a.errorMessage,
         durationMs: a.durationMs,
         createdAt: a.createdAt,
+        campaignId: a.campaignId,
+        scheduleItemId: a.scheduleItemId,
+        planItemId: a.planItemId,
       })),
+      publishedAssets: pub.publishedAssets,
     };
   }
 
@@ -1761,4 +1827,548 @@ export class ContentExecutionService implements OnModuleDestroy {
     return this.toAssetView(asset);
   }
 
+  // ---------------------------------------------------------------
+  // M10A — Publication Lineage Foundation (已发布资产与发布血缘)
+  // ---------------------------------------------------------------
+
+  /**
+   * 严格证据原则 (Evidence-First & No Fake Assets) 校验：
+   * 1. 禁止伪造或合成假外部 URL (如 mock://, fake://, localhost, 127.0.0.1 等)。
+   * 2. PLATFORM_CONFIRMED 必须具备真实平台外部链接 (canonicalUrl) 或真实外部资产 ID (externalAssetId)。
+   * 3. MANUAL_VERIFIED 必须提供外部链接/ID 以及明确的核验依据 (verificationNote)。
+   * 4. UNVERIFIED 资产绝不编造虚假的外部发布链接或标识。
+   */
+  private validateAuthenticExternalEvidence(
+    status: "UNVERIFIED" | "PLATFORM_CONFIRMED" | "MANUAL_VERIFIED",
+    canonicalUrl?: string | null,
+    externalAssetId?: string | null,
+    verificationNote?: string | null,
+  ) {
+    const isMockUrl = (url: string) => {
+      const lower = url.toLowerCase().trim();
+      return (
+        lower.startsWith("mock://") ||
+        lower.startsWith("fake://") ||
+        lower.includes("localhost") ||
+        lower.includes("127.0.0.1") ||
+        lower.includes("example.com/mock") ||
+        lower.startsWith("mock_") ||
+        lower === "mock" ||
+        lower === "fake"
+      );
+    };
+
+    const isMockId = (id: string) => {
+      const lower = id.toLowerCase().trim();
+      return lower.startsWith("mock_") || lower.startsWith("mock-") || lower.startsWith("fake_") || lower === "mock" || lower === "fake";
+    };
+
+    if (canonicalUrl && isMockUrl(canonicalUrl)) {
+      throw new BadRequestException("禁止使用虚假/Mock的外部链接作为发布资产的证明证据");
+    }
+
+    if (externalAssetId && isMockId(externalAssetId)) {
+      throw new BadRequestException("禁止使用虚假/Mock的外部ID作为发布资产的证明证据");
+    }
+
+    if (status === "PLATFORM_CONFIRMED") {
+      if (!canonicalUrl && !externalAssetId) {
+        throw new BadRequestException("PLATFORM_CONFIRMED 必须提供真实的外部链接(canonicalUrl)或平台外部ID(externalAssetId)");
+      }
+      if (canonicalUrl && !canonicalUrl.startsWith("http://") && !canonicalUrl.startsWith("https://")) {
+        throw new BadRequestException("canonicalUrl 必须是以 http:// 或 https:// 开头的合法外部链接");
+      }
+    }
+
+    if (status === "MANUAL_VERIFIED") {
+      if (!canonicalUrl && !externalAssetId) {
+        throw new BadRequestException("MANUAL_VERIFIED 必须提供外部链接(canonicalUrl)或平台外部ID(externalAssetId)");
+      }
+      if (!verificationNote || verificationNote.trim().length === 0) {
+        throw new BadRequestException("MANUAL_VERIFIED 必须提供核验说明(verificationNote)以记录证明依据");
+      }
+    }
+  }
+
+  /**
+   * 将发布记录核验确认为落地资产 (PublishedAsset)
+   * 支持 PLATFORM_CONFIRMED、MANUAL_VERIFIED 或 UNVERIFIED。
+   * 当确认为有效资产时，自动推进排期项 (ContentScheduleItem) 状态至 DONE。
+   */
+  async confirmPublishedAsset(userId: string, publicationId: string, dto: ConfirmPublishedAssetDto) {
+    const pub = await this.db.client.publication.findUnique({
+      where: { id: publicationId },
+      include: {
+        draft: true,
+        revision: true,
+        attempts: { orderBy: [{ attemptNo: "desc" }] },
+      },
+    });
+    if (!pub) throw new NotFoundException("发布记录不存在");
+    await this.tenant.assertUserInOrganization(userId, pub.organizationId);
+
+    // 校验外部真实证据
+    this.validateAuthenticExternalEvidence(
+      dto.verificationStatus,
+      dto.canonicalUrl,
+      dto.externalAssetId,
+      dto.verificationNote,
+    );
+
+    let campaignId = pub.campaignId ?? null;
+    let scheduleItemId = pub.scheduleItemId ?? null;
+    let planItemId = pub.planItemId ?? null;
+
+    if (!planItemId && pub.draft.sourcePlanItemId) {
+      planItemId = pub.draft.sourcePlanItemId;
+    }
+
+    if (!scheduleItemId && planItemId) {
+      const sItem = await this.db.client.contentScheduleItem.findFirst({
+        where: { planItemId, projectId: pub.projectId },
+        select: { id: true, campaignId: true },
+      });
+      if (sItem) {
+        scheduleItemId = sItem.id;
+        if (!campaignId) campaignId = sItem.campaignId;
+      }
+    }
+
+    const latestAttempt = pub.attempts[0] ?? null;
+
+    const isVerified = dto.verificationStatus === "PLATFORM_CONFIRMED" || dto.verificationStatus === "MANUAL_VERIFIED";
+
+    // 创建持久化的落地资产 PublishedAsset（历史版本不可变记录，追加式）
+    const publishedAsset = await this.db.client.publishedAsset.create({
+      data: {
+        organizationId: pub.organizationId,
+        projectId: pub.projectId,
+        campaignId,
+        scheduleItemId,
+        planItemId,
+        draftId: pub.draftId,
+        revisionId: pub.revisionId,
+        publicationId: pub.id,
+        publicationAttemptId: latestAttempt?.id ?? null,
+        platform: pub.channel,
+        title: dto.title || pub.title || pub.draft.title || "Untitled Asset",
+        canonicalUrl: dto.canonicalUrl ?? null,
+        externalAssetId: dto.externalAssetId ?? null,
+        verificationStatus: dto.verificationStatus,
+        sourceType: dto.sourceType || (dto.verificationStatus === "MANUAL_VERIFIED" ? "MANUAL_VERIFIED" : "PLATFORM_PUBLISH"),
+        verificationNote: dto.verificationNote ?? null,
+        metadata: (dto.metadata as any) ?? {},
+        verifiedAt: isVerified ? new Date() : null,
+        verifiedById: isVerified ? userId : null,
+      },
+    });
+
+    // 若经确认为已落地发布资产，更新排期项状态至 DONE 并记录发布时间
+    if (isVerified && scheduleItemId) {
+      await this.db.client.contentScheduleItem.update({
+        where: { id: scheduleItemId },
+        data: {
+          productionStatus: "DONE",
+          metadata: {
+            publishedAssetId: publishedAsset.id,
+            publishedAt: new Date().toISOString(),
+          },
+        },
+      }).catch((e) => {
+        this.logger.warn(`Failed to advance schedule item ${scheduleItemId} to DONE: ${e?.message}`);
+      });
+    }
+
+    // 若发布确认为平台落地，同步更新发布记录状态为 PUBLISHED
+    if (dto.verificationStatus === "PLATFORM_CONFIRMED") {
+      await this.db.client.publication.update({
+        where: { id: pub.id },
+        data: {
+          status: "PUBLISHED",
+          publishedAt: new Date(),
+        },
+      });
+    }
+
+    await this.audit(
+      pub.organizationId,
+      userId,
+      "PUBLICATION_CREATED",
+      `published_asset_confirmed assetId=${publishedAsset.id} status=${dto.verificationStatus}`,
+      {
+        projectId: pub.projectId,
+        draftId: pub.draftId,
+        publicationId: pub.id,
+      },
+    );
+
+    return publishedAsset;
+  }
+
+  /**
+   * 手动录入或外部导入落地资产 (PublishedAsset)
+   */
+  async createPublishedAsset(userId: string, projectId: string, dto: CreatePublishedAssetDto) {
+    const project = await this.tenant.assertUserInProject(userId, projectId);
+
+    const draft = await this.requireDraft(userId, dto.draftId);
+    if (draft.projectId !== projectId) {
+      throw new NotFoundException("草稿不存在于该项目");
+    }
+
+    const rev = dto.revisionId
+      ? await this.db.client.contentRevision.findFirst({
+          where: { id: dto.revisionId, draftId: draft.id },
+        })
+      : await this.latestRevision(draft.id);
+    if (!rev) throw new BadRequestException("草稿无版本内容");
+
+    if (dto.publicationId) {
+      const pub = await this.db.client.publication.findFirst({
+        where: { id: dto.publicationId, projectId },
+      });
+      if (!pub) throw new NotFoundException("发布记录不存在");
+    }
+
+    if (dto.campaignId) {
+      const camp = await this.db.client.contentCampaign.findFirst({
+        where: { id: dto.campaignId, projectId },
+      });
+      if (!camp) throw new NotFoundException("营销战役不存在");
+    }
+
+    if (dto.scheduleItemId) {
+      const sItem = await this.db.client.contentScheduleItem.findFirst({
+        where: { id: dto.scheduleItemId, projectId },
+      });
+      if (!sItem) throw new NotFoundException("排期项不存在");
+    }
+
+    if (dto.planItemId) {
+      const pItem = await this.db.client.contentPlanItem.findFirst({
+        where: { id: dto.planItemId, organizationId: project.organizationId },
+      });
+      if (!pItem) throw new NotFoundException("内容规划项不存在");
+    }
+
+    this.validateAuthenticExternalEvidence(
+      dto.verificationStatus,
+      dto.canonicalUrl,
+      dto.externalAssetId,
+      dto.verificationNote,
+    );
+
+    let campaignId = dto.campaignId ?? null;
+    let scheduleItemId = dto.scheduleItemId ?? null;
+    let planItemId = dto.planItemId ?? draft.sourcePlanItemId ?? null;
+
+    if (!scheduleItemId && planItemId) {
+      const sItem = await this.db.client.contentScheduleItem.findFirst({
+        where: { planItemId, projectId },
+        select: { id: true, campaignId: true },
+      });
+      if (sItem) {
+        scheduleItemId = sItem.id;
+        if (!campaignId) campaignId = sItem.campaignId;
+      }
+    }
+
+    const isVerified = dto.verificationStatus === "PLATFORM_CONFIRMED" || dto.verificationStatus === "MANUAL_VERIFIED";
+
+    const publishedAsset = await this.db.client.publishedAsset.create({
+      data: {
+        organizationId: project.organizationId,
+        projectId,
+        campaignId,
+        scheduleItemId,
+        planItemId,
+        draftId: draft.id,
+        revisionId: rev.id,
+        publicationId: dto.publicationId ?? null,
+        publicationAttemptId: null,
+        platform: dto.platform,
+        title: dto.title,
+        canonicalUrl: dto.canonicalUrl ?? null,
+        externalAssetId: dto.externalAssetId ?? null,
+        verificationStatus: dto.verificationStatus,
+        sourceType: dto.sourceType || "MANUAL_VERIFIED",
+        verificationNote: dto.verificationNote ?? null,
+        metadata: (dto.metadata as any) ?? {},
+        verifiedAt: isVerified ? new Date() : null,
+        verifiedById: isVerified ? userId : null,
+      },
+    });
+
+    if (isVerified && scheduleItemId) {
+      await this.db.client.contentScheduleItem.update({
+        where: { id: scheduleItemId },
+        data: {
+          productionStatus: "DONE",
+          metadata: {
+            publishedAssetId: publishedAsset.id,
+            publishedAt: new Date().toISOString(),
+          },
+        },
+      }).catch((e) => {
+        this.logger.warn(`Failed to advance schedule item ${scheduleItemId} to DONE: ${e?.message}`);
+      });
+    }
+
+    await this.audit(
+      project.organizationId,
+      userId,
+      "PUBLICATION_CREATED",
+      `published_asset_created assetId=${publishedAsset.id} status=${dto.verificationStatus}`,
+      {
+        projectId,
+        draftId: draft.id,
+        publicationId: dto.publicationId ?? undefined,
+      },
+    );
+
+    return publishedAsset;
+  }
+
+  /**
+   * 读取单个已发布资产详情
+   */
+  async getPublishedAsset(userId: string, assetId: string) {
+    const asset = await this.db.client.publishedAsset.findUnique({
+      where: { id: assetId },
+      include: {
+        draft: { select: { id: true, title: true, status: true } },
+        revision: { select: { id: true, version: true, summary: true } },
+        publication: { select: { id: true, channel: true, status: true, title: true } },
+      },
+    });
+    if (!asset) throw new NotFoundException("发布资产不存在");
+    await this.tenant.assertUserInOrganization(userId, asset.organizationId);
+    return asset;
+  }
+
+  /**
+   * 完整发布血缘反向追溯 (Reverse Lineage Traversal)
+   * Asset -> Publication -> Attempt -> Revision -> Draft -> ScheduleItem -> PlanItem -> Campaign -> Strategy -> Diagnosis
+   */
+  async getPublishedAssetLineage(userId: string, assetId: string) {
+    const asset = await this.db.client.publishedAsset.findUnique({
+      where: { id: assetId },
+      include: {
+        campaign: true,
+        scheduleItem: true,
+        planItem: true,
+        draft: true,
+        revision: true,
+        publication: {
+          include: {
+            connection: { select: { id: true, channel: true, displayName: true, status: true } },
+            attempts: { orderBy: [{ attemptNo: "desc" }] },
+          },
+        },
+        publicationAttempt: true,
+      },
+    });
+    if (!asset) throw new NotFoundException("发布资产不存在");
+    await this.tenant.assertUserInOrganization(userId, asset.organizationId);
+
+    // 回溯 campaign
+    let campaign = asset.campaign;
+    if (!campaign && asset.scheduleItem?.campaignId) {
+      campaign = await this.db.client.contentCampaign.findUnique({
+        where: { id: asset.scheduleItem.campaignId },
+      });
+    }
+    if (!campaign && asset.campaignId) {
+      campaign = await this.db.client.contentCampaign.findUnique({
+        where: { id: asset.campaignId },
+      });
+    }
+
+    // 回溯 scheduleItem
+    let scheduleItem = asset.scheduleItem;
+    if (!scheduleItem && asset.scheduleItemId) {
+      scheduleItem = await this.db.client.contentScheduleItem.findUnique({
+        where: { id: asset.scheduleItemId },
+      });
+    }
+    if (!scheduleItem && (asset.planItemId || asset.draft.sourcePlanItemId)) {
+      const pId = asset.planItemId || asset.draft.sourcePlanItemId;
+      scheduleItem = await this.db.client.contentScheduleItem.findFirst({
+        where: { planItemId: pId!, projectId: asset.projectId },
+      });
+    }
+
+    // 回溯 planItem
+    let planItem = asset.planItem;
+    if (!planItem && asset.planItemId) {
+      planItem = await this.db.client.contentPlanItem.findUnique({
+        where: { id: asset.planItemId },
+      });
+    }
+    if (!planItem && asset.draft.sourcePlanItemId) {
+      planItem = await this.db.client.contentPlanItem.findUnique({
+        where: { id: asset.draft.sourcePlanItemId },
+      });
+    }
+
+    // 回溯 strategy
+    let strategyId = campaign?.strategyId ?? asset.draft.sourceStrategyId ?? null;
+    if (!strategyId && planItem?.strategyId) {
+      strategyId = planItem.strategyId;
+    }
+
+    let strategy = null;
+    if (strategyId) {
+      strategy = await this.db.client.contentStrategy.findUnique({
+        where: { id: strategyId },
+        select: { id: true, title: true, status: true, platformPriorities: true, sourceDiagnosisId: true, createdAt: true },
+      });
+    }
+
+    // 回溯 diagnosis
+    let diagnosisId = strategy?.sourceDiagnosisId ?? asset.draft.sourceDiagnosisId ?? null;
+    let diagnosis = null;
+    if (diagnosisId) {
+      diagnosis = await this.db.client.diagnosisRun.findUnique({
+        where: { id: diagnosisId },
+        select: { id: true, status: true, summarySnapshot: true, createdAt: true },
+      });
+    }
+
+    const latestAttempt = asset.publicationAttempt || (asset.publication?.attempts ? asset.publication.attempts[0] : null);
+
+    return {
+      publishedAsset: {
+        id: asset.id,
+        organizationId: asset.organizationId,
+        projectId: asset.projectId,
+        campaignId: asset.campaignId,
+        scheduleItemId: asset.scheduleItemId,
+        planItemId: asset.planItemId,
+        draftId: asset.draftId,
+        revisionId: asset.revisionId,
+        publicationId: asset.publicationId,
+        publicationAttemptId: asset.publicationAttemptId,
+        platform: asset.platform,
+        title: asset.title,
+        canonicalUrl: asset.canonicalUrl,
+        externalAssetId: asset.externalAssetId,
+        verificationStatus: asset.verificationStatus,
+        sourceType: asset.sourceType,
+        verificationNote: asset.verificationNote,
+        metadata: asset.metadata,
+        verifiedAt: asset.verifiedAt,
+        verifiedById: asset.verifiedById,
+        createdAt: asset.createdAt,
+        updatedAt: asset.updatedAt,
+      },
+      lineage: {
+        diagnosis: diagnosis ?? null,
+        strategy: strategy ? {
+          id: strategy.id,
+          title: strategy.title,
+          status: strategy.status,
+          platformPriorities: strategy.platformPriorities,
+          sourceDiagnosisId: strategy.sourceDiagnosisId,
+          createdAt: strategy.createdAt,
+        } : null,
+        campaign: campaign ? {
+          id: campaign.id,
+          name: campaign.name,
+          status: campaign.status,
+          startDate: campaign.startDate,
+          endDate: campaign.endDate,
+        } : null,
+        planItem: planItem ? {
+          id: planItem.id,
+          title: planItem.title,
+          platform: planItem.platform,
+          format: planItem.format,
+          objective: planItem.objective,
+          status: planItem.status,
+        } : null,
+        scheduleItem: scheduleItem ? {
+          id: scheduleItem.id,
+          scheduledDate: scheduleItem.scheduledDate,
+          scheduledTime: scheduleItem.scheduledTime,
+          timezone: scheduleItem.timezone,
+          productionStatus: scheduleItem.productionStatus,
+          assignedToId: scheduleItem.assignedToId,
+        } : null,
+        draft: {
+          id: asset.draft.id,
+          title: asset.draft.title,
+          status: asset.draft.status,
+          topic: asset.draft.topic,
+          generationMode: asset.draft.generationMode,
+        },
+        revision: asset.revision ? {
+          id: asset.revision.id,
+          version: asset.revision.version,
+          summary: asset.revision.summary,
+          changeNote: asset.revision.changeNote,
+        } : null,
+        publication: asset.publication ? {
+          id: asset.publication.id,
+          channel: asset.publication.channel,
+          status: asset.publication.status,
+          title: asset.publication.title,
+          publishedAt: asset.publication.publishedAt,
+        } : null,
+        publicationAttempt: latestAttempt ? {
+          id: latestAttempt.id,
+          attemptNo: latestAttempt.attemptNo,
+          status: latestAttempt.status,
+          publisher: latestAttempt.publisher,
+          externalId: latestAttempt.externalId,
+          externalUrl: latestAttempt.externalUrl,
+        } : null,
+      },
+      provenance: {
+        platform: asset.platform,
+        sourceType: asset.sourceType,
+        verificationStatus: asset.verificationStatus,
+        canonicalUrl: asset.canonicalUrl,
+        externalAssetId: asset.externalAssetId,
+        verifiedAt: asset.verifiedAt,
+        verifiedById: asset.verifiedById,
+        verificationNote: asset.verificationNote,
+      },
+    };
+  }
+
+  /**
+   * 发布资产列表：project scoped + 分页 + 过滤
+   */
+  async listPublishedAssets(userId: string, projectId: string, query: ListPublishedAssetsDto) {
+    await this.tenant.assertUserInProject(userId, projectId);
+    const where: Prisma.PublishedAssetWhereInput = { projectId };
+    if (query.campaignId) where.campaignId = query.campaignId;
+    if (query.platform) where.platform = query.platform;
+    if (query.verificationStatus) where.verificationStatus = query.verificationStatus as any;
+
+    const limit = Math.min(200, Math.max(1, query.limit ?? 20));
+    const offset = Math.max(0, query.offset ?? 0);
+
+    const [total, items] = await Promise.all([
+      this.db.client.publishedAsset.count({ where }),
+      this.db.client.publishedAsset.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        skip: offset,
+        take: limit,
+        include: {
+          draft: { select: { id: true, title: true } },
+          publication: { select: { id: true, channel: true, status: true } },
+        },
+      }),
+    ]);
+
+    return {
+      total,
+      limit,
+      offset,
+      items,
+    };
+  }
 }

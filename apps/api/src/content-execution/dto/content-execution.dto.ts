@@ -131,6 +131,18 @@ export class CreatePublicationDto {
   connectionId!: string;
 
   @IsOptional()
+  @IsUUID()
+  campaignId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  scheduleItemId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  planItemId?: string;
+
+  @IsOptional()
   @IsString()
   @Length(0, 200)
   title?: string;
@@ -394,4 +406,131 @@ export class AcceptImageAssetDto {
   @IsUUID()
   generationRunId?: string;
 }
+
+export class ConfirmPublishedAssetDto {
+  @IsIn(["UNVERIFIED", "PLATFORM_CONFIRMED", "MANUAL_VERIFIED"])
+  verificationStatus!: "UNVERIFIED" | "PLATFORM_CONFIRMED" | "MANUAL_VERIFIED";
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 1024)
+  canonicalUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 256)
+  externalAssetId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 256)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  sourceType?: string; // 'PLATFORM_PUBLISH' | 'MANUAL_VERIFIED' | 'IMPORTED'
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  verificationNote?: string;
+
+  @IsOptional()
+  metadata?: Record<string, unknown>;
+}
+
+export class CreatePublishedAssetDto {
+  @IsUUID()
+  projectId!: string;
+
+  @IsUUID()
+  draftId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  revisionId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  publicationId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  campaignId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  scheduleItemId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  planItemId?: string;
+
+  @IsString()
+  @Length(1, 64)
+  platform!: string;
+
+  @IsString()
+  @Length(1, 256)
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 1024)
+  canonicalUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 256)
+  externalAssetId?: string;
+
+  @IsIn(["UNVERIFIED", "PLATFORM_CONFIRMED", "MANUAL_VERIFIED"])
+  verificationStatus!: "UNVERIFIED" | "PLATFORM_CONFIRMED" | "MANUAL_VERIFIED";
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  sourceType?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  verificationNote?: string;
+
+  @IsOptional()
+  metadata?: Record<string, unknown>;
+}
+
+export class ListPublishedAssetsDto {
+  @IsOptional()
+  @IsUUID()
+  projectId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  campaignId?: string;
+
+  @IsOptional()
+  @IsString()
+  platform?: string;
+
+  @IsOptional()
+  @IsString()
+  verificationStatus?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(200)
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
+}
+
 
