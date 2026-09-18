@@ -399,13 +399,18 @@ export type ProductionStatus =
   | "DONE";
 
 export interface CampaignProgress {
-  totalItems: number;
-  draftedCount: number;
-  approvedCount: number;
-  publishedCount: number;
-  blockedCount: number;
-  readyCount: number;
-  progressRate: number;
+  total: number;
+  ready: number;
+  blockedFacts: number;
+  blockedAssets: number;
+  inProgress: number;
+  draftCreated: number;
+  inReview: number;
+  approved: number;
+  readyToPublish: number;
+  done: number;
+  overdue: number;
+  completionRate: number;
 }
 
 export interface ContentScheduleItem {

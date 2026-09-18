@@ -196,6 +196,15 @@ export function CampaignWorkspaceView({
   const progress = campaignDetail?.progress;
   const scheduleItems = campaignDetail?.scheduleItems || [];
 
+  const completionPercentage = progress
+    ? Math.round((progress.completionRate ?? 0) * 100)
+    : 0;
+  const blockedTotal = (progress?.blockedFacts ?? 0) + (progress?.blockedAssets ?? 0);
+  const approvedAndDone =
+    (progress?.done ?? 0) +
+    (progress?.readyToPublish ?? 0) +
+    (progress?.approved ?? 0);
+
   return (
     <div className="space-y-6">
       {/* 顶部总体指标与操作栏 */}
@@ -378,11 +387,18 @@ export function CampaignWorkspaceView({
               {/* 严谨事实进度指标 (Factual Progress Metrics - NO FAKE AI SCORES) */}
               <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                  <h3 className="text-xs font-bold text-slate-900">
-                    📊 战役生产真实进度（事实核验与闭环指标）
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-900">
+                      📊 战役生产真实进度（事实核验与闭环指标）
+                    </h3>
+                    {(progress?.overdue ?? 0) > 0 && (
+                      <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                        ⚠️ {progress?.overdue} 项逾期
+                      </span>
+                    )}
+                  </div>
                   <span className="text-xs font-bold text-indigo-700">
-                    完成度：{progress?.progressRate ?? 0}%
+                    完成度：{completionPercentage}%
                   </span>
                 </div>
 
@@ -390,7 +406,7 @@ export function CampaignWorkspaceView({
                 <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                   <div
                     className="h-full rounded-full bg-indigo-600 transition-all duration-300"
-                    style={{ width: `${Math.min(100, Math.max(0, progress?.progressRate ?? 0))}%` }}
+                    style={{ width: `${Math.min(100, Math.max(0, completionPercentage))}%` }}
                   />
                 </div>
 
@@ -398,23 +414,38 @@ export function CampaignWorkspaceView({
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 pt-1">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-slate-500 uppercase">总生产项</span>
-                    <p className="text-lg font-bold text-slate-900">{progress?.totalItems ?? 0}</p>
+                    <p className="text-lg font-bold text-slate-900">{progress?.total ?? 0}</p>
+                    <span className="mt-0.5 block text-[10px] text-slate-500">
+                      {(progress?.overdue ?? 0) > 0 ? `逾期: ${progress?.overdue}` : "全部已排期"}
+                    </span>
                   </div>
                   <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-amber-700 uppercase">缺少事实/物料</span>
-                    <p className="text-lg font-bold text-amber-800">{progress?.blockedCount ?? 0}</p>
+                    <p className="text-lg font-bold text-amber-800">{blockedTotal}</p>
+                    <span className="mt-0.5 block text-[10px] text-amber-600">
+                      事实: {progress?.blockedFacts ?? 0} · 素材: {progress?.blockedAssets ?? 0}
+                    </span>
                   </div>
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-emerald-700 uppercase">就绪可生产</span>
-                    <p className="text-lg font-bold text-emerald-800">{progress?.readyCount ?? 0}</p>
+                    <p className="text-lg font-bold text-emerald-800">{progress?.ready ?? 0}</p>
+                    <span className="mt-0.5 block text-[10px] text-emerald-600">
+                      生产中: {progress?.inProgress ?? 0}
+                    </span>
                   </div>
                   <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-blue-700 uppercase">已生成草稿</span>
-                    <p className="text-lg font-bold text-blue-800">{progress?.draftedCount ?? 0}</p>
+                    <p className="text-lg font-bold text-blue-800">{progress?.draftCreated ?? 0}</p>
+                    <span className="mt-0.5 block text-[10px] text-blue-600">
+                      待审核: {progress?.inReview ?? 0}
+                    </span>
                   </div>
                   <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-indigo-700 uppercase">审核与完成</span>
-                    <p className="text-lg font-bold text-indigo-800">{progress?.approvedCount ?? 0}</p>
+                    <p className="text-lg font-bold text-indigo-800">{approvedAndDone}</p>
+                    <span className="mt-0.5 block text-[10px] text-indigo-600">
+                      完成: {progress?.done ?? 0} · 批准: {progress?.approved ?? 0}
+                    </span>
                   </div>
                 </div>
               </section>
