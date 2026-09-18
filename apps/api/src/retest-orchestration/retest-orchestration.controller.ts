@@ -74,11 +74,10 @@ export class RetestOrchestrationController {
    */
   @Post(["retests/:id/process", "api/content/retests/:id/process", "content/retests/:id/process"])
   @HttpCode(200)
-  async processRetest(
+  processRetest(
     @CurrentUser() u: JwtUserPayload,
     @Param("id", ParseUUIDPipe) id: string,
   ) {
-    await this.retest.executeRetestRun(id);
-    return this.retest.getRetestRun(u.sub, id);
+    return this.retest.executeRetestRunForUser(u.sub, id);
   }
 }

@@ -393,16 +393,47 @@ export class RetestOrchestrationService {
 
     // 若声明 autoExecute（默认 true），立即触发确定性执行
     if (dto.autoExecute !== false) {
-      await this.executeRetestRun(retestRun.id, dto.simulateFailureQueryId);
+      await this.executeRetestRunInternal(retestRun.id, dto.simulateFailureQueryId);
     }
 
     return this.getRetestRun(userId, retestRun.id);
   }
 
   /**
-   * 执行 Retest Run，生成全新的 Evidence
+   * 面向用户触发的安全执行入口：在产生任何数据库副作用之前必须完成租户/项目鉴权
+   */
+  async executeRetestRunForUser(
+    userId: string,
+    retestRunId: string,
+    simulateFailureQueryId?: string,
+  ) {
+    const run = await this.db.client.retestRun.findUnique({
+      where: { id: retestRunId },
+      select: { id: true, projectId: true },
+    });
+
+    if (!run) {
+      throw new NotFoundException("重测任务不存在");
+    }
+
+    // 严防副作用前置：必须在任何 DB 修改前完成鉴权，未授权请求直接 404 且保证零副作用
+    await this.tenant.assertUserInProject(userId, run.projectId);
+
+    await this.executeRetestRunInternal(retestRunId, simulateFailureQueryId);
+    return this.getRetestRun(userId, retestRunId);
+  }
+
+  /**
+   * 兼容原有签名，供内部调度/系统任务调用
    */
   async executeRetestRun(retestRunId: string, simulateFailureQueryId?: string) {
+    return this.executeRetestRunInternal(retestRunId, simulateFailureQueryId);
+  }
+
+  /**
+   * 执行 Retest Run 内部核心逻辑，生成全新的 Evidence
+   */
+  async executeRetestRunInternal(retestRunId: string, simulateFailureQueryId?: string) {
     const retestRun = await this.db.client.retestRun.findUnique({
       where: { id: retestRunId },
       include: {

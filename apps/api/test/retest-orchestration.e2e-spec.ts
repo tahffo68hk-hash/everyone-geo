@@ -522,6 +522,106 @@ describe("M10B GEO Retest Orchestration E2E", () => {
       .expect(404);
   });
 
+  // -------------------------------------------------------------------------
+  // AG-M10B-01 Defect Regression: Unauthorized Retest Execution Zero Side-Effect
+  // -------------------------------------------------------------------------
+  it("AG-M10B-01 Case A & B. 未授权用户触发 process 必须返回 404 且在 DB 中严格零副作用", async () => {
+    // 1. 准备处于 PENDING 状态的受害者 RetestRun
+    const pendingRes = await request(http)
+      .post(`/published-assets/${publishedAssetAId}/retests`)
+      .set("Cookie", cookiesA)
+      .send({ forceNew: true, autoExecute: false, queryIds: [query1Id] })
+      .expect(201);
+
+    const pendingRunId = pendingRes.body.id;
+    expect(pendingRes.body.status).toBe("PENDING");
+
+    // 记录受害者项目的基准计数值
+    const initialRunState = await prisma.retestRun.findUniqueOrThrow({
+      where: { id: pendingRunId },
+      include: { items: true },
+    });
+    expect(initialRunState.status).toBe("PENDING");
+    expect(initialRunState.items[0].attemptCount).toBe(0);
+
+    const initialEvidenceCount = await prisma.evidence.count({
+      where: { run: { monitorTask: { projectId: projectA1Id } } },
+    });
+    const initialRunCount = await prisma.run.count({
+      where: { monitorTask: { projectId: projectA1Id } },
+    });
+    const initialTaskCount = await prisma.monitorTask.count({
+      where: { projectId: projectA1Id },
+    });
+
+    // 2. Case A: 跨租户攻击者 (Org B) 请求 POST /retests/:id/process
+    await request(http)
+      .post(`/retests/${pendingRunId}/process`)
+      .set("Cookie", cookiesB)
+      .send({})
+      .expect(404);
+
+    // 3. Case B: 跨项目/不存在权限的用户请求 POST /retests/:id/process (同样被拦截为 404)
+    const outsiderAgent = request(http);
+    const outsiderSuffix = randomUUID().slice(0, 8);
+    const outsiderEmail = `outsider-${outsiderSuffix}@other.test`;
+    await outsiderAgent.post("/auth/register").send({
+      email: outsiderEmail,
+      name: "Outsider",
+      password: "retest-pass-123",
+    }).expect(201);
+    const loginOutsider = await outsiderAgent.post("/auth/login").send({
+      email: outsiderEmail,
+      password: "retest-pass-123",
+    }).expect(200);
+    const outsiderCookies = (loginOutsider.headers["set-cookie"] as unknown as string[]) || [];
+
+    await request(http)
+      .post(`/retests/${pendingRunId}/process`)
+      .set("Cookie", outsiderCookies)
+      .send({})
+      .expect(404);
+
+    // 4. 核心断言：未授权请求必须具有绝对的零副作用 (Zero Side Effect)
+    const afterAttackRunState = await prisma.retestRun.findUniqueOrThrow({
+      where: { id: pendingRunId },
+      include: { items: true },
+    });
+    expect(afterAttackRunState.status).toBe("PENDING"); // 绝不得推进到 RUNNING 或 COMPLETED
+    expect(afterAttackRunState.items[0].attemptCount).toBe(0); // attemptCount 不得增加
+    expect(afterAttackRunState.items[0].status).toBe("PENDING");
+
+    const afterAttackEvidenceCount = await prisma.evidence.count({
+      where: { run: { monitorTask: { projectId: projectA1Id } } },
+    });
+    const afterAttackRunCount = await prisma.run.count({
+      where: { monitorTask: { projectId: projectA1Id } },
+    });
+    const afterAttackTaskCount = await prisma.monitorTask.count({
+      where: { projectId: projectA1Id },
+    });
+
+    expect(afterAttackEvidenceCount).toBe(initialEvidenceCount); // Evidence 绝不无故增加
+    expect(afterAttackRunCount).toBe(initialRunCount);
+    expect(afterAttackTaskCount).toBe(initialTaskCount);
+
+    // 5. 合法 Owner 执行：确保修复后合法触发不受影响
+    const ownerExecRes = await request(http)
+      .post(`/retests/${pendingRunId}/process`)
+      .set("Cookie", cookiesA)
+      .send({})
+      .expect(200);
+
+    expect(ownerExecRes.body.status).toBe("COMPLETED");
+    const ownerFinalRunState = await prisma.retestRun.findUniqueOrThrow({
+      where: { id: pendingRunId },
+      include: { items: true },
+    });
+    expect(ownerFinalRunState.status).toBe("COMPLETED");
+    expect(ownerFinalRunState.items[0].attemptCount).toBe(1);
+    expect(ownerFinalRunState.items[0].status).toBe("SUCCEEDED");
+  });
+
   it("13 & 14 & 15. 项目隔离与不存在 ID 防护返回 404", async () => {
     // 不存在的 publishedAssetId -> 404
     await request(http)
