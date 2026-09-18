@@ -55,6 +55,7 @@ model Organization {
   publishedAssets      PublishedAsset[]
   retestRuns           RetestRun[]
   outcomeComparisons   OutcomeComparison[]
+  outcomeAttributions  OutcomeAttribution[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -134,6 +135,7 @@ model Project {
   publishedAssets      PublishedAsset[]
   retestRuns           RetestRun[]
   outcomeComparisons   OutcomeComparison[]
+  outcomeAttributions  OutcomeAttribution[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -1846,6 +1848,7 @@ model PublishedAsset {
   revision           ContentRevision      @relation(fields: [revisionId], references: [id], onDelete: Restrict)
   retestRuns         RetestRun[]
   outcomeComparisons OutcomeComparison[]
+  outcomeAttributions OutcomeAttribution[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -2085,6 +2088,7 @@ model RetestRun {
   publishedAsset       PublishedAsset   @relation(fields: [publishedAssetId], references: [id], onDelete: Cascade)
   items                RetestItem[]
   outcomes             OutcomeComparison[]
+  outcomeAttributions  OutcomeAttribution[]
 
   @@map("retest_runs")
   @@index([organizationId, createdAt])
@@ -2121,6 +2125,7 @@ model RetestItem {
 
   retestRun            RetestRun        @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
   outcomes             OutcomeComparison[]
+  outcomeAttributions  OutcomeAttribution[]
 
   @@map("retest_items")
   @@index([retestRunId])
@@ -2156,6 +2161,7 @@ model OutcomeComparison {
   publishedAsset        PublishedAsset @relation(fields: [publishedAssetId], references: [id], onDelete: Cascade)
   retestRun             RetestRun      @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
   retestItem            RetestItem     @relation(fields: [retestItemId], references: [id], onDelete: Cascade)
+  attributions          OutcomeAttribution[]
 
   @@unique([retestItemId, comparisonVersion])
   @@map("outcome_comparisons")
@@ -2165,4 +2171,43 @@ model OutcomeComparison {
   @@index([retestRunId])
   @@index([queryId])
   @@index([comparisonStatus])
+}
+
+model OutcomeAttribution {
+  id                   String            @id @default(uuid()) @db.Uuid
+  organizationId       String            @map("organization_id") @db.Uuid
+  projectId            String            @map("project_id") @db.Uuid
+  publishedAssetId     String            @map("published_asset_id") @db.Uuid
+  retestRunId          String            @map("retest_run_id") @db.Uuid
+  retestItemId         String            @map("retest_item_id") @db.Uuid
+  outcomeComparisonId  String            @map("outcome_comparison_id") @db.Uuid
+  queryId              String            @map("query_id") @db.Uuid
+  queryText            String            @map("query_text")
+  attributionVersion   String            @default("m10d-attribution-v1") @map("attribution_version")
+  status               String            @map("status") // LIKELY_RELATED, INSUFFICIENT_EVIDENCE, CONFOUNDED, NO_OBSERVED_CHANGE
+  observedChangeType   String            @default("NO_CHANGE") @map("observed_change_type") // POSITIVE, NEGATIVE, NEUTRAL, NO_CHANGE
+  signalsSnapshot      Json              @default("{}") @map("signals_snapshot")
+  confoundersSnapshot  Json              @default("{}") @map("confounders_snapshot")
+  reasons              Json              @default("[]") @map("reasons") // Array of reason codes
+  explanation          String            @default("")
+  metadata             Json              @default("{}")
+  createdById          String?           @map("created_by_id") @db.Uuid
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  organization         Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project              Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  publishedAsset       PublishedAsset    @relation(fields: [publishedAssetId], references: [id], onDelete: Cascade)
+  retestRun            RetestRun         @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
+  retestItem           RetestItem        @relation(fields: [retestItemId], references: [id], onDelete: Cascade)
+  outcomeComparison    OutcomeComparison @relation(fields: [outcomeComparisonId], references: [id], onDelete: Cascade)
+
+  @@unique([outcomeComparisonId, attributionVersion])
+  @@map("outcome_attributions")
+  @@index([organizationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([publishedAssetId, createdAt])
+  @@index([retestRunId])
+  @@index([queryId])
+  @@index([status])
 }
