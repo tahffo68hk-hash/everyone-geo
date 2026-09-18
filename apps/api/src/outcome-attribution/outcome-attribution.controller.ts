@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { AuthGuard, JwtUserPayload } from "../common/auth.guard";
@@ -70,5 +71,38 @@ export class OutcomeAttributionController {
     @Param("id", ParseUUIDPipe) id: string,
   ) {
     return this.attribution.getRetestRunAttributions(u.sub, id);
+  }
+
+  /**
+   * M10E Workspace Level 1: 项目下所有落地资产的复测与归因摘要列表
+   * GET /projects/:id/verification-assets
+   */
+  @Get([
+    "projects/:id/verification-assets",
+    "api/content/projects/:id/verification-assets",
+    "content/projects/:id/verification-assets",
+  ])
+  listVerificationAssets(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.attribution.listVerificationAssets(u.sub, id);
+  }
+
+  /**
+   * M10E Workspace Level 2 & 3: 落地资产完整效果对比与归因 Workspace 投影
+   * GET /published-assets/:id/outcome-workspace
+   */
+  @Get([
+    "published-assets/:id/outcome-workspace",
+    "api/content/published-assets/:id/outcome-workspace",
+    "content/published-assets/:id/outcome-workspace",
+  ])
+  getAssetOutcomeWorkspace(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("retestRunId") retestRunId?: string,
+  ) {
+    return this.attribution.getAssetOutcomeWorkspace(u.sub, id, retestRunId);
   }
 }

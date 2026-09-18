@@ -724,4 +724,359 @@ export class OutcomeAttributionService {
       items: attributions,
     };
   }
+
+  /**
+   * M10E Workspace Level 1: 查询项目所有已发布资产及其复测与归因摘要 (GET /projects/:id/verification-assets)
+   */
+  async listVerificationAssets(userId: string, projectId: string) {
+    await this.tenant.assertUserInProject(userId, projectId);
+
+    const assets = await this.db.client.publishedAsset.findMany({
+      where: { projectId },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      include: {
+        draft: { select: { id: true, title: true, topic: true } },
+        publication: { select: { id: true, channel: true, status: true } },
+        campaign: { select: { id: true, name: true } },
+        retestRuns: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: {
+            outcomes: true,
+            outcomeAttributions: true,
+          },
+        },
+      },
+    });
+
+    const items = assets.map((asset) => {
+      const latestRetest = asset.retestRuns[0] || null;
+      let comparableQueryCount = 0;
+      let changedQueryCount = 0;
+      let likelyRelatedCount = 0;
+      let insufficientEvidenceCount = 0;
+      let confoundedCount = 0;
+      let noObservedChangeCount = 0;
+
+      if (latestRetest) {
+        for (const outcome of latestRetest.outcomes) {
+          if (
+            outcome.comparisonStatus === "COMPARABLE" ||
+            outcome.comparisonStatus === "COMPARABLE_WITH_WARNING"
+          ) {
+            comparableQueryCount++;
+          }
+        }
+        for (const attr of latestRetest.outcomeAttributions) {
+          if (
+            attr.observedChangeType === "POSITIVE" ||
+            attr.observedChangeType === "NEGATIVE" ||
+            attr.status === "LIKELY_RELATED"
+          ) {
+            changedQueryCount++;
+          }
+          if (attr.status === "LIKELY_RELATED") likelyRelatedCount++;
+          else if (attr.status === "INSUFFICIENT_EVIDENCE") insufficientEvidenceCount++;
+          else if (attr.status === "CONFOUNDED") confoundedCount++;
+          else if (attr.status === "NO_OBSERVED_CHANGE") noObservedChangeCount++;
+        }
+      }
+
+      return {
+        id: asset.id,
+        platform: asset.platform,
+        title: asset.title,
+        externalAssetId: asset.externalAssetId,
+        canonicalUrl: asset.canonicalUrl,
+        publishedAt: asset.publishedAt,
+        verificationStatus: asset.verificationStatus,
+        verificationNote: asset.verificationNote,
+        createdAt: asset.createdAt,
+        draft: asset.draft,
+        publication: asset.publication,
+        campaign: asset.campaign,
+        latestRetest: latestRetest
+          ? {
+              id: latestRetest.id,
+              sequence: latestRetest.sequence,
+              status: latestRetest.status,
+              provider: latestRetest.provider,
+              model: latestRetest.model,
+              requestedAt: latestRetest.requestedAt,
+              completedAt: latestRetest.completedAt,
+              totalItems: latestRetest.totalItems,
+              completedItems: latestRetest.completedItems,
+            }
+          : null,
+        comparableQueryCount,
+        changedQueryCount,
+        attributionDistribution: {
+          likelyRelated: likelyRelatedCount,
+          insufficientEvidence: insufficientEvidenceCount,
+          confounded: confoundedCount,
+          noObservedChange: noObservedChangeCount,
+          total: latestRetest ? latestRetest.outcomeAttributions.length : 0,
+        },
+      };
+    });
+
+    return {
+      projectId,
+      total: items.length,
+      items,
+    };
+  }
+
+  /**
+   * M10E Workspace Level 2 & Level 3: 获取某落地资产完整 Workspace 投影 (GET /published-assets/:id/outcome-workspace)
+   */
+  async getAssetOutcomeWorkspace(userId: string, assetId: string, retestRunId?: string) {
+    const asset = await this.db.client.publishedAsset.findUnique({
+      where: { id: assetId },
+      include: {
+        draft: { select: { id: true, title: true, topic: true } },
+        publication: { select: { id: true, channel: true, status: true } },
+        campaign: { select: { id: true, name: true, objective: true } },
+        planItem: { select: { id: true, title: true, targetQueries: true, geoTarget: true, objective: true } },
+        retestRuns: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    if (!asset) {
+      throw new NotFoundException("发布资产不存在");
+    }
+
+    const typedAsset = asset as any;
+    await this.tenant.assertUserInProject(userId, typedAsset.projectId);
+
+    const targetRun = retestRunId
+      ? typedAsset.retestRuns.find((r: any) => r.id === retestRunId) || null
+      : typedAsset.retestRuns[0] || null;
+
+    if (!targetRun) {
+      return {
+        asset: {
+          id: typedAsset.id,
+          platform: typedAsset.platform,
+          title: typedAsset.title,
+          canonicalUrl: typedAsset.canonicalUrl,
+          externalAssetId: typedAsset.externalAssetId,
+          publishedAt: typedAsset.publishedAt,
+          verificationStatus: typedAsset.verificationStatus,
+          verificationNote: typedAsset.verificationNote,
+          draft: typedAsset.draft,
+          publication: typedAsset.publication,
+          campaign: typedAsset.campaign,
+          planItem: typedAsset.planItem,
+        },
+        retestRuns: [],
+        activeRetestRun: null,
+      };
+    }
+
+    const retestItems = await this.db.client.retestItem.findMany({
+      where: { retestRunId: targetRun.id },
+      orderBy: { createdAt: "asc" },
+    });
+
+    let outcomes = await this.db.client.outcomeComparison.findMany({
+      where: { retestRunId: targetRun.id },
+      orderBy: { createdAt: "asc" },
+    });
+
+    let attributions = await this.db.client.outcomeAttribution.findMany({
+      where: { retestRunId: targetRun.id },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // 收集所有关联的证据 ID 以便获取原始 Evidence
+    const evidenceIds = new Set<string>();
+    for (const item of retestItems) {
+      if (item.baselineEvidenceId) evidenceIds.add(item.baselineEvidenceId);
+      if (item.evidenceId) evidenceIds.add(item.evidenceId);
+    }
+    for (const o of outcomes) {
+      if (o.baselineEvidenceId) evidenceIds.add(o.baselineEvidenceId);
+      if (o.retestEvidenceId) evidenceIds.add(o.retestEvidenceId);
+    }
+
+    const evidences = await this.db.client.evidence.findMany({
+      where: { id: { in: Array.from(evidenceIds) } },
+      select: {
+        id: true,
+        runId: true,
+        queryText: true,
+        provider: true,
+        engineKey: true,
+        engineName: true,
+        requestedModel: true,
+        responseModel: true,
+        model: true,
+        retrievalMode: true,
+        sourceType: true,
+        rawPrompt: true,
+        rawResponse: true,
+        createdAt: true,
+      },
+    });
+
+    const evidenceMap: Record<string, any> = {};
+    for (const ev of evidences) {
+      evidenceMap[ev.id] = ev;
+    }
+
+    const queryRows = retestItems.map((item) => {
+      const outcome = outcomes.find((o) => o.retestItemId === item.id) || null;
+      const attribution = attributions.find((a) => a.retestItemId === item.id) || null;
+      const beforeEvidence = item.baselineEvidenceId ? evidenceMap[item.baselineEvidenceId] || null : null;
+      const afterEvidence = item.evidenceId ? evidenceMap[item.evidenceId] || null : null;
+
+      return {
+        id: item.id,
+        retestItemId: item.id,
+        queryId: item.queryId,
+        queryText: item.queryText,
+        queryType: item.queryType,
+        sanity: item.sanity,
+        status: item.status,
+        baselineStatus: item.baselineStatus,
+        baselineWarning: item.baselineWarning,
+        outcome,
+        attribution,
+        beforeEvidence,
+        afterEvidence,
+      };
+    });
+
+    // 计算汇总
+    let comparableItems = 0;
+    let warningItems = 0;
+    let incompatibleItems = 0;
+    let missingBaselineItems = 0;
+    let missingRetestItems = 0;
+
+    let mentionAbsentToPresent = 0;
+    let mentionPresentToAbsent = 0;
+    let citationCountDeltaTotal = 0;
+    let recommendationPositiveChanges = 0;
+    let positionImproved = 0;
+    let positionWorsened = 0;
+
+    for (const o of outcomes) {
+      if (o.comparisonStatus === "COMPARABLE") comparableItems++;
+      else if (o.comparisonStatus === "COMPARABLE_WITH_WARNING") warningItems++;
+      else if (o.comparisonStatus === "INCOMPATIBLE") incompatibleItems++;
+      else if (o.comparisonStatus === "MISSING_BASELINE") missingBaselineItems++;
+      else if (o.comparisonStatus === "MISSING_RETEST_EVIDENCE") missingRetestItems++;
+
+      const delta = o.deltaSnapshot as any;
+      if (delta) {
+        if (delta.brandMention?.change === "ABSENT_TO_PRESENT") mentionAbsentToPresent++;
+        if (delta.brandMention?.change === "PRESENT_TO_ABSENT") mentionPresentToAbsent++;
+        if (typeof delta.citation?.countDelta === "number") citationCountDeltaTotal += delta.citation.countDelta;
+        if (delta.recommendation?.change === "ABSENT_TO_PRESENT") recommendationPositiveChanges++;
+        if (delta.position?.direction === "IMPROVED") positionImproved++;
+        if (delta.position?.direction === "WORSENED") positionWorsened++;
+      }
+    }
+
+    let likelyRelatedCount = 0;
+    let insufficientEvidenceCount = 0;
+    let confoundedCount = 0;
+    let noObservedChangeCount = 0;
+    let positiveObservedChangeCount = 0;
+    let negativeObservedChangeCount = 0;
+    let directAssetCitationCount = 0;
+
+    for (const a of attributions) {
+      if (a.status === "LIKELY_RELATED") likelyRelatedCount++;
+      else if (a.status === "INSUFFICIENT_EVIDENCE") insufficientEvidenceCount++;
+      else if (a.status === "CONFOUNDED") confoundedCount++;
+      else if (a.status === "NO_OBSERVED_CHANGE") noObservedChangeCount++;
+
+      if (a.observedChangeType === "POSITIVE") positiveObservedChangeCount++;
+      else if (a.observedChangeType === "NEGATIVE") negativeObservedChangeCount++;
+
+      const signals = a.signalsSnapshot as any;
+      if (signals?.citationMatch?.status === "DIRECT_ASSET_CITATION") {
+        directAssetCitationCount++;
+      }
+    }
+
+    return {
+      asset: {
+        id: typedAsset.id,
+        platform: typedAsset.platform,
+        title: typedAsset.title,
+        canonicalUrl: typedAsset.canonicalUrl,
+        externalAssetId: typedAsset.externalAssetId,
+        publishedAt: typedAsset.publishedAt,
+        verificationStatus: typedAsset.verificationStatus,
+        verificationNote: typedAsset.verificationNote,
+        draft: typedAsset.draft,
+        publication: typedAsset.publication,
+        campaign: typedAsset.campaign,
+        planItem: typedAsset.planItem,
+      },
+      retestRuns: typedAsset.retestRuns.map((r: any) => ({
+        id: r.id,
+        sequence: r.sequence,
+        status: r.status,
+        provider: r.provider,
+        engineKey: r.engineKey,
+        engineName: r.engineName,
+        model: r.model,
+        retrievalMode: r.retrievalMode,
+        sourceType: r.sourceType,
+        requestedAt: r.requestedAt,
+        completedAt: r.completedAt,
+        totalItems: r.totalItems,
+        completedItems: r.completedItems,
+      })),
+      activeRetestRun: {
+        id: targetRun.id,
+        sequence: targetRun.sequence,
+        status: targetRun.status,
+        provider: targetRun.provider,
+        engineKey: targetRun.engineKey,
+        engineName: targetRun.engineName,
+        model: targetRun.model,
+        retrievalMode: targetRun.retrievalMode,
+        sourceType: targetRun.sourceType,
+        requestedAt: targetRun.requestedAt,
+        completedAt: targetRun.completedAt,
+        totalItems: targetRun.totalItems,
+        completedItems: targetRun.completedItems,
+        comparabilitySummary: {
+          totalItems: outcomes.length,
+          comparableItems,
+          warningItems,
+          incompatibleItems,
+          missingBaselineItems,
+          missingRetestItems,
+        },
+        observedChangesSummary: {
+          mentionAbsentToPresent,
+          mentionPresentToAbsent,
+          citationCountDeltaTotal,
+          recommendationPositiveChanges,
+          positionImproved,
+          positionWorsened,
+        },
+        attributionSummary: {
+          totalOutcomes: attributions.length,
+          likelyRelatedCount,
+          insufficientEvidenceCount,
+          confoundedCount,
+          noObservedChangeCount,
+          positiveObservedChangeCount,
+          negativeObservedChangeCount,
+          directAssetCitationCount,
+        },
+        queryRows,
+      },
+    };
+  }
 }

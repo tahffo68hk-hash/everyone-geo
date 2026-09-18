@@ -34,6 +34,7 @@ import { ProductionQueueView } from "@/components/content/production-queue-view"
 import { ContentCalendarView } from "@/components/content/content-calendar-view";
 import { CampaignWorkspaceView } from "@/components/content/campaign-workspace-view";
 import { CreateCampaignModal } from "@/components/content/create-campaign-modal";
+import { OutcomeWorkspaceView } from "@/components/content/outcome-workspace/outcome-workspace-view";
 
 const statusLabel: Record<string, string> = {
   DRAFT: "草稿",
@@ -78,11 +79,17 @@ export default function ContentWorkspacePage() {
   const { projectId } = useProjectContext();
   const searchParams = useSearchParams();
 
-  // Tab 状态：operations (M9B 运营执行), strategy (M9A 战略与计划), drafts (草稿与资产库)
+  // Tab 状态：operations (M9B 运营执行), strategy (M9A 战略与计划), drafts (草稿与资产库), verification (M10E 效果验证与归因)
   const tabParam = searchParams.get("tab");
   const initialTab =
-    tabParam === "strategy" ? "strategy" : tabParam === "drafts" ? "drafts" : "operations";
-  const [activeTab, setActiveTab] = useState<"operations" | "strategy" | "drafts">(initialTab);
+    tabParam === "strategy"
+      ? "strategy"
+      : tabParam === "drafts"
+      ? "drafts"
+      : tabParam === "verification"
+      ? "verification"
+      : "operations";
+  const [activeTab, setActiveTab] = useState<"operations" | "strategy" | "drafts" | "verification">(initialTab);
 
   // 运营执行二级视图状态 (queue / calendar / campaigns)
   const initialOpView =
@@ -447,6 +454,17 @@ export default function ContentWorkspacePage() {
             }`}
           >
             📝 草稿与资产库 ({rows.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("verification")}
+            className={`border-b-2 px-5 py-2.5 text-sm font-semibold transition-colors ${
+              activeTab === "verification"
+                ? "border-indigo-600 text-indigo-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            🔬 效果验证与归因 (M10E)
           </button>
         </div>
 
@@ -1334,6 +1352,14 @@ export default function ContentWorkspacePage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* TAB 3: 效果验证与归因 (M10E) */}
+        {activeTab === "verification" && (
+          <OutcomeWorkspaceView
+            projectId={projectId}
+            initialAssetId={searchParams.get("assetId") || undefined}
+          />
         )}
 
         {/* 实例化运营战役弹窗 (M9B) */}

@@ -16,7 +16,7 @@ const sections = [
   { label: "优化", path: "/app/diagnosis", icon: "↗", members: ["diagnosis", "recommendations", "opportunities", "content", "experiments", "site-assets", "change-plans"] },
   { label: "设置", path: "/app/target", icon: "⚙", members: ["target", "projects"] },
 ];
-const optimization = [["洞察", "diagnosis"], ["建议", "recommendations"], ["优化机会", "opportunities"], ["内容执行", "content"], ["实验与复测", "experiments"], ["站点资产", "site-assets"]];
+const optimization = [["洞察", "diagnosis"], ["建议", "recommendations"], ["优化机会", "opportunities"], ["内容执行", "content"], ["效果验证", "content/verification"], ["实验与复测", "experiments"], ["站点资产", "site-assets"]];
 const monitoring = [["问题集检测", "benchmark"], ["持续监测", "monitor"], ["竞品", "competitors"]];
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
