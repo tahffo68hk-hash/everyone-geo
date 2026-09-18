@@ -53,6 +53,7 @@ model Organization {
   contentCampaigns     ContentCampaign[]
   contentScheduleItems ContentScheduleItem[]
   publishedAssets      PublishedAsset[]
+  retestRuns           RetestRun[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -130,6 +131,7 @@ model Project {
   contentCampaigns     ContentCampaign[]
   contentScheduleItems ContentScheduleItem[]
   publishedAssets      PublishedAsset[]
+  retestRuns           RetestRun[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -1840,6 +1842,7 @@ model PublishedAsset {
   planItem           ContentPlanItem?     @relation(fields: [planItemId], references: [id], onDelete: SetNull)
   draft              ContentDraft         @relation(fields: [draftId], references: [id], onDelete: Restrict)
   revision           ContentRevision      @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  retestRuns         RetestRun[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -2032,4 +2035,92 @@ model ContentScheduleItem {
   @@index([scheduledDate])
   @@index([productionStatus])
 }
+
+// ============================================================
+// M10B - GEO 重测编排（GEO Retest Orchestration）
+// ============================================================
+model RetestRun {
+  id                   String           @id @default(uuid()) @db.Uuid
+  organizationId       String           @map("organization_id") @db.Uuid
+  projectId            String           @map("project_id") @db.Uuid
+  publishedAssetId     String           @map("published_asset_id") @db.Uuid
+  sequence             Int              @default(1)
+  status               String           @default("PENDING") // PENDING, QUEUED, RUNNING, PARTIAL, COMPLETED, FAILED, CANCELLED
+
+  querySetId           String?          @map("query_set_id") @db.Uuid
+  querySnapshot        Json             @map("query_snapshot") // Array of frozen query objects: { id, text, category, intent, queryType, sanity }
+  
+  provider             String           @default("mock")
+  engineId             String?          @map("engine_id") @db.Uuid
+  engineKey            String           @default("mock-default") @map("engine_key")
+  engineName           String?          @default("Mock Engine") @map("engine_name")
+  requestedModel       String?          @map("requested_model")
+  responseModel        String?          @map("response_model")
+  model                String           @default("mock-model")
+  modelVersion         String?          @map("model_version")
+  retrievalMode        RetrievalMode    @default(api_plain) @map("retrieval_mode")
+  sourceType           SourceType       @default(mock) @map("source_type")
+
+  requestedAt          DateTime         @default(now()) @map("requested_at")
+  startedAt            DateTime?        @map("started_at")
+  completedAt          DateTime?        @map("completed_at")
+  
+  baselinePolicy       String           @default("MOST_RECENT_BEFORE_PUBLICATION") @map("baseline_policy")
+  baselineMetadata     Json             @default("{}") @map("baseline_metadata")
+  inputSnapshot        Json             @default("{}") @map("input_snapshot")
+  
+  totalItems           Int              @default(0) @map("total_items")
+  completedItems       Int              @default(0) @map("completed_items")
+  failedItems          Int              @default(0) @map("failed_items")
+
+  createdById          String           @map("created_by_id") @db.Uuid
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project              Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  publishedAsset       PublishedAsset   @relation(fields: [publishedAssetId], references: [id], onDelete: Cascade)
+  items                RetestItem[]
+
+  @@map("retest_runs")
+  @@index([organizationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([publishedAssetId, createdAt])
+  @@index([status])
+}
+
+model RetestItem {
+  id                   String           @id @default(uuid()) @db.Uuid
+  retestRunId          String           @map("retest_run_id") @db.Uuid
+  queryId              String           @map("query_id") @db.Uuid
+  queryText            String           @map("query_text")
+  queryType            String?          @map("query_type") // DISCOVERY, BRANDED_SANITY, CUSTOM
+  sanity               Boolean          @default(false)
+  status               String           @default("PENDING") // PENDING, RUNNING, SUCCEEDED, FAILED, SKIPPED
+
+  runId                String?          @map("run_id") @db.Uuid
+  evidenceId           String?          @map("evidence_id") @db.Uuid
+  attemptCount         Int              @default(0) @map("attempt_count")
+  errorCode            String?          @map("error_code")
+  errorMessage         String?          @map("error_message")
+
+  startedAt            DateTime?        @map("started_at")
+  completedAt          DateTime?        @map("completed_at")
+
+  baselineEvidenceId   String?          @map("baseline_evidence_id") @db.Uuid
+  baselineStatus       String?          @map("baseline_status") // EXACT_MATCH, COMPARABLE_WITH_WARNING, INCOMPATIBLE, MISSING_BASELINE
+  baselineWarning      String?          @map("baseline_warning")
+  metadata             Json             @default("{}")
+
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+
+  retestRun            RetestRun        @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
+
+  @@map("retest_items")
+  @@index([retestRunId])
+  @@index([queryId])
+  @@index([status])
+}
+
 
