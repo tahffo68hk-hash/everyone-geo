@@ -58,6 +58,72 @@ export interface AiGatewayResponse<T = any> {
   completedAt: string;
 }
 
+// Centralized Model Pricing Configuration (Pricing Version: 2026-09)
+export interface ModelPricing {
+  costPerInputToken: number; // USD per token
+  costPerOutputToken: number; // USD per token
+  currency: "USD";
+  pricingVersion: string;
+}
+
+export const AI_MODEL_PRICING: Record<string, ModelPricing> = {
+  // DeepSeek: $0.14 / 1M prompt, $0.28 / 1M completion (USD)
+  "deepseek-chat": {
+    costPerInputToken: 0.00000014,
+    costPerOutputToken: 0.00000028,
+    currency: "USD",
+    pricingVersion: "2026-09",
+  },
+  "deepseek-reasoner": {
+    costPerInputToken: 0.00000055,
+    costPerOutputToken: 0.00000219,
+    currency: "USD",
+    pricingVersion: "2026-09",
+  },
+  // Qwen Plus: $0.80 / 1M prompt ($0.0000008/token), $2.00 / 1M completion ($0.000002/token)
+  "qwen-plus": {
+    costPerInputToken: 0.0000008,
+    costPerOutputToken: 0.000002,
+    currency: "USD",
+    pricingVersion: "2026-09",
+  },
+  "qwen-turbo": {
+    costPerInputToken: 0.0000003,
+    costPerOutputToken: 0.0000006,
+    currency: "USD",
+    pricingVersion: "2026-09",
+  },
+  "qwen-max": {
+    costPerInputToken: 0.0000024,
+    costPerOutputToken: 0.0000096,
+    currency: "USD",
+    pricingVersion: "2026-09",
+  },
+  // Mock Engine: $0
+  "mock-ai-engine": {
+    costPerInputToken: 0,
+    costPerOutputToken: 0,
+    currency: "USD",
+    pricingVersion: "2026-09",
+  },
+};
+
+export function calculateEstimatedCost(
+  model: string,
+  inputTokens: number | null,
+  outputTokens: number | null,
+): number | null {
+  if (inputTokens == null || outputTokens == null) return null;
+  const pricing = AI_MODEL_PRICING[model];
+  if (!pricing) {
+    // 未知模型不计算或估算为 null，避免把收费模型误报为 0
+    return null;
+  }
+  return Number(
+    (inputTokens * pricing.costPerInputToken + outputTokens * pricing.costPerOutputToken).toFixed(6),
+  );
+}
+
 // In-flight debounce map: key = `${organizationId}:${feature}:${hash/idempotencyKey}`
 const pendingRequests = new Map<string, Promise<AiGatewayResponse<any>>>();
 
@@ -80,22 +146,28 @@ export class AiGatewayService {
       providers: [
         {
           provider: "deepseek",
-          configured: Boolean(dsKey && realEnabled),
+          configured: Boolean(dsKey),
+          enabled: Boolean(dsKey && realEnabled),
           hasKey: Boolean(dsKey),
+          realModeAllowed: Boolean(dsKey && realEnabled),
           defaultModel: process.env.DEEPSEEK_MODEL || "deepseek-chat",
           baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
         },
         {
           provider: "qwen",
-          configured: Boolean(qwenKey && realEnabled),
+          configured: Boolean(qwenKey),
+          enabled: Boolean(qwenKey && realEnabled),
           hasKey: Boolean(qwenKey),
+          realModeAllowed: Boolean(qwenKey && realEnabled),
           defaultModel: process.env.QWEN_MODEL || "qwen-plus",
           baseUrl: process.env.QWEN_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1",
         },
         {
           provider: "mock",
           configured: true,
+          enabled: true,
           hasKey: true,
+          realModeAllowed: false,
           defaultModel: "mock-ai-engine",
           baseUrl: "internal://mock",
         },
@@ -145,7 +217,8 @@ export class AiGatewayService {
       const userPrompt = promptDef.buildUserPrompt(req.input);
 
       // 2. 解析目标 Provider
-      const targetProvider = this.resolveProvider(req.provider);
+      const isAuto = !req.provider || req.provider === "auto";
+      let targetProvider: "deepseek" | "qwen" | "mock";
       let response: {
         content: string;
         model: string;
@@ -157,17 +230,42 @@ export class AiGatewayService {
         requestId: string | null;
       };
 
+      let activeProvider: "deepseek" | "qwen" | "mock" | "auto" = req.provider && req.provider !== "auto" ? req.provider : "auto";
       let status = "SUCCESS";
       let errorCode: string | undefined;
       let errorMessage: string | undefined;
 
       try {
+        targetProvider = this.resolveProvider(req.provider);
+        activeProvider = targetProvider;
         if (targetProvider === "mock") {
           response = await this.executeMock<T>(req.feature, req.input, req.model || "mock-ai-engine");
         } else if (targetProvider === "deepseek") {
-          response = await this.executeDeepSeek(systemPrompt, userPrompt, req.model, req.temperature, req.maxTokens, req.timeoutMs);
+          try {
+            response = await this.executeDeepSeek(systemPrompt, userPrompt, req.model, req.temperature, req.maxTokens, req.timeoutMs);
+          } catch (dsErr: any) {
+            // auto 模式下如果 DeepSeek 失败且配置了 Qwen，真实 failover，绝不降级 Mock
+            if (isAuto && process.env.QWEN_API_KEY?.trim()) {
+              this.logger.warn(`[AiGateway] Primary provider 'deepseek' failed (${dsErr.message}), failing over to 'qwen'...`);
+              activeProvider = "qwen";
+              response = await this.executeQwen(systemPrompt, userPrompt, undefined, req.temperature, req.maxTokens, req.timeoutMs);
+            } else {
+              throw dsErr;
+            }
+          }
         } else if (targetProvider === "qwen") {
-          response = await this.executeQwen(systemPrompt, userPrompt, req.model, req.temperature, req.maxTokens, req.timeoutMs);
+          try {
+            response = await this.executeQwen(systemPrompt, userPrompt, req.model, req.temperature, req.maxTokens, req.timeoutMs);
+          } catch (qwenErr: any) {
+            // auto 模式下如果 Qwen 失败且配置了 DeepSeek，真实 failover，绝不降级 Mock
+            if (isAuto && process.env.DEEPSEEK_API_KEY?.trim()) {
+              this.logger.warn(`[AiGateway] Primary provider 'qwen' failed (${qwenErr.message}), failing over to 'deepseek'...`);
+              activeProvider = "deepseek";
+              response = await this.executeDeepSeek(systemPrompt, userPrompt, undefined, req.temperature, req.maxTokens, req.timeoutMs);
+            } else {
+              throw qwenErr;
+            }
+          }
         } else {
           throw new BadRequestException(`不支持的 Provider: ${targetProvider}`);
         }
@@ -176,7 +274,7 @@ export class AiGatewayService {
         errorCode = err?.name || "AI_GENERATION_FAILED";
         errorMessage = err?.message || String(err);
 
-        // 记录失败审计
+        // 记录失败审计入库
         await this.recordAudit({
           organizationId: req.organizationId,
           projectId: req.projectId,
@@ -184,12 +282,12 @@ export class AiGatewayService {
           feature: req.feature,
           entityType: req.entityType,
           entityId: req.entityId,
-          provider: targetProvider,
-          model: req.model || "unknown",
+          provider: activeProvider,
+          model: req.model || (activeProvider === "deepseek" ? "deepseek-chat" : activeProvider === "qwen" ? "qwen-plus" : "unknown"),
           requestedModel: req.model || "unknown",
           promptVersion: req.promptVersion,
           inputSnapshot: req.input,
-          outputSnapshot: null,
+          outputSnapshot: { error: this.sanitizeSensitiveText(errorMessage), errorCode },
           status,
           inputTokens: null,
           outputTokens: null,
@@ -197,7 +295,7 @@ export class AiGatewayService {
           estimatedCost: null,
           latencyMs: Math.round(performance.now() - startTimeMs),
           errorCode,
-          errorMessage,
+          errorMessage: this.sanitizeSensitiveText(errorMessage),
           createdAt: startedAt,
           completedAt: new Date(),
         });
@@ -225,12 +323,12 @@ export class AiGatewayService {
             feature: req.feature,
             entityType: req.entityType,
             entityId: req.entityId,
-            provider: targetProvider,
+            provider: activeProvider,
             model: response.model,
             requestedModel: req.model || response.model,
             promptVersion: req.promptVersion,
             inputSnapshot: req.input,
-            outputSnapshot: { rawContent: response.content },
+            outputSnapshot: { rawContent: this.sanitizeSensitiveText(response.content) },
             status,
             inputTokens: response.inputTokens,
             outputTokens: response.outputTokens,
@@ -255,7 +353,7 @@ export class AiGatewayService {
         feature: req.feature,
         entityType: req.entityType,
         entityId: req.entityId,
-        provider: targetProvider,
+        provider: activeProvider,
         model: response.model,
         requestedModel: req.model || response.model,
         promptVersion: req.promptVersion,
@@ -274,7 +372,7 @@ export class AiGatewayService {
       return {
         content: response.content,
         data: parsedData,
-        provider: targetProvider,
+        provider: activeProvider,
         model: response.model,
         requestedModel: req.model || response.model,
         actualModel: response.actualModel,
@@ -302,38 +400,56 @@ export class AiGatewayService {
   }
 
   /**
-   * 解析目标 Provider，支持 auto 自适应路由
+   * 解析目标 Provider，支持 auto 自适应路由与真实大模型强制策略
    */
   private resolveProvider(requested?: AiProviderName): "deepseek" | "qwen" | "mock" {
-    // 单元测试与 E2E 默认使用 mock，除非显式指定
     const isTest = process.env.NODE_ENV === "test";
-    if (isTest && (!requested || requested === "mock" || requested === "auto")) {
+    const forceReal = process.env.FORCE_REAL_AI === "true";
+    const realEnabled = process.env.ENABLE_REAL_PROVIDERS === "true";
+    const explicitMockMode = process.env.AI_PROVIDER_MODE === "mock" || process.env.GENERATION_PROVIDER_MODE === "mock";
+
+    // 1. 显式请求 mock
+    if (requested === "mock") {
       return "mock";
     }
 
-    if (requested && requested !== "auto") {
-      if (requested === "mock") return "mock";
-      if (requested === "deepseek") {
-        if (!process.env.DEEPSEEK_API_KEY) {
-          throw new ServiceUnavailableException("DeepSeek API Key 未配置");
-        }
-        return "deepseek";
+    // 2. 显式请求 deepseek
+    if (requested === "deepseek") {
+      if (!realEnabled && !forceReal && !isTest) throw new ServiceUnavailableException("真实 AI Provider 当前未启用");
+      if (!process.env.DEEPSEEK_API_KEY?.trim()) {
+        throw new ServiceUnavailableException("DeepSeek API Key 未配置");
       }
-      if (requested === "qwen") {
-        if (!process.env.QWEN_API_KEY) {
-          throw new ServiceUnavailableException("Qwen API Key 未配置");
-        }
-        return "qwen";
-      }
+      return "deepseek";
     }
 
-    // auto: 按可用度优先选择
-    if (process.env.ENABLE_REAL_PROVIDERS === "true") {
+    // 3. 显式请求 qwen
+    if (requested === "qwen") {
+      if (!realEnabled && !forceReal && !isTest) throw new ServiceUnavailableException("真实 AI Provider 当前未启用");
+      if (!process.env.QWEN_API_KEY?.trim()) {
+        throw new ServiceUnavailableException("Qwen API Key 未配置");
+      }
+      return "qwen";
+    }
+
+    // 4. 测试环境默认保持确定性 Mock；真实 Provider 测试必须显式指定 provider
+    // 或开启 FORCE_REAL_AI，避免宿主 .env 意外烧额度并使回归结果失真。
+    if (isTest && !forceReal) {
+      return "mock";
+    }
+
+    // 显式 Mock 模式只允许在未强制真实 Provider 时生效。
+    if (explicitMockMode && !forceReal && !realEnabled) {
+      return "mock";
+    }
+
+    // 5. 生产环境、显式开启真实大模型或测试开启 FORCE_REAL_AI：必须使用真实大模型，绝不静默降级为 Mock
+    if (realEnabled || forceReal || process.env.NODE_ENV === "production") {
       if (process.env.DEEPSEEK_API_KEY?.trim()) return "deepseek";
       if (process.env.QWEN_API_KEY?.trim()) return "qwen";
+      throw new ServiceUnavailableException("未配置任何可用的真实 AI Provider (DEEPSEEK_API_KEY / QWEN_API_KEY)");
     }
 
-    return "mock";
+    throw new ServiceUnavailableException("真实 AI Provider 当前不可用；请显式选择 Mock 模式用于测试");
   }
 
   /**
@@ -363,9 +479,6 @@ export class AiGatewayService {
       temperature,
       maxTokens,
       timeoutMs,
-      // DeepSeek 费用估算: $0.14 / 1M prompt, $0.28 / 1M completion
-      costPerInputToken: 0.00000014,
-      costPerOutputToken: 0.00000028,
     });
   }
 
@@ -396,9 +509,6 @@ export class AiGatewayService {
       temperature,
       maxTokens,
       timeoutMs,
-      // Qwen Plus 估算: $0.0008 / 1k input ($0.0000008/token), $0.002 / 1k output ($0.000002/token)
-      costPerInputToken: 0.0000008,
-      costPerOutputToken: 0.000002,
     });
   }
 
@@ -415,8 +525,6 @@ export class AiGatewayService {
     temperature: number;
     maxTokens: number;
     timeoutMs: number;
-    costPerInputToken: number;
-    costPerOutputToken: number;
   }) {
     const maxRetries = 2;
     let attempt = 0;
@@ -454,23 +562,31 @@ export class AiGatewayService {
         if (!res.ok) {
           const status = res.status;
           const errBody = await res.text().catch(() => "");
-          this.logger.warn(`[${params.provider}] API returned ${status}: ${errBody.slice(0, 300)}`);
+          this.logger.warn(`[${params.provider}] API returned ${status}`);
+
+          let detailedMsg = "";
+          try {
+            const parsed = JSON.parse(errBody);
+            detailedMsg = parsed?.message || parsed?.error?.message || parsed?.code || "";
+          } catch {}
+
+          const suffix = detailedMsg ? `: ${detailedMsg}` : "";
 
           if (status === 401 || status === 403) {
-            throw new ServiceUnavailableException(`${params.provider} API 密钥无效或未授权`);
+            throw new ServiceUnavailableException(`${params.provider} API 密钥无效或未授权 (HTTP ${status}${suffix})`);
           }
           if (status === 429) {
             if (attempt <= maxRetries) {
               await new Promise((r) => setTimeout(r, attempt * 1000));
               continue;
             }
-            throw new ServiceUnavailableException(`${params.provider} API 速率受限 (429)，请稍后重试`);
+            throw new ServiceUnavailableException(`${params.provider} API 速率受限 (429)${suffix}，请稍后重试`);
           }
           if (status >= 500 && attempt <= maxRetries) {
             await new Promise((r) => setTimeout(r, attempt * 800));
             continue;
           }
-          throw new ServiceUnavailableException(`${params.provider} 调用失败 (HTTP ${status})`);
+          throw new ServiceUnavailableException(`${params.provider} 调用失败 (HTTP ${status}${suffix})`);
         }
 
         const data: any = await res.json();
@@ -483,12 +599,7 @@ export class AiGatewayService {
         const outputTokens = usage?.completion_tokens ?? null;
         const totalTokens = usage?.total_tokens ?? null;
 
-        let estimatedCost: number | null = null;
-        if (inputTokens != null && outputTokens != null) {
-          estimatedCost = Number(
-            (inputTokens * params.costPerInputToken + outputTokens * params.costPerOutputToken).toFixed(6),
-          );
-        }
+        const estimatedCost = calculateEstimatedCost(params.model, inputTokens, outputTokens);
 
         return {
           content,
@@ -1140,23 +1251,87 @@ export class AiGatewayService {
   }
 
   /**
-   * 递归清理 snapshot 中潜在的敏感字段
+   * 判断一个键名是否属于凭据、秘钥等敏感字段（严格保护正常的业务词汇如 keyword, keyEntity, tokenUsage 等）
    */
-  private sanitizeSnapshot(obj: any): any {
-    if (!obj || typeof obj !== "object") return obj;
+  isSensitiveKey(key: string): boolean {
+    const lk = key.toLowerCase().replace(/[-_]/g, "");
+
+    // 1. 业务词汇白名单：严格保护，绝不脱敏
+    const safeWhitelist = [
+      "keyword",
+      "keywords",
+      "keywordgap",
+      "keyentity",
+      "keyentities",
+      "keyfindings",
+      "keythemes",
+      "keyfactors",
+      "keyangle",
+      "keypoints",
+      "primarykey",
+      "foreignkey",
+      "inputtokens",
+      "outputtokens",
+      "totaltokens",
+      "tokenusage",
+      "tokens",
+      "prompttokens",
+      "completiontokens",
+    ];
+    if (safeWhitelist.some((safe) => lk.includes(safe))) {
+      return false;
+    }
+
+    // 2. 敏感凭据黑名单
+    const sensitivePatterns = [
+      "apikey",
+      "apisecret",
+      "secret",
+      "accesstoken",
+      "refreshtoken",
+      "authtoken",
+      "authorization",
+      "password",
+      "passwd",
+      "privatekey",
+      "clientsecret",
+      "bearer",
+    ];
+    return sensitivePatterns.some((pattern) => lk.includes(pattern));
+  }
+
+  /**
+   * 递归清理 snapshot 中潜在的敏感凭据与 API Key 字符串
+   */
+  sanitizeSnapshot(obj: any): any {
+    if (!obj || typeof obj !== "object") {
+      if (typeof obj === "string") {
+        return obj.replace(/sk-[a-zA-Z0-9_-]{16,}/g, "sk-[REDACTED]");
+      }
+      return obj;
+    }
     if (Array.isArray(obj)) return obj.map((i) => this.sanitizeSnapshot(i));
 
     const result: Record<string, any> = {};
     for (const [k, v] of Object.entries(obj)) {
-      const lk = k.toLowerCase();
-      if (lk.includes("key") || lk.includes("secret") || lk.includes("token") || lk.includes("auth") || lk.includes("password")) {
+      if (this.isSensitiveKey(k)) {
         result[k] = "[REDACTED]";
       } else if (typeof v === "object") {
         result[k] = this.sanitizeSnapshot(v);
+      } else if (typeof v === "string") {
+        result[k] = v.replace(/sk-[a-zA-Z0-9_-]{16,}/g, "sk-[REDACTED]");
       } else {
         result[k] = v;
       }
     }
     return result;
+  }
+
+  private sanitizeSensitiveText(value: string | undefined): string | undefined {
+    if (!value) return value;
+    return value
+      .replace(/Bearer\s+[^\s)]+/gi, "Bearer [REDACTED]")
+      .replace(/sk-[a-zA-Z0-9_-]{16,}/g, "sk-[REDACTED]")
+      .replace(/(api[_-]?key|secret|password)\s*[:=]\s*[^\s,;)}]+/gi, "$1=[REDACTED]");
   }
 }
