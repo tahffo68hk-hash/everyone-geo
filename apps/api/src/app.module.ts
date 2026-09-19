@@ -25,9 +25,10 @@ import { RetestOrchestrationModule } from "./retest-orchestration/retest-orchest
 import { OutcomeComparisonModule } from "./outcome-comparison/outcome-comparison.module";
 import { OutcomeAttributionModule } from "./outcome-attribution/outcome-attribution.module";
 import { LearningModule } from "./learning/learning.module";
+import { AiModule } from "./ai/ai.module";
 
 @Module({
-  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule, ExperimentsModule, SitesModule, ChangePlansModule, PilotReviewsModule, QueryWorkspaceModule, ManualMeasurementsModule, ActivityModule, ContentExecutionModule, ContentStrategyModule, ContentCampaignModule, RetestOrchestrationModule, OutcomeComparisonModule, OutcomeAttributionModule, LearningModule],
+  imports: [PrismaModule, AuthModule, OrganizationsModule, MonitorTasksModule, EvidenceModule, BenchmarkModule, CompetitorsModule, ReportsModule, DiagnosisModule, RecommendationsModule, OpportunitiesModule, ExperimentsModule, SitesModule, ChangePlansModule, PilotReviewsModule, QueryWorkspaceModule, ManualMeasurementsModule, ActivityModule, ContentExecutionModule, ContentStrategyModule, ContentCampaignModule, RetestOrchestrationModule, OutcomeComparisonModule, OutcomeAttributionModule, LearningModule, AiModule],
   controllers: [HealthController],
 })
 export class AppModule {}

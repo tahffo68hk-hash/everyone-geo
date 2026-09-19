@@ -26,6 +26,7 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   memberships OrganizationMember[]
+  aiGenerations AiGeneration[]
 
   @@index([status])
 }
@@ -58,6 +59,7 @@ model Organization {
   outcomeAttributions  OutcomeAttribution[]
   learningObservations LearningObservation[]
   learningAggregates   LearningAggregate[]
+  aiGenerations        AiGeneration[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -140,6 +142,7 @@ model Project {
   outcomeAttributions  OutcomeAttribution[]
   learningObservations LearningObservation[]
   learningAggregates   LearningAggregate[]
+  aiGenerations        AiGeneration[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -2321,3 +2324,53 @@ model LearningAggregate {
   @@index([organizationId])
   @@index([projectId])
 }
+
+// ============================================================
+// 统一 AI 生成审计与追溯 (Full AI Integration)
+// ============================================================
+
+model AiGeneration {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  projectId       String?      @map("project_id") @db.Uuid
+  userId          String?      @map("user_id") @db.Uuid
+
+  feature         String       // e.g. query_set_generation, query_expansion, geo_topic_detection, ...
+  entityType      String?      @map("entity_type") // e.g. QuerySet, ContentDraft, ...
+  entityId        String?      @map("entity_id")
+
+  provider        String       // e.g. deepseek, qwen, mock
+  model           String       // e.g. deepseek-chat, qwen-plus
+  requestedModel  String?      @map("requested_model")
+
+  promptVersion   String       @map("prompt_version")
+
+  inputSnapshot   Json?        @default("{}") @map("input_snapshot")
+  outputSnapshot  Json?        @default("{}") @map("output_snapshot")
+
+  status          String       @default("SUCCESS") // SUCCESS, FAILED
+
+  inputTokens     Int?         @map("input_tokens")
+  outputTokens    Int?         @map("output_tokens")
+  totalTokens     Int?         @map("total_tokens")
+
+  estimatedCost   Decimal?     @map("estimated_cost") @db.Decimal(10, 6)
+  latencyMs       Int?         @map("latency_ms")
+
+  errorCode       String?      @map("error_code")
+  errorMessage    String?      @map("error_message")
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+  completedAt     DateTime?    @map("completed_at")
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project         Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user            User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([feature])
+  @@index([entityType, entityId])
+  @@map("ai_generations")
+}
+
