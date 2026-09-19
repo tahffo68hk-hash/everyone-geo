@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useProjectContext } from "@/components/project-context";
 import { formatMetricSource, formatVersion, friendlyError } from "@/lib/labels";
 import { AiActionButton } from "@/components/ai/ai-action-button";
 import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
@@ -18,6 +19,7 @@ type RecRun = {
 };
 
 export default function RecommendationsListPage() {
+  const { projectId: contextProjectId } = useProjectContext();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [rows, setRows] = useState<Array<{ run: RecRun; report: ReportRow }>>([]);
@@ -63,11 +65,12 @@ export default function RecommendationsListPage() {
       .then(data => {
         setProjects(data.projects);
         const first = data.projects[0];
-        if (first) setProjectId(first.id);
+        const preferred = data.projects.find(item => item.id === contextProjectId) ?? first;
+        if (preferred) setProjectId(preferred.id);
       })
       .catch(err => setError(friendlyError(err)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [contextProjectId]);
 
   useEffect(() => {
     if (!projectId) return;
