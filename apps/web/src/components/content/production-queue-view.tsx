@@ -440,7 +440,7 @@ export function ProductionQueueView({
               id="filter-campaign"
               value={selectedCampaignId}
               onChange={(e) => setSelectedCampaignId(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700"
+              className="w-full max-w-[280px] rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700"
             >
               <option value="">全部战役</option>
               {campaigns.map((c) => (
@@ -502,7 +502,7 @@ export function ProductionQueueView({
           </label>
         </div>
 
-        <div className="text-xs text-slate-400 font-medium">
+        <div className="min-w-0 max-w-full break-words text-xs font-medium text-slate-400">
           按紧急度与优先级严格排序（逾期优先 · 排期升序 · 平台重要度）
         </div>
       </div>

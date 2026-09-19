@@ -35,6 +35,7 @@ export default function QueriesPage() {
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiModalType, setAiModalType] = useState<"queryset" | "geotopic">("queryset");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiProvider, setAiProvider] = useState<"auto" | "deepseek" | "qwen">("auto");
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiMeta, setAiMeta] = useState<AiResponseMeta | null>(null);
   const [aiQueryResult, setAiQueryResult] = useState<{
@@ -58,6 +59,7 @@ export default function QueriesPage() {
     setAiError(null);
     try {
       const res = await generateAiQuerySet(projectId, {
+        provider: aiProvider,
         brandName: target?.canonicalName || "",
         category: target?.productCategory || "企业级行业软件",
         queryCount: 6,
@@ -79,6 +81,7 @@ export default function QueriesPage() {
     setAiError(null);
     try {
       const res = await detectAiGeoTopics(projectId, {
+        provider: aiProvider,
         brandName: target?.canonicalName || "",
         category: target?.productCategory || "",
       });
@@ -261,6 +264,8 @@ export default function QueriesPage() {
         loading={aiLoading}
         error={aiError}
         meta={aiMeta}
+        provider={aiProvider}
+        onProviderChange={setAiProvider}
         onRegenerate={aiModalType === "queryset" ? () => handleAiGenerateQuerySet() : () => handleAiDetectGeo()}
         onApply={aiModalType === "queryset" ? () => void applyAiQuerySet() : undefined}
         applyLabel="应用并创建此问题集"

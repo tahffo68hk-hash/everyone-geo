@@ -13,6 +13,8 @@ interface AiGenerationModalProps {
   meta?: AiResponseMeta | null;
   onApply?: () => void;
   onRegenerate?: () => void;
+  provider?: "auto" | "deepseek" | "qwen";
+  onProviderChange?: (provider: "auto" | "deepseek" | "qwen") => void;
   applyLabel?: string;
   children: React.ReactNode;
 }
@@ -27,10 +29,17 @@ export function AiGenerationModal({
   meta,
   onApply,
   onRegenerate,
+  provider = "auto",
+  onProviderChange,
   applyLabel = "应用结果",
   children,
 }: AiGenerationModalProps) {
   if (!isOpen) return null;
+
+  const isQwenError = provider === "qwen" && Boolean(error);
+  const userFacingError = isQwenError
+    ? "通义千问当前无法完成请求。你可以稍后重试，或者切换至 DeepSeek 继续生成。"
+    : error;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
@@ -101,7 +110,16 @@ export function AiGenerationModal({
           {error && !loading && (
             <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-lg text-red-300 text-xs flex items-start gap-2">
               <span className="font-semibold text-red-400">调用失败:</span>
-              <span>{error}</span>
+              <span>{userFacingError}</span>
+              {isQwenError && onProviderChange && (
+                <button
+                  type="button"
+                  onClick={() => onProviderChange("deepseek")}
+                  className="ml-auto shrink-0 rounded-md border border-red-700/70 px-2 py-1 font-medium text-red-200 hover:bg-red-900/50"
+                >
+                  切换至 DeepSeek
+                </button>
+              )}
             </div>
           )}
 
@@ -111,6 +129,22 @@ export function AiGenerationModal({
         {/* 底部元数据与操作栏 */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-zinc-800/80 bg-zinc-950/40 text-xs">
           <div className="flex items-center gap-3 text-zinc-500">
+            {onProviderChange && (
+              <label className="inline-flex items-center gap-1.5 text-zinc-400">
+                <span>AI 模型</span>
+                <select
+                  aria-label="AI 模型"
+                  value={provider}
+                  onChange={event => onProviderChange(event.target.value as "auto" | "deepseek" | "qwen")}
+                  disabled={loading}
+                  className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200 disabled:opacity-50"
+                >
+                  <option value="auto">自动选择</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="qwen">Qwen</option>
+                </select>
+              </label>
+            )}
             {meta && (
               <>
                 <span className="inline-flex items-center gap-1 font-mono text-zinc-400">
