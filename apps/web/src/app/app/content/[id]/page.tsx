@@ -47,6 +47,16 @@ import {
   type ImagePreviewOutput,
   type Asset,
 } from "@/lib/content-api";
+import { AiActionButton } from "@/components/ai/ai-action-button";
+import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
+import {
+  generateAiTitles,
+  rewriteAiContent,
+  optimizeAiGeoContent,
+  scanAiFactRisk,
+  generateAiFaq,
+  type AiResponseMeta,
+} from "@/lib/ai-api";
 
 const channelLabel: Record<string, string> = {
   XIAOHONGSHU: "小红书",
@@ -207,6 +217,142 @@ export default function ContentDraftDetailPage() {
   const [topic, setTopic] = useState("");
   const [body, setBody] = useState("");
   const [summary, setSummary] = useState("");
+
+  interface TitlesData {
+    titles: Array<{ title: string; style: string; rationale: string }>;
+  }
+  interface RewriteData {
+    originalContent: string;
+    rewrittenContent: string;
+    changeSummary: string;
+    diffHighlights?: string[];
+  }
+  interface GeoOptData {
+    missingQuestions: string[];
+    missingEntities: string[];
+    missingFacts: string[];
+    structuralFeedback: string[];
+    suggestedFaq: Array<{ question: string; answer: string }>;
+    optimizedContent: string;
+  }
+  interface FactRiskData {
+    claims: Array<{ claim: string; riskLevel: string; needsEvidence: boolean; reason: string }>;
+    overallRisk: string;
+    suggestions: string[];
+  }
+  interface FaqData {
+    faqs: Array<{ question: string; answer: string; userIntent: string }>;
+  }
+
+  // AI 增强能力状态
+  const [aiModalType, setAiModalType] = useState<"TITLES" | "REWRITE" | "GEO_OPT" | "FACT_RISK" | "FAQ" | null>(null);
+  const [aiActionLoading, setAiActionLoading] = useState(false);
+  const [aiActionError, setAiActionError] = useState<string | null>(null);
+  const [aiActionMetadata, setAiActionMetadata] = useState<AiResponseMeta | null>(null);
+
+  const [titlesResult, setTitlesResult] = useState<TitlesData | null>(null);
+  const [selectedCandidateTitle, setSelectedCandidateTitle] = useState<string | null>(null);
+  const [rewriteResult, setRewriteResult] = useState<RewriteData | null>(null);
+  const [geoOptResult, setGeoOptResult] = useState<GeoOptData | null>(null);
+  const [factRiskResult, setFactRiskResult] = useState<FactRiskData | null>(null);
+  const [faqResult, setFaqResult] = useState<FaqData | null>(null);
+
+  async function handleTriggerTitlesAi() {
+    if (!draft) return;
+    setAiModalType("TITLES");
+    setAiActionLoading(true);
+    setAiActionError(null);
+    try {
+      const res = await generateAiTitles(draft.projectId, {
+        topic: topic || title,
+        channel: selectedPlatform,
+        currentTitle: title,
+      });
+      setTitlesResult(res.data);
+      setAiActionMetadata(res);
+    } catch (err: any) {
+      setAiActionError(err?.message || "AI 标题生成失败");
+    } finally {
+      setAiActionLoading(false);
+    }
+  }
+
+  async function handleTriggerRewriteAi() {
+    if (!draft) return;
+    setAiModalType("REWRITE");
+    setAiActionLoading(true);
+    setAiActionError(null);
+    try {
+      const res = await rewriteAiContent(draft.projectId, {
+        content: body,
+        instructions: rewriteInstructions || selectedRewriteMode || "中立客观与信息密度提升",
+        channel: selectedPlatform,
+      });
+      setRewriteResult(res.data);
+      setAiActionMetadata(res);
+    } catch (err: any) {
+      setAiActionError(err?.message || "AI 润色改写失败");
+    } finally {
+      setAiActionLoading(false);
+    }
+  }
+
+  async function handleTriggerGeoOptAi() {
+    if (!draft) return;
+    setAiModalType("GEO_OPT");
+    setAiActionLoading(true);
+    setAiActionError(null);
+    try {
+      const res = await optimizeAiGeoContent(draft.projectId, {
+        content: body,
+        targetQueries: topic ? [topic] : [title],
+        channel: selectedPlatform,
+      });
+      setGeoOptResult(res.data);
+      setAiActionMetadata(res);
+    } catch (err: any) {
+      setAiActionError(err?.message || "AI GEO 优化分析失败");
+    } finally {
+      setAiActionLoading(false);
+    }
+  }
+
+  async function handleTriggerFactRiskAi() {
+    if (!draft) return;
+    setAiModalType("FACT_RISK");
+    setAiActionLoading(true);
+    setAiActionError(null);
+    try {
+      const res = await scanAiFactRisk(draft.projectId, {
+        content: body,
+      });
+      setFactRiskResult(res.data);
+      setAiActionMetadata(res);
+    } catch (err: any) {
+      setAiActionError(err?.message || "AI 事实风险扫描失败");
+    } finally {
+      setAiActionLoading(false);
+    }
+  }
+
+  async function handleTriggerFaqAi() {
+    if (!draft) return;
+    setAiModalType("FAQ");
+    setAiActionLoading(true);
+    setAiActionError(null);
+    try {
+      const res = await generateAiFaq(draft.projectId, {
+        topic: topic || title,
+        content: body.slice(0, 1000),
+      });
+      setFaqResult(res.data);
+      setAiActionMetadata(res);
+    } catch (err: any) {
+      setAiActionError(err?.message || "AI FAQ 生成失败");
+    } finally {
+      setAiActionLoading(false);
+    }
+  }
 
   async function loadData() {
     setLoading(true);
@@ -1718,10 +1864,46 @@ export default function ContentDraftDetailPage() {
             {/* 板块 5: 草稿基础底稿与手工保存 */}
             {activeTab === "draft-editor" && (
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-                <h2 className="text-lg font-bold text-slate-900">草稿底稿直接编辑</h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  保存会创建新的 Revision；历史版本只读。已批准后再次编辑会退回到草稿状态并需重新审核。
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">草稿底稿直接编辑</h2>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      保存会创建新的 Revision；历史版本只读。已批准后再次编辑会退回到草稿状态并需重新审核。
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <AiActionButton
+                      label="AI 标题建议"
+                      loading={aiActionLoading && aiModalType === "TITLES"}
+                      variant="secondary"
+                      onClick={() => void handleTriggerTitlesAi()}
+                    />
+                    <AiActionButton
+                      label="AI 润色改写"
+                      loading={aiActionLoading && aiModalType === "REWRITE"}
+                      variant="secondary"
+                      onClick={() => void handleTriggerRewriteAi()}
+                    />
+                    <AiActionButton
+                      label="AI GEO 结构优化"
+                      loading={aiActionLoading && aiModalType === "GEO_OPT"}
+                      variant="secondary"
+                      onClick={() => void handleTriggerGeoOptAi()}
+                    />
+                    <AiActionButton
+                      label="AI 事实风险扫描"
+                      loading={aiActionLoading && aiModalType === "FACT_RISK"}
+                      variant="secondary"
+                      onClick={() => void handleTriggerFactRiskAi()}
+                    />
+                    <AiActionButton
+                      label="AI 提取 FAQ"
+                      loading={aiActionLoading && aiModalType === "FAQ"}
+                      variant="secondary"
+                      onClick={() => void handleTriggerFaqAi()}
+                    />
+                  </div>
+                </div>
                 <label className="mt-4 block text-sm font-medium">
                   标题
                   <input
@@ -2003,6 +2185,248 @@ export default function ContentDraftDetailPage() {
             <p className="mt-3 text-xs text-slate-500">暂无操作记录。</p>
           )}
         </section>
+
+        {/* 统一 AI 能力预览弹窗 */}
+        <AiGenerationModal
+          isOpen={aiModalType !== null}
+          onClose={() => {
+            setAiModalType(null);
+            setSelectedCandidateTitle(null);
+          }}
+          title={
+            aiModalType === "TITLES"
+              ? "AI 优质标题建议"
+              : aiModalType === "REWRITE"
+              ? "AI 智能润色改写"
+              : aiModalType === "GEO_OPT"
+              ? "AI GEO 结构优化分析"
+              : aiModalType === "FACT_RISK"
+              ? "AI 事实风险扫描"
+              : aiModalType === "FAQ"
+              ? "AI 常见问答 FAQ 生成"
+              : "AI 创作助手"
+          }
+          description={
+            aiModalType === "TITLES"
+              ? "标题生成"
+              : aiModalType === "REWRITE"
+              ? "内容润色"
+              : aiModalType === "GEO_OPT"
+              ? "GEO 优化"
+              : aiModalType === "FACT_RISK"
+              ? "事实风控"
+              : aiModalType === "FAQ"
+              ? "FAQ 生成"
+              : "AI 助手"
+          }
+          loading={aiActionLoading}
+          error={aiActionError}
+          meta={aiActionMetadata}
+          onRegenerate={() => {
+            if (aiModalType === "TITLES") void handleTriggerTitlesAi();
+            else if (aiModalType === "REWRITE") void handleTriggerRewriteAi();
+            else if (aiModalType === "GEO_OPT") void handleTriggerGeoOptAi();
+            else if (aiModalType === "FACT_RISK") void handleTriggerFactRiskAi();
+            else if (aiModalType === "FAQ") void handleTriggerFaqAi();
+          }}
+          applyLabel={
+            aiModalType === "TITLES"
+              ? "采纳选中标题"
+              : aiModalType === "REWRITE"
+              ? "应用改写至正文"
+              : aiModalType === "GEO_OPT"
+              ? "确认优化建议"
+              : aiModalType === "FACT_RISK"
+              ? "确认风控结论"
+              : aiModalType === "FAQ"
+              ? "追加 FAQ 至正文"
+              : "采纳"
+          }
+          onApply={() => {
+            if (aiModalType === "TITLES" && selectedCandidateTitle) {
+              setTitle(selectedCandidateTitle);
+              setSuccessMsg(`已将标题更新为：「${selectedCandidateTitle}」`);
+            } else if (aiModalType === "REWRITE" && rewriteResult?.rewrittenContent) {
+              setBody(rewriteResult.rewrittenContent);
+              setSuccessMsg("已成功将 AI 润色内容应用至草稿底稿。");
+            } else if (aiModalType === "FAQ" && faqResult?.faqs?.length) {
+              const faqMarkdown =
+                "\n\n## 常见问答 (FAQ)\n" +
+                faqResult.faqs.map((item: { question: string; answer: string }) => `**Q: ${item.question}**\nA: ${item.answer}\n`).join("\n");
+              setBody((prev) => prev + faqMarkdown);
+              setSuccessMsg("已将 AI 生成的常见问答 (FAQ) 追加至正文底部。");
+            } else if (aiModalType === "GEO_OPT") {
+              if (geoOptResult?.optimizedContent) {
+                setBody(geoOptResult.optimizedContent);
+                setSuccessMsg("已应用 GEO 结构优化后的正文。");
+              } else {
+                setSuccessMsg("已确认 GEO 优化分析建议。");
+              }
+            } else if (aiModalType === "FACT_RISK") {
+              setSuccessMsg("已完成事实风险扫描核验。");
+            }
+            setAiModalType(null);
+            setSelectedCandidateTitle(null);
+          }}
+        >
+          {/* 1. 标题建议 */}
+          {aiModalType === "TITLES" && titlesResult && (
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-500">点击选中任意推荐标题，点击下方按钮即可一键应用到当前草稿：</p>
+              <div className="space-y-2">
+                {titlesResult.titles?.map((t: { title: string; style?: string; rationale?: string }, idx: number) => (
+                  <div
+                    key={idx}
+                    onClick={() => setSelectedCandidateTitle(t.title)}
+                    className={`cursor-pointer rounded-xl border p-3 transition ${
+                      selectedCandidateTitle === t.title
+                        ? "border-indigo-600 bg-indigo-50/60 shadow-xs"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900">{t.title}</span>
+                      {t.style && (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 font-medium">
+                          {t.style}
+                        </span>
+                      )}
+                    </div>
+                    {t.rationale && <p className="mt-1 text-[11px] text-slate-500">{t.rationale}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 2. 润色改写 */}
+          {aiModalType === "REWRITE" && rewriteResult && (
+            <div className="space-y-4 text-xs">
+              <div className="rounded-lg bg-slate-50 p-3 border border-slate-200">
+                <div className="font-semibold text-slate-800 mb-1">改写概述：</div>
+                <p className="text-slate-700">{rewriteResult.changeSummary}</p>
+              </div>
+
+              <div>
+                <div className="font-semibold text-slate-800 mb-1.5">改写后正文预览：</div>
+                <div className="rounded-lg bg-slate-900 p-3.5 text-slate-100 font-mono text-[11px] max-h-72 overflow-auto whitespace-pre-wrap">
+                  {rewriteResult.rewrittenContent}
+                </div>
+              </div>
+
+              {rewriteResult.diffHighlights && rewriteResult.diffHighlights.length > 0 && (
+                <div className="rounded-lg bg-emerald-50/70 p-3 border border-emerald-200 text-emerald-950">
+                  <span className="font-bold">主要优化要点：</span>
+                  <ul className="list-disc list-inside mt-1 space-y-0.5 text-[11px]">
+                    {rewriteResult.diffHighlights.map((imp: string, idx: number) => (
+                      <li key={idx}>{imp}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3. GEO 结构优化 */}
+          {aiModalType === "GEO_OPT" && geoOptResult && (
+            <div className="space-y-3.5 text-xs">
+              {geoOptResult.missingQuestions?.length > 0 && (
+                <div className="rounded-lg bg-amber-50/70 p-3 border border-amber-200">
+                  <div className="font-bold text-amber-950 mb-1">建议补充回答的高意图问题</div>
+                  <ul className="list-disc list-inside text-amber-900 space-y-0.5">
+                    {geoOptResult.missingQuestions.map((q: string, idx: number) => (
+                      <li key={idx}>{q}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {geoOptResult.structuralFeedback?.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="font-semibold text-slate-800">结构优化建议：</span>
+                  <ul className="list-disc list-inside text-slate-700 space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    {geoOptResult.structuralFeedback.map((fb: string, idx: number) => (
+                      <li key={idx}>{fb}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {geoOptResult.optimizedContent && (
+                <div>
+                  <span className="font-semibold text-slate-800">优化后正文草案：</span>
+                  <div className="mt-1 rounded-lg bg-slate-900 p-3 text-slate-100 font-mono text-[11px] max-h-60 overflow-auto whitespace-pre-wrap">
+                    {geoOptResult.optimizedContent}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 4. 事实风险扫描 */}
+          {aiModalType === "FACT_RISK" && factRiskResult && (
+            <div className="space-y-3 text-xs">
+              <div
+                className={`rounded-lg p-3.5 border ${
+                  factRiskResult.overallRisk === "HIGH"
+                    ? "bg-rose-50 border-rose-200 text-rose-950"
+                    : factRiskResult.overallRisk === "MEDIUM"
+                    ? "bg-amber-50 border-amber-200 text-amber-950"
+                    : "bg-emerald-50 border-emerald-200 text-emerald-950"
+                }`}
+              >
+                <div className="font-bold">
+                  综合事实风险等级：{factRiskResult.overallRisk}
+                </div>
+              </div>
+
+              {factRiskResult.claims?.length > 0 ? (
+                <div className="space-y-2">
+                  <span className="font-semibold text-slate-800">声明事实核查明细：</span>
+                  {factRiskResult.claims.map((item: { claim: string; riskLevel: string; needsEvidence: boolean; reason: string }, idx: number) => (
+                    <div key={idx} className="rounded-lg border border-slate-200 bg-white p-3 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-medium text-slate-800">“{item.claim}”</span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                            item.riskLevel === "HIGH"
+                              ? "bg-red-100 text-red-800"
+                              : item.riskLevel === "MEDIUM"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {item.riskLevel}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-rose-700">风险分析：{item.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 text-center text-slate-500">未检测到显著的事实违规或绝对化陈述风险。</div>
+              )}
+            </div>
+          )}
+
+          {/* 5. FAQ 生成 */}
+          {aiModalType === "FAQ" && faqResult && (
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-500">
+                AI 基于当前正文提取的高频问答对，点击「追加 FAQ 至正文」即可插入文末：
+              </p>
+              {faqResult.faqs?.map((faq: { question: string; answer: string; userIntent?: string }, idx: number) => (
+                <div key={idx} className="rounded-lg border border-slate-200 bg-white p-3 space-y-1">
+                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <span className="text-indigo-600 font-mono">Q{idx + 1}:</span>
+                    <span>{faq.question}</span>
+                  </div>
+                  <p className="text-slate-600 leading-relaxed pl-5">{faq.answer}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </AiGenerationModal>
       </div>
     </main>
   );

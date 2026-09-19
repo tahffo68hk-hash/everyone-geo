@@ -6,6 +6,9 @@ import { api } from "@/lib/api";
 import {
   DIAGNOSIS_NAV, formatMetricSource, formatSeverity, formatVersion, friendlyError, SEVERITY_BADGE,
 } from "@/lib/labels";
+import { AiActionButton } from "@/components/ai/ai-action-button";
+import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
+import { explainAiDiagnosis, type AiResponseMeta } from "@/lib/ai-api";
 
 type Project = { id: string; name: string };
 type ReportRow = { id: string; suiteName: string; suiteVersion: string; metricSource: string; generatedAt: string };
@@ -21,6 +24,44 @@ export default function DiagnosisListPage() {
   const [rows, setRows] = useState<Array<{ diagnosis: DiagnosisRow; report: ReportRow }>>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // AI 解读状态
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiMeta, setAiMeta] = useState<AiResponseMeta | null>(null);
+  const [selectedDiag, setSelectedDiag] = useState<{ diag: DiagnosisRow; report: ReportRow } | null>(null);
+  const [aiExplanationResult, setAiExplanationResult] = useState<{
+    summary: string;
+    explanation: string;
+    keyFindings: Array<{ point: string; impact: string; reason: string }>;
+    supportingEvidenceIds: string[];
+    limitations: string[];
+  } | null>(null);
+
+  async function handleAiExplain(diagnosis: DiagnosisRow, report: ReportRow) {
+    setSelectedDiag({ diag: diagnosis, report });
+    setIsAiModalOpen(true);
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const c = counts(diagnosis);
+      const res = await explainAiDiagnosis(projectId, {
+        diagnosisRunId: diagnosis.id,
+        diagnosisSummary: `针对 ${report.suiteName} (${report.metricSource}) 的基准测试诊断，发现高风险问题 ${c.HIGH} 项，中风险 ${c.MEDIUM} 项。`,
+        findings: [
+          { severity: "HIGH", count: c.HIGH },
+          { severity: "MEDIUM", count: c.MEDIUM },
+        ],
+      });
+      setAiMeta(res);
+      setAiExplanationResult(res.data);
+    } catch (e: any) {
+      setAiError(e?.message || "AI 诊断解读失败");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   useEffect(() => {
     api<{ projects: Project[] }>("/monitor-tasks/options")
@@ -116,7 +157,14 @@ export default function DiagnosisListPage() {
                         <span className={`mr-1 rounded px-1.5 py-0.5 text-xs font-semibold ${SEVERITY_BADGE.LOW}`}>低 {c.LOW}</span>
                         <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${SEVERITY_BADGE.INFO}`}>提示 {c.INFO}</span>
                       </td>
-                      <td className="p-2 whitespace-nowrap"><Link href={`/app/diagnosis/${diagnosis.id}`} className="text-blue-700 underline">查看详情</Link></td>
+                      <td className="p-2 whitespace-nowrap flex items-center gap-2">
+                        <Link href={`/app/diagnosis/${diagnosis.id}`} className="text-blue-700 underline text-xs font-semibold">查看详情</Link>
+                        <AiActionButton
+                          size="sm"
+                          label="AI 解读"
+                          onClick={() => handleAiExplain(diagnosis, report)}
+                        />
+                      </td>
                     </tr>
                   );
                 })}
@@ -127,6 +175,60 @@ export default function DiagnosisListPage() {
         {rows.length > 0 && (
           <p className="text-xs text-slate-400">诊断项按 {formatSeverity("HIGH")}/{formatSeverity("MEDIUM")}/{formatSeverity("LOW")}/{formatSeverity("INFO")} 统计 · 全部为确定性规则输出。</p>
         )}
+
+        {/* AI 解读弹窗 */}
+        <AiGenerationModal
+          isOpen={isAiModalOpen}
+          onClose={() => setIsAiModalOpen(false)}
+          title={`AI 解读诊断：${selectedDiag?.report.suiteName || ""}`}
+          description="基于确定性诊断事实与 Evidence，生成通俗易懂的根因分析与局限性声明"
+          loading={aiLoading}
+          error={aiError}
+          meta={aiMeta}
+          onRegenerate={selectedDiag ? () => handleAiExplain(selectedDiag.diag, selectedDiag.report) : undefined}
+        >
+          {aiExplanationResult && (
+            <div className="space-y-4">
+              <div className="p-3 bg-zinc-950/60 rounded-lg border border-zinc-800">
+                <span className="text-xs text-zinc-400 font-medium">执行摘要：</span>
+                <p className="text-sm text-zinc-200 mt-1 leading-relaxed">{aiExplanationResult.summary}</p>
+              </div>
+
+              <div className="p-3 bg-zinc-950/40 rounded-lg border border-zinc-800/80">
+                <span className="text-xs text-zinc-400 font-medium">详细解读分析：</span>
+                <p className="text-xs text-zinc-300 mt-1.5 leading-relaxed">{aiExplanationResult.explanation}</p>
+              </div>
+
+              {aiExplanationResult.keyFindings.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-zinc-300">关键发现与影响判定：</span>
+                  {aiExplanationResult.keyFindings.map((kf, idx) => (
+                    <div key={idx} className="p-2.5 bg-zinc-950/30 rounded border border-zinc-800 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-zinc-200">{kf.point}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${kf.impact === "HIGH" ? "bg-red-950 text-red-300" : "bg-amber-950 text-amber-300"}`}>
+                          影响：{kf.impact}
+                        </span>
+                      </div>
+                      <p className="text-zinc-400 text-[11px] mt-1">{kf.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {aiExplanationResult.limitations.length > 0 && (
+                <div className="p-2.5 bg-amber-950/20 border border-amber-800/40 rounded text-[11px] text-amber-300/90">
+                  <span className="font-semibold">证据与观测局限：</span>
+                  <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                    {aiExplanationResult.limitations.map((lim, idx) => (
+                      <li key={idx}>{lim}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </AiGenerationModal>
       </div>
     </main>
   );

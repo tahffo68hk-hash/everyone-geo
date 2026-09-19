@@ -7,6 +7,9 @@ import { api } from "@/lib/api";
 import { useProjectContext } from "@/components/project-context";
 import { PageHeader, LoadingSkeleton, EmptyState } from "@/components/ui";
 import { formatMetricSource, formatRunType, formatVersion, friendlyError } from "@/lib/labels";
+import { AiActionButton } from "@/components/ai/ai-action-button";
+import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
+import { summarizeAiReport, type AiResponseMeta } from "@/lib/ai-api";
 
 type ReportRow = {
   id: string;
@@ -35,6 +38,40 @@ export default function ReportsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
+
+  // AI 总结状态
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiMeta, setAiMeta] = useState<AiResponseMeta | null>(null);
+  const [selectedReport, setSelectedReport] = useState<ReportRow | null>(null);
+  const [aiReportResult, setAiReportResult] = useState<{
+    executiveSummary: string;
+    keyFindings: string[];
+    evidenceLimitations: string[];
+    recommendedNextSteps: string[];
+  } | null>(null);
+
+  async function handleAiSummarizeReport(report?: ReportRow) {
+    if (!projectId) return;
+    const targetRep = report || reports[0];
+    setSelectedReport(targetRep || null);
+    setIsAiModalOpen(true);
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await summarizeAiReport(projectId, {
+        reportId: targetRep?.id,
+        overallScore: targetRep?.summary?.visibilityRate ?? 0.75,
+      });
+      setAiMeta(res);
+      setAiReportResult(res.data);
+    } catch (e: any) {
+      setAiError(e?.message || "AI 总结报告失败");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   /** 生成（幂等：已存在则返回既有诊断）并进入诊断详情。 */
   async function generateDiagnosis(reportId: string) {
@@ -88,6 +125,13 @@ export default function ReportsPage() {
         description={`不可变报告快照：测试集、分析版本、竞品集合与指标均在生成时冻结，不随后续操作漂移。当前项目：${project?.name ?? "未选择"}`}
         actions={
           <div className="flex items-center gap-2">
+            {reports.length > 0 && (
+              <AiActionButton
+                label="AI 总结全周期报告"
+                onClick={() => handleAiSummarizeReport()}
+                loading={aiLoading && !selectedReport}
+              />
+            )}
             <Link
               href="/app/benchmark"
               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50"
@@ -156,16 +200,24 @@ export default function ReportsPage() {
                     <div className="mt-0.5 text-[10px] text-slate-400">成功 {report.completion.succeededRuns}/{report.completion.completedRuns}</div>
                   </td>
                   <td className="p-3 whitespace-nowrap text-right">
-                    {report.completion.succeededRuns > 0 ? (
-                      <button
-                        type="button"
-                        disabled={busyId !== ""}
-                        onClick={() => void generateDiagnosis(report.id)}
-                        className="rounded-lg bg-teal-50 border border-teal-200 px-2.5 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:opacity-50"
-                      >
-                        {busyId === report.id ? "生成中…" : "生成 GEO 问题诊断"}
-                      </button>
-                    ) : <span className="text-slate-300">—</span>}
+                    <div className="flex items-center justify-end gap-2">
+                      {report.completion.succeededRuns > 0 ? (
+                        <button
+                          type="button"
+                          disabled={busyId !== ""}
+                          onClick={() => void generateDiagnosis(report.id)}
+                          className="rounded-lg bg-teal-50 border border-teal-200 px-2.5 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                        >
+                          {busyId === report.id ? "生成中…" : "生成 GEO 问题诊断"}
+                        </button>
+                      ) : <span className="text-slate-300">—</span>}
+
+                      <AiActionButton
+                        size="sm"
+                        label="AI 总结"
+                        onClick={() => handleAiSummarizeReport(report)}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -173,6 +225,61 @@ export default function ReportsPage() {
           </table>
         </section>
       )}
+
+      {/* AI 报告总结弹窗 */}
+      <AiGenerationModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        title={`AI 总结报告：${selectedReport ? selectedReport.suiteName : "全周期报告"}`}
+        description="客观提炼测试集的核心表现、亮点、证据局限性与下一步行动"
+        loading={aiLoading}
+        error={aiError}
+        meta={aiMeta}
+        onRegenerate={() => handleAiSummarizeReport(selectedReport || undefined)}
+      >
+        {aiReportResult && (
+          <div className="space-y-4">
+            <div className="p-3 bg-zinc-950/60 rounded-lg border border-zinc-800">
+              <span className="text-xs text-zinc-400 font-medium">执行摘要：</span>
+              <p className="text-sm text-zinc-200 mt-1 leading-relaxed">{aiReportResult.executiveSummary}</p>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-zinc-300">核心洞察与发现：</span>
+              <ul className="space-y-1.5 text-xs text-zinc-300">
+                {aiReportResult.keyFindings.map((kf, idx) => (
+                  <li key={idx} className="p-2.5 bg-zinc-950/40 rounded border border-zinc-800 flex items-start gap-2">
+                    <span className="text-indigo-400 font-bold">•</span>
+                    <span>{kf}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {aiReportResult.recommendedNextSteps.length > 0 && (
+              <div className="p-3 bg-indigo-950/20 border border-indigo-800/40 rounded-lg text-xs">
+                <span className="font-semibold text-indigo-300">建议下一步行动 (AI 建议，非强制)：</span>
+                <ul className="list-disc pl-4 mt-1.5 text-indigo-200/90 space-y-1">
+                  {aiReportResult.recommendedNextSteps.map((step, idx) => (
+                    <li key={idx}>{step}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {aiReportResult.evidenceLimitations.length > 0 && (
+              <div className="p-2.5 bg-zinc-950/40 border border-zinc-800 rounded text-[11px] text-zinc-400">
+                <span className="font-semibold text-zinc-300">数据与观测局限性：</span>
+                <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                  {aiReportResult.evidenceLimitations.map((lim, idx) => (
+                    <li key={idx}>{lim}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </AiGenerationModal>
     </div>
   );
 }

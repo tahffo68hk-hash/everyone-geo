@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatMetricSource, formatVersion, friendlyError } from "@/lib/labels";
+import { AiActionButton } from "@/components/ai/ai-action-button";
+import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
+import { draftAiRecommendation, type AiResponseMeta } from "@/lib/ai-api";
 
 type Project = { id: string; name: string };
 type ReportRow = { id: string; suiteName: string; suiteVersion: string; metricSource: string };
@@ -20,6 +23,40 @@ export default function RecommendationsListPage() {
   const [rows, setRows] = useState<Array<{ run: RecRun; report: ReportRow }>>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // AI 智能建议草稿状态
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiMeta, setAiMeta] = useState<AiResponseMeta | null>(null);
+  const [aiRecResult, setAiRecResult] = useState<{
+    title: string;
+    problem: string;
+    action: string;
+    expectedObservableSignal: string;
+    priorityRationale: string;
+    dependencies: string[];
+    risks: string[];
+  } | null>(null);
+
+  async function handleAiDraft(run?: RecRun) {
+    if (!projectId) return;
+    setIsAiModalOpen(true);
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await draftAiRecommendation(projectId, {
+        diagnosisId: run?.diagnosisRunId,
+        problemDescription: run ? `针对建议集 ${run.recommendationVersion}，包含 ${run.summary.recommendationCount} 条行动项。` : "针对核心选型问题的可见度优化",
+      });
+      setAiMeta(res);
+      setAiRecResult(res.data);
+    } catch (e: any) {
+      setAiError(e?.message || "AI 生成建议草稿失败");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   useEffect(() => {
     api<{ projects: Project[] }>("/monitor-tasks/options")
@@ -106,16 +143,74 @@ export default function RecommendationsListPage() {
                     中 <span className="font-semibold text-amber-700">{c.MEDIUM}</span> ·
                     低 <span className="font-semibold text-blue-700">{c.LOW}</span>
                   </p>
-                  <div className="mt-2 flex flex-wrap gap-1 text-xs">
-                    {(run.summary?.directions ?? []).map(d => (
-                      <span key={d} className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-600">{d}</span>
-                    ))}
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-1 text-xs">
+                      {(run.summary?.directions ?? []).map(d => (
+                        <span key={d} className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-600">{d}</span>
+                      ))}
+                    </div>
+                    <AiActionButton
+                      size="sm"
+                      label="AI 建议扩写"
+                      onClick={() => handleAiDraft(run)}
+                    />
                   </div>
                 </div>
               );
             })}
           </section>
         )}
+
+        {/* AI 优化建议草稿弹窗 */}
+        <AiGenerationModal
+          isOpen={isAiModalOpen}
+          onClose={() => setIsAiModalOpen(false)}
+          title="AI 智能优化建议草稿"
+          description="基于确定性诊断事实与观测信号，生成针对性行动计划草稿（非效果承诺）"
+          loading={aiLoading}
+          error={aiError}
+          meta={aiMeta}
+          onRegenerate={() => handleAiDraft()}
+        >
+          {aiRecResult && (
+            <div className="space-y-4">
+              <div className="p-3 bg-zinc-950/60 rounded-lg border border-zinc-800">
+                <span className="text-xs text-zinc-400 font-medium">建议方案标题：</span>
+                <p className="text-sm font-bold text-zinc-100 mt-1">{aiRecResult.title}</p>
+                <p className="text-xs text-zinc-400 mt-1">定位问题：{aiRecResult.problem}</p>
+              </div>
+
+              <div className="p-3 bg-zinc-950/40 rounded-lg border border-zinc-800/80">
+                <span className="text-xs text-zinc-400 font-medium">建议具体行动：</span>
+                <p className="text-xs text-zinc-200 mt-1.5 leading-relaxed">{aiRecResult.action}</p>
+              </div>
+
+              <div className="p-3 bg-teal-950/20 border border-teal-800/40 rounded-lg text-xs">
+                <span className="font-semibold text-teal-300">预期可观测信号 (Expected Observable Signal)：</span>
+                <p className="text-teal-200/90 mt-1 leading-relaxed">{aiRecResult.expectedObservableSignal}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
+                <div className="p-2.5 bg-zinc-950/40 rounded border border-zinc-800">
+                  <span className="font-semibold text-zinc-400">前置依赖：</span>
+                  <ul className="list-disc pl-4 mt-1 text-zinc-300 space-y-0.5">
+                    {aiRecResult.dependencies.map((dep, idx) => (
+                      <li key={idx}>{dep}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="p-2.5 bg-zinc-950/40 rounded border border-zinc-800">
+                  <span className="font-semibold text-amber-400">潜在风险注意：</span>
+                  <ul className="list-disc pl-4 mt-1 text-zinc-300 space-y-0.5">
+                    {aiRecResult.risks.map((risk, idx) => (
+                      <li key={idx}>{risk}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+        </AiGenerationModal>
       </div>
     </main>
   );

@@ -8,6 +8,10 @@ import {
   type AssetOutcomeWorkspace,
   type QueryOutcomeRow,
 } from "@/lib/outcome-api";
+import { useProjectContext } from "@/components/project-context";
+import { AiActionButton } from "@/components/ai/ai-action-button";
+import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
+import { explainAiAttribution, type AiResponseMeta } from "@/lib/ai-api";
 import { QueryOutcomeTable } from "./query-outcome-table";
 import { QueryOutcomeDrawer } from "./query-outcome-drawer";
 
@@ -18,13 +22,29 @@ interface AssetOutcomeOverviewProps {
   isRerunning?: boolean;
 }
 
+interface AttributionData {
+  explanation: string;
+  keyFactors: string[];
+  confoundingNotes: string[];
+  attributionStatusNotice: string;
+}
+
 export function AssetOutcomeOverview({
   workspace,
   onBack,
   onRerunRetest,
   isRerunning,
 }: AssetOutcomeOverviewProps) {
+  const { projectId } = useProjectContext();
   const [selectedRow, setSelectedRow] = useState<QueryOutcomeRow | null>(null);
+
+  // AI 归因解读状态
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiMetadata, setAiMetadata] = useState<AiResponseMeta | null>(null);
+  const [attributionResult, setAttributionResult] = useState<AttributionData | null>(null);
+  const [aiAnalysisSaved, setAiAnalysisSaved] = useState<string | null>(null);
 
   const asset = workspace.asset;
   const activeRun = workspace.activeRetestRun;
@@ -34,6 +54,37 @@ export function AssetOutcomeOverview({
   const compSummary = activeRun?.comparabilitySummary;
   const obsSummary = activeRun?.observedChangesSummary;
   const attrSummary = activeRun?.attributionSummary;
+
+  async function handleTriggerAiAttribution() {
+    if (!projectId) return;
+    setAiModalOpen(true);
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await explainAiAttribution(projectId, {
+        assetTitle: asset.title,
+        platform: asset.platform,
+        retestSummary: {
+          comparable: compSummary?.comparableItems,
+          brandMentionsDelta: obsSummary?.mentionAbsentToPresent,
+          citationDelta: obsSummary?.citationCountDeltaTotal,
+          likelyRelated: attrSummary?.likelyRelatedCount,
+        },
+        queryLevelDetails: activeRun?.queryRows?.slice(0, 10).map((r) => ({
+          query: r.queryText,
+          before: r.outcome?.beforeSnapshot?.brandMentionStatus || "ABSENT",
+          after: r.outcome?.afterSnapshot?.brandMentionStatus || "ABSENT",
+          attribution: r.attribution?.status || "INSUFFICIENT_EVIDENCE",
+        })),
+      });
+      setAttributionResult(res.data);
+      setAiMetadata(res);
+    } catch (err: any) {
+      setAiError(err?.message || "AI 归因解读失败，请检查网络或配置");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -58,16 +109,24 @@ export function AssetOutcomeOverview({
           </div>
         </div>
 
-        {onRerunRetest && (
-          <button
-            type="button"
-            disabled={isRerunning}
-            onClick={onRerunRetest}
-            className="ui-button primary text-xs"
-          >
-            {isRerunning ? "正在执行复测评测…" : "重新执行 GEO 复测"}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <AiActionButton
+            label="AI 智能归因解读"
+            loading={aiLoading}
+            variant="secondary"
+            onClick={() => void handleTriggerAiAttribution()}
+          />
+          {onRerunRetest && (
+            <button
+              type="button"
+              disabled={isRerunning}
+              onClick={onRerunRetest}
+              className="ui-button primary text-xs"
+            >
+              {isRerunning ? "正在执行复测评测…" : "重新执行 GEO 复测"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 资产与复测配置概览卡片 */}
@@ -261,8 +320,84 @@ export function AssetOutcomeOverview({
         </>
       )}
 
+      {/* AI 归因分析采纳展示 */}
+      {aiAnalysisSaved && (
+        <div className="surface p-4 rounded-xl border-teal-200 bg-teal-50/70 text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-teal-900 flex items-center gap-1.5">
+              <span>🤖</span> 已采纳 AI 归因解读结论
+            </span>
+            <button
+              type="button"
+              onClick={() => setAiAnalysisSaved(null)}
+              className="text-slate-400 hover:text-slate-600"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="text-slate-800 leading-relaxed">{aiAnalysisSaved}</p>
+        </div>
+      )}
+
       {/* 详细抽屉 */}
       <QueryOutcomeDrawer row={selectedRow} onClose={() => setSelectedRow(null)} />
+
+      {/* AI 归因解读预览弹窗 */}
+      <AiGenerationModal
+        isOpen={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        title="AI 智能归因分析解读"
+        description="效果归因洞察"
+        loading={aiLoading}
+        error={aiError}
+        meta={aiMetadata}
+        onRegenerate={() => void handleTriggerAiAttribution()}
+        applyLabel="采纳并沉淀为分析说明"
+        onApply={() => {
+          if (attributionResult) {
+            setAiAnalysisSaved(attributionResult.explanation);
+          }
+          setAiModalOpen(false);
+        }}
+      >
+        {attributionResult && (
+          <div className="space-y-4 text-xs">
+            <div className="rounded-lg bg-teal-50/70 p-3.5 border border-teal-200/80">
+              <div className="font-bold text-teal-950 mb-1">归因机理剖析 (Attribution Rationale)</div>
+              <p className="text-teal-900 leading-relaxed">{attributionResult.explanation}</p>
+            </div>
+
+            {attributionResult.keyFactors?.length > 0 && (
+              <div className="rounded-lg bg-slate-50 p-3 border border-slate-200">
+                <div className="font-bold text-slate-800 mb-1">核心影响因子</div>
+                <ul className="list-disc list-inside space-y-0.5 text-slate-700">
+                  {attributionResult.keyFactors.map((factor: string, i: number) => (
+                    <li key={i}>{factor}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {attributionResult.confoundingNotes?.length > 0 && (
+              <div className="rounded-lg bg-amber-50/60 p-3 border border-amber-200/80">
+                <div className="font-bold text-amber-900 mb-1">混杂与干扰因素排查</div>
+                <ul className="list-disc list-inside space-y-0.5 text-amber-950">
+                  {attributionResult.confoundingNotes.map((note: string, i: number) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {attributionResult.attributionStatusNotice && (
+              <div className="rounded-lg bg-slate-100 p-2.5 text-[11px] text-slate-600">
+                <span className="font-semibold text-slate-700">归因边界说明：</span>
+                <span className="text-slate-600 ml-1">{attributionResult.attributionStatusNotice}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </AiGenerationModal>
     </div>
   );
 }

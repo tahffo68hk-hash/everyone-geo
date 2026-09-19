@@ -35,6 +35,13 @@ import { ContentCalendarView } from "@/components/content/content-calendar-view"
 import { CampaignWorkspaceView } from "@/components/content/campaign-workspace-view";
 import { CreateCampaignModal } from "@/components/content/create-campaign-modal";
 import { OutcomeWorkspaceView } from "@/components/content/outcome-workspace/outcome-workspace-view";
+import { AiActionButton } from "@/components/ai/ai-action-button";
+import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
+import {
+  draftAiStrategy,
+  generateAiOutline,
+  type AiResponseMeta,
+} from "@/lib/ai-api";
 
 const statusLabel: Record<string, string> = {
   DRAFT: "草稿",
@@ -133,6 +140,74 @@ export default function ContentWorkspacePage() {
   const [targetEntityInput, setTargetEntityInput] = useState("");
   const [generatingStrategy, setGeneratingStrategy] = useState(false);
   const [creatingDraftId, setCreatingDraftId] = useState<string | null>(null);
+
+  interface StrategyDraftData {
+    objective: string;
+    priorityQuestions: string[];
+    targetAudiences: string[];
+    contentDirections: Array<{ name: string; description: string; targetChannels: string[] }>;
+    successObservationPlan: string[];
+    risks: string[];
+  }
+
+  interface OutlineData {
+    outline: Array<{ section: string; subpoints: string[]; intentToSatisfy: string }>;
+  }
+
+  // AI 战略与大纲辅助状态
+  const [strategyAiModalOpen, setStrategyAiModalOpen] = useState(false);
+  const [strategyAiLoading, setStrategyAiLoading] = useState(false);
+  const [strategyAiError, setStrategyAiError] = useState<string | null>(null);
+  const [strategyAiMetadata, setStrategyAiMetadata] = useState<AiResponseMeta | null>(null);
+  const [strategyDraftResult, setStrategyDraftResult] = useState<StrategyDraftData | null>(null);
+
+  const [outlineAiModalOpen, setOutlineAiModalOpen] = useState(false);
+  const [outlineAiLoading, setOutlineAiLoading] = useState(false);
+  const [outlineAiError, setOutlineAiError] = useState<string | null>(null);
+  const [outlineAiMetadata, setOutlineAiMetadata] = useState<AiResponseMeta | null>(null);
+  const [outlineResult, setOutlineResult] = useState<OutlineData | null>(null);
+  const [activeOutlineItemTitle, setActiveOutlineItemTitle] = useState<string>("");
+
+  async function handleTriggerStrategyAi() {
+    if (!projectId) return;
+    setStrategyAiModalOpen(true);
+    setStrategyAiLoading(true);
+    setStrategyAiError(null);
+    try {
+      const res = await draftAiStrategy(projectId, {
+        currentGoal: "提升品牌在生成式大模型评测中的推荐意图覆盖与权威事实引用",
+        businessContext: "多平台内容矩阵",
+      });
+      setStrategyDraftResult(res.data);
+      setStrategyAiMetadata(res);
+    } catch (err: any) {
+      setStrategyAiError(err?.message || "AI 战略规划生成失败");
+    } finally {
+      setStrategyAiLoading(false);
+    }
+  }
+
+  async function handleTriggerOutlineAi(item: ContentPlanItem) {
+    if (!projectId) return;
+    setActiveOutlineItemTitle(item.title);
+    setOutlineAiModalOpen(true);
+    setOutlineAiLoading(true);
+    setOutlineAiError(null);
+    try {
+      const res = await generateAiOutline(projectId, {
+        topic: item.title,
+        targetQuery: item.targetQueries?.[0] || item.title,
+        platform: item.platform,
+        angle: item.objective,
+      });
+      setOutlineResult(res.data);
+      setOutlineAiMetadata(res);
+    } catch (err: any) {
+      setOutlineAiError(err?.message || "AI 大纲生成失败");
+    } finally {
+      setOutlineAiLoading(false);
+    }
+  }
 
   // 加载草稿与发布数据
   async function loadDraftsData() {
@@ -382,6 +457,12 @@ export default function ContentWorkspacePage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <AiActionButton
+              label="AI 辅助战略提案"
+              loading={strategyAiLoading}
+              variant="secondary"
+              onClick={() => void handleTriggerStrategyAi()}
+            />
             <button
               type="button"
               onClick={() => handleOpenCreateCampaign()}
@@ -889,8 +970,14 @@ export default function ContentWorkspacePage() {
                                     <h4 className="text-base font-bold text-slate-900">{item.title}</h4>
                                   </div>
 
-                                  {/* 操作按钮：一键生成草稿 或 查看已生成草稿 或 阻断禁用 */}
+                                    {/* 操作按钮：一键生成草稿 或 查看已生成草稿 或 阻断禁用 */}
                                   <div className="flex items-center gap-2">
+                                    <AiActionButton
+                                      label="AI 拟定大纲"
+                                      loading={outlineAiLoading && activeOutlineItemTitle === item.title}
+                                      variant="secondary"
+                                      onClick={() => void handleTriggerOutlineAi(item)}
+                                    />
                                     {item.draftId ? (
                                       <Link
                                         href={`/app/content/${item.draftId}`}
@@ -1377,6 +1464,119 @@ export default function ContentWorkspacePage() {
             setOpView("campaigns");
           }}
         />
+
+        {/* AI 辅助战略规划预览弹窗 */}
+        <AiGenerationModal
+          isOpen={strategyAiModalOpen}
+          onClose={() => setStrategyAiModalOpen(false)}
+          title="AI 辅助战略提案生成"
+          description="战略规划"
+          loading={strategyAiLoading}
+          error={strategyAiError}
+          meta={strategyAiMetadata}
+          onRegenerate={() => void handleTriggerStrategyAi()}
+          applyLabel="采纳并填入战略方案生成器"
+          onApply={() => {
+            if (strategyDraftResult) {
+              setCustomTitle(strategyDraftResult.objective ? `GEO内容战略：${strategyDraftResult.objective}` : "");
+              setCustomGuidance(
+                `目标：${strategyDraftResult.objective}\n\n受众：${strategyDraftResult.targetAudiences?.join("、") || ""}\n\n重点问题：\n${strategyDraftResult.priorityQuestions?.map((q) => `· ${q}`).join("\n") || ""}`
+              );
+              setShowNewStrategyModal(true);
+            }
+            setStrategyAiModalOpen(false);
+          }}
+        >
+          {strategyDraftResult && (
+            <div className="space-y-4 text-xs">
+              <div className="rounded-lg bg-indigo-50/70 p-3.5 border border-indigo-200/80">
+                <div className="font-bold text-indigo-950 mb-1">战略目标 (Strategic Objective)</div>
+                <p className="text-indigo-900 leading-relaxed">{strategyDraftResult.objective}</p>
+              </div>
+
+              {strategyDraftResult.priorityQuestions?.length > 0 && (
+                <div className="rounded-lg bg-slate-50 p-3 border border-slate-200 space-y-1">
+                  <span className="font-semibold text-slate-800">优先级战略问题：</span>
+                  <ul className="list-disc list-inside space-y-0.5 text-slate-700">
+                    {strategyDraftResult.priorityQuestions.map((q: string, i: number) => (
+                      <li key={i}>{q}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {strategyDraftResult.contentDirections?.length > 0 && (
+                <div className="space-y-2">
+                  <span className="font-semibold text-slate-800">推荐内容矩阵方向：</span>
+                  {strategyDraftResult.contentDirections.map((dir: { name: string; description: string; targetChannels: string[] }, idx: number) => (
+                    <div key={idx} className="rounded-lg border border-slate-200 bg-white p-2.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900">{dir.name}</span>
+                        <div className="flex gap-1">
+                          {dir.targetChannels?.map((ch: string, cIdx: number) => (
+                            <span key={cIdx} className="rounded bg-slate-100 px-1 py-0.2 text-[10px] text-slate-600">
+                              {ch}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="mt-1 text-slate-600 text-[11px]">{dir.description}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </AiGenerationModal>
+
+        {/* AI 内容大纲预览弹窗 */}
+        <AiGenerationModal
+          isOpen={outlineAiModalOpen}
+          onClose={() => setOutlineAiModalOpen(false)}
+          title={`AI 内容大纲拟定 · ${activeOutlineItemTitle}`}
+          description="内容生产大纲"
+          loading={outlineAiLoading}
+          error={outlineAiError}
+          meta={outlineAiMetadata}
+          onRegenerate={() => {
+            const currentItem = selectedStrategy?.planItems?.find((p) => p.title === activeOutlineItemTitle);
+            if (currentItem) void handleTriggerOutlineAi(currentItem);
+          }}
+          applyLabel="确认并以此大纲推进"
+          onApply={() => {
+            setOutlineAiModalOpen(false);
+            setSuccessMsg(`已完成「${activeOutlineItemTitle}」的 AI 大纲拟定，可直接点击「以此计划生成草稿」进入编辑创作。`);
+          }}
+        >
+          {outlineResult && (
+            <div className="space-y-4 text-xs">
+              {outlineResult.outline?.length > 0 && (
+                <div className="space-y-2.5">
+                  <span className="font-semibold text-slate-800">推荐分节大纲与意图满足：</span>
+                  {outlineResult.outline.map((sec: { section: string; subpoints: string[]; intentToSatisfy: string }, idx: number) => (
+                    <div key={idx} className="rounded-lg border border-slate-200 bg-white p-3 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900">{sec.section}</span>
+                        {sec.intentToSatisfy && (
+                          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700 font-medium">
+                            满足意图: {sec.intentToSatisfy}
+                          </span>
+                        )}
+                      </div>
+                      {sec.subpoints?.length > 0 && (
+                        <ul className="list-disc list-inside text-slate-600 text-[11px] pl-1 space-y-0.5 mt-1">
+                          {sec.subpoints.map((pt: string, pIdx: number) => (
+                            <li key={pIdx}>{pt}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </AiGenerationModal>
       </div>
     </main>
   );
