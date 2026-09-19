@@ -56,6 +56,8 @@ model Organization {
   retestRuns           RetestRun[]
   outcomeComparisons   OutcomeComparison[]
   outcomeAttributions  OutcomeAttribution[]
+  learningObservations LearningObservation[]
+  learningAggregates   LearningAggregate[]
 
   // 策略：Organization 为顶层租户实体，删除行为谨慎 —— 存在 Project 时禁止删除（Restrict）。
   // 成员关系随组织级联删除（成员身份从属于组织生命周期）。
@@ -136,6 +138,8 @@ model Project {
   retestRuns           RetestRun[]
   outcomeComparisons   OutcomeComparison[]
   outcomeAttributions  OutcomeAttribution[]
+  learningObservations LearningObservation[]
+  learningAggregates   LearningAggregate[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -1849,6 +1853,7 @@ model PublishedAsset {
   retestRuns         RetestRun[]
   outcomeComparisons OutcomeComparison[]
   outcomeAttributions OutcomeAttribution[]
+  learningObservations LearningObservation[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -2089,6 +2094,7 @@ model RetestRun {
   items                RetestItem[]
   outcomes             OutcomeComparison[]
   outcomeAttributions  OutcomeAttribution[]
+  learningObservations LearningObservation[]
 
   @@map("retest_runs")
   @@index([organizationId, createdAt])
@@ -2126,6 +2132,7 @@ model RetestItem {
   retestRun            RetestRun        @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
   outcomes             OutcomeComparison[]
   outcomeAttributions  OutcomeAttribution[]
+  learningObservations LearningObservation[]
 
   @@map("retest_items")
   @@index([retestRunId])
@@ -2162,6 +2169,7 @@ model OutcomeComparison {
   retestRun             RetestRun      @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
   retestItem            RetestItem     @relation(fields: [retestItemId], references: [id], onDelete: Cascade)
   attributions          OutcomeAttribution[]
+  learningObservations  LearningObservation[]
 
   @@unique([retestItemId, comparisonVersion])
   @@map("outcome_comparisons")
@@ -2201,6 +2209,7 @@ model OutcomeAttribution {
   retestRun            RetestRun         @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
   retestItem           RetestItem        @relation(fields: [retestItemId], references: [id], onDelete: Cascade)
   outcomeComparison    OutcomeComparison @relation(fields: [outcomeComparisonId], references: [id], onDelete: Cascade)
+  learningObservations LearningObservation[]
 
   @@unique([outcomeComparisonId, attributionVersion])
   @@map("outcome_attributions")
@@ -2210,4 +2219,105 @@ model OutcomeAttribution {
   @@index([retestRunId])
   @@index([queryId])
   @@index([status])
+}
+
+// ============================================================
+// M11A - GEO Learning Signal Foundation
+// ============================================================
+// 核心原则：
+//   1) Observation first, Learning second, Recommendation later, Automation last.
+//   2) LearningObservation 为事实型观察记录，非行动建议或策略推荐；
+//   3) 消费冻结的 OutcomeComparison 与 OutcomeAttribution，严格不可变快照追溯；
+//   4) 幂等性：基于 outcomeAttributionId + observationType + observationVersion 唯一约束；
+//   5) 模式聚合 (LearningAggregate)：仅在达到最低样本阈值（如 sampleCount >= 3）时生成，禁止单样本包装为规律，禁止虚假置信度百分比。
+
+model LearningObservation {
+  id                    String            @id @default(uuid()) @db.Uuid
+  organizationId        String            @map("organization_id") @db.Uuid
+  projectId             String            @map("project_id") @db.Uuid
+  publishedAssetId      String            @map("published_asset_id") @db.Uuid
+  retestRunId           String            @map("retest_run_id") @db.Uuid
+  retestItemId          String            @map("retest_item_id") @db.Uuid
+  outcomeComparisonId   String            @map("outcome_comparison_id") @db.Uuid
+  outcomeAttributionId  String            @map("outcome_attribution_id") @db.Uuid
+
+  queryId               String            @map("query_id") @db.Uuid
+  queryText             String            @map("query_text")
+
+  observationVersion    String            @default("m11a-learning-observation-v1") @map("observation_version")
+  observationType       String            @map("observation_type")
+  // BRAND_MENTION_CHANGE, CITATION_CHANGE, POSITION_CHANGE, RECOMMENDATION_CHANGE, SENTIMENT_CHANGE, COMPETITOR_CHANGE, NO_OBSERVED_CHANGE, MEASUREMENT_LIMITATION, ATTRIBUTION_LIMITATION
+
+  direction             String            @default("UNKNOWN") @map("direction") // POSITIVE, NEGATIVE, NO_CHANGE, MIXED, UNKNOWN
+
+  attributionStatus     String            @map("attribution_status") // LIKELY_RELATED, INSUFFICIENT_EVIDENCE, CONFOUNDED, NO_OBSERVED_CHANGE
+  baselineCompatibility String            @map("baseline_compatibility") // EXACT_MATCH, COMPARABLE_WITH_WARNING, INCOMPATIBLE, MISSING_BASELINE
+
+  signalsSnapshot       Json              @default("{}") @map("signals_snapshot")
+  evidenceSnapshot      Json              @default("{}") @map("evidence_snapshot")
+  contextSnapshot       Json              @default("{}") @map("context_snapshot")
+
+  summary               String            @default("")
+  metadata              Json              @default("{}")
+
+  createdById           String?           @map("created_by_id") @db.Uuid
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  organization          Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project               Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  publishedAsset        PublishedAsset    @relation(fields: [publishedAssetId], references: [id], onDelete: Cascade)
+  retestRun             RetestRun         @relation(fields: [retestRunId], references: [id], onDelete: Cascade)
+  retestItem            RetestItem        @relation(fields: [retestItemId], references: [id], onDelete: Cascade)
+  outcomeComparison     OutcomeComparison @relation(fields: [outcomeComparisonId], references: [id], onDelete: Cascade)
+  outcomeAttribution    OutcomeAttribution @relation(fields: [outcomeAttributionId], references: [id], onDelete: Cascade)
+
+  @@unique([outcomeAttributionId, observationType, observationVersion])
+  @@map("learning_observations")
+  @@index([organizationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([publishedAssetId, createdAt])
+  @@index([outcomeAttributionId])
+  @@index([outcomeComparisonId])
+  @@index([queryId])
+  @@index([observationType])
+  @@index([direction])
+  @@index([attributionStatus])
+}
+
+model LearningAggregate {
+  id                    String            @id @default(uuid()) @db.Uuid
+  organizationId        String            @map("organization_id") @db.Uuid
+  projectId             String            @map("project_id") @db.Uuid
+
+  aggregateKey          String            @map("aggregate_key")
+  aggregateType         String            @map("aggregate_type")
+
+  sampleCount           Int               @default(0) @map("sample_count")
+  likelyRelatedCount    Int               @default(0) @map("likely_related_count")
+  insufficientCount     Int               @default(0) @map("insufficient_count")
+  confoundedCount       Int               @default(0) @map("confounded_count")
+  noChangeCount         Int               @default(0) @map("no_change_count")
+
+  positiveCount         Int               @default(0) @map("positive_count")
+  negativeCount         Int               @default(0) @map("negative_count")
+  neutralCount          Int               @default(0) @map("neutral_count")
+
+  supportingObservationIds Json           @default("[]") @map("supporting_observation_ids")
+  attributionDistribution  Json           @default("{}") @map("attribution_distribution")
+  contextSnapshot          Json           @default("{}") @map("context_snapshot")
+
+  summary               String            @default("")
+  metadata              Json              @default("{}")
+
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  organization          Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project               Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, aggregateKey])
+  @@map("learning_aggregates")
+  @@index([organizationId])
+  @@index([projectId])
 }
