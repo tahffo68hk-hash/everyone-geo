@@ -379,13 +379,13 @@ export class ContentCalendarEngine {
     // 3. 平台权重 (微信/小红书 P1 > Bili/抖音 P2 > 微博 P3)
     const platformA = a.platform || a.planItem?.platform || "";
     const platformB = b.platform || b.planItem?.platform || "";
-    const wA = this.getPlatformWeight(platformA);
-    const wB = this.getPlatformWeight(platformB);
+    const wA = ContentCalendarEngine.getPlatformWeight(platformA);
+    const wB = ContentCalendarEngine.getPlatformWeight(platformB);
     if (wA !== wB) return wA - wB;
 
     // 4. 就绪度权重
-    const rA = this.getStatusWeight(a.productionStatus);
-    const rB = this.getStatusWeight(b.productionStatus);
+    const rA = ContentCalendarEngine.getStatusWeight(a.productionStatus);
+    const rB = ContentCalendarEngine.getStatusWeight(b.productionStatus);
     if (rA !== rB) return rA - rB;
 
     // 5. 序号
