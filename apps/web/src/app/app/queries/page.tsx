@@ -101,10 +101,19 @@ export default function QueriesPage() {
           name: aiQueryResult.querySetName,
           version: "1",
           queries: aiQueryResult.queries.map(q => ({
-            text: q.text,
-            category: q.category,
+            // AI 预览使用 text；Benchmark Suite API 的持久化契约使用 queryText。
+            queryText: q.text,
+            category: q.category === "行业选型"
+              ? "tool-discovery"
+              : q.category === "痛点解决"
+                ? "pain-point"
+                : q.category === "竞品对比"
+                  ? "comparison"
+                  : q.category === "品牌基线"
+                    ? "sanity-control"
+                    : "workflow",
             intent: q.intent,
-            semanticType: q.queryType === "DISCOVERY" ? "DISCOVERY" : "BRANDED_SANITY",
+            queryType: q.queryType === "DISCOVERY" ? "DISCOVERY" : "BRANDED_SANITY",
           })),
         }),
       });
