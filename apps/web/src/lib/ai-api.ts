@@ -4,6 +4,7 @@ export interface AiResponseMeta<T = any> {
   content: string;
   data: T;
   provider: string;
+  requestedProvider: "deepseek" | "qwen" | "mock" | "auto";
   model: string;
   requestedModel: string;
   actualModel: string | null;
@@ -20,6 +21,10 @@ export interface AiProviderInfo {
   provider: string;
   configured: boolean;
   hasKey: boolean;
+  enabled: boolean;
+  realModeAllowed: boolean;
+  availability: "available" | "not_checked" | "disabled" | "missing";
+  lastErrorCode: string | null;
   defaultModel: string;
   baseUrl: string;
 }

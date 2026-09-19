@@ -38,6 +38,7 @@ export interface AiGatewayResponse<T = any> {
   data?: T;
 
   provider: string;
+  requestedProvider: AiProviderName;
   model: string;
   requestedModel: string;
   actualModel: string | null;
@@ -127,6 +128,36 @@ export function calculateEstimatedCost(
 // In-flight debounce map: key = `${organizationId}:${feature}:${hash/idempotencyKey}`
 const pendingRequests = new Map<string, Promise<AiGatewayResponse<any>>>();
 
+const STRUCTURED_OUTPUT_FIELDS: Record<string, Record<string, "string" | "number" | "array">> = {
+  query_set_generation: { querySetName: "string", description: "string", queries: "array" },
+  query_expansion: { expandedQueries: "array" },
+  query_rewrite: { originalQuery: "string", rewrittenQueries: "array" },
+  query_classify: { intent: "string", category: "string", queryType: "string", confidence: "number", rationale: "string" },
+  geo_topic_detection: { coreTopics: "array", geoTopics: "array", entities: "array", comparisonDimensions: "array", decisionDimensions: "array" },
+  geo_keyword_extraction: { keywords: "array" },
+  geo_keyword_gap: { gaps: "array", disclaimer: "string" },
+  geo_clustering: { clusters: "array" },
+  diagnosis_explanation: { summary: "string", explanation: "string", keyFindings: "array", supportingEvidenceIds: "array", limitations: "array" },
+  recommendation_draft: { title: "string", problem: "string", action: "string", expectedObservableSignal: "string", priorityRationale: "string", dependencies: "array", risks: "array" },
+  opportunity_draft: { title: "string", objective: "string", problemStatement: "string", priorityQueries: "array", suggestedContentAngle: "string", estimatedEffort: "string" },
+  strategy_draft: { objective: "string", priorityQuestions: "array", targetAudiences: "array", contentDirections: "array", successObservationPlan: "array", risks: "array" },
+  campaign_draft: { campaignName: "string", objective: "string", targetQueries: "array", contentPlan: "array", channelSuggestions: "array", milestones: "array" },
+  content_brief: { titleIdeas: "array", contentObjective: "string", targetAudience: "string", questionsToAnswer: "array", keyEntities: "array", outline: "array", evidenceRequirements: "array", citationRequirements: "array", cta: "string" },
+  content_titles: { titles: "array" },
+  content_outline: { outline: "array" },
+  content_draft: { title: "string", body: "string", summary: "string", tags: "array", faqSection: "array" },
+  content_rewrite: { originalContent: "string", rewrittenContent: "string", changeSummary: "string", diffHighlights: "array" },
+  content_geo_opt: { missingQuestions: "array", missingEntities: "array", missingFacts: "array", structuralFeedback: "array", suggestedFaq: "array", optimizedContent: "string" },
+  content_faq: { faqs: "array" },
+  fact_risk_scan: { claims: "array", overallRisk: "string", suggestions: "array" },
+  competitor_candidates: { candidates: "array" },
+  outcome_summary: { summary: "string", majorChanges: "array", observedTrends: "array", disclaimer: "string" },
+  attribution_explanation: { explanation: "string", keyFactors: "array", confoundingNotes: "array", attributionStatusNotice: "string" },
+  report_summary: { executiveSummary: "string", keyFindings: "array", evidenceLimitations: "array", recommendedNextSteps: "array" },
+  learning_summary: { patternExplanation: "string", scopeOfApplicability: "array", limitations: "array", testableHypotheses: "array", singleSampleWarning: "string" },
+  learning_actions: { proposedActions: "array", disclaimer: "string" },
+};
+
 @Injectable()
 export class AiGatewayService {
   private readonly logger = new Logger(AiGatewayService.name);
@@ -150,6 +181,8 @@ export class AiGatewayService {
           enabled: Boolean(dsKey && realEnabled),
           hasKey: Boolean(dsKey),
           realModeAllowed: Boolean(dsKey && realEnabled),
+          availability: dsKey ? (realEnabled ? "not_checked" : "disabled") : "missing",
+          lastErrorCode: null,
           defaultModel: process.env.DEEPSEEK_MODEL || "deepseek-chat",
           baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
         },
@@ -159,6 +192,8 @@ export class AiGatewayService {
           enabled: Boolean(qwenKey && realEnabled),
           hasKey: Boolean(qwenKey),
           realModeAllowed: Boolean(qwenKey && realEnabled),
+          availability: qwenKey ? (realEnabled ? "not_checked" : "disabled") : "missing",
+          lastErrorCode: null,
           defaultModel: process.env.QWEN_MODEL || "qwen-plus",
           baseUrl: process.env.QWEN_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1",
         },
@@ -168,6 +203,8 @@ export class AiGatewayService {
           enabled: true,
           hasKey: true,
           realModeAllowed: false,
+          availability: "available",
+          lastErrorCode: null,
           defaultModel: "mock-ai-engine",
           baseUrl: "internal://mock",
         },
@@ -311,9 +348,10 @@ export class AiGatewayService {
       if (req.parseJson) {
         try {
           parsedData = this.cleanAndParseJson<T>(response.content);
+          this.validateStructuredOutput(req.feature, parsedData);
         } catch (err: any) {
           status = "FAILED";
-          errorCode = "JSON_PARSE_ERROR";
+          errorCode = err?.code === "STRUCTURED_OUTPUT_INVALID" ? err.code : "JSON_PARSE_ERROR";
           errorMessage = `大模型输出未能解析为有效 JSON: ${err.message}`;
 
           await this.recordAudit({
@@ -373,6 +411,7 @@ export class AiGatewayService {
         content: response.content,
         data: parsedData,
         provider: activeProvider,
+        requestedProvider: req.provider || "auto",
         model: response.model,
         requestedModel: req.model || response.model,
         actualModel: response.actualModel,
@@ -1182,6 +1221,28 @@ export class AiGatewayService {
       }
 
       throw e;
+    }
+  }
+
+  private validateStructuredOutput(feature: string, value: unknown): void {
+    const fields = STRUCTURED_OUTPUT_FIELDS[feature];
+    if (!fields) return;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      const error = new Error(`结构化输出必须是 JSON 对象 (${feature})`);
+      (error as any).code = "STRUCTURED_OUTPUT_INVALID";
+      throw error;
+    }
+
+    for (const [field, expected] of Object.entries(fields)) {
+      const actual = (value as Record<string, unknown>)[field];
+      const valid = expected === "array"
+        ? Array.isArray(actual)
+        : typeof actual === expected;
+      if (!valid) {
+        const error = new Error(`结构化输出字段 ${field} 缺失或类型错误，期望 ${expected}`);
+        (error as any).code = "STRUCTURED_OUTPUT_INVALID";
+        throw error;
+      }
     }
   }
 

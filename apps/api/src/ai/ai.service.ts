@@ -55,6 +55,39 @@ export class AiService {
     return this.gateway.getProviderStatus();
   }
 
+  /**
+   * AI 请求中携带的实体 ID 也必须属于当前项目。
+   * 只校验 projectId 会允许攻击者把别的项目实体送进 Prompt 并消耗 Provider 额度。
+   */
+  private async assertAiEntityLineage(projectId: string, dto: Record<string, any>) {
+    const checks: Promise<unknown>[] = [];
+    const add = (id: unknown, lookup: () => Promise<unknown>) => {
+      if (typeof id === "string" && id.trim()) checks.push(lookup());
+    };
+
+    add(dto.diagnosisRunId, () => this.prisma.client.diagnosisRun.findFirst({ where: { id: dto.diagnosisRunId, projectId }, select: { id: true } }));
+    add(dto.diagnosisId, () => this.prisma.client.diagnosisRun.findFirst({ where: { id: dto.diagnosisId, projectId }, select: { id: true } }));
+    add(dto.strategyId, () => this.prisma.client.contentStrategy.findFirst({ where: { id: dto.strategyId, projectId }, select: { id: true } }));
+    add(dto.outcomeComparisonId, () => this.prisma.client.outcomeComparison.findFirst({ where: { id: dto.outcomeComparisonId, projectId }, select: { id: true } }));
+    add(dto.outcomeAttributionId, () => this.prisma.client.outcomeAttribution.findFirst({ where: { id: dto.outcomeAttributionId, projectId }, select: { id: true } }));
+    add(dto.reportId, () => this.prisma.client.benchmarkReport.findFirst({ where: { id: dto.reportId, projectId }, select: { id: true } }));
+    add(dto.learningAggregateId, () => this.prisma.client.learningAggregate.findFirst({ where: { id: dto.learningAggregateId, projectId }, select: { id: true } }));
+
+    if (Array.isArray(dto.diagnosisIds) && dto.diagnosisIds.length > 0) {
+      const rows = await this.prisma.client.diagnosisRun.findMany({
+        where: { id: { in: dto.diagnosisIds.filter((id: unknown): id is string => typeof id === "string") }, projectId },
+        select: { id: true },
+      });
+      if (rows.length !== dto.diagnosisIds.length) {
+        throw new NotFoundException("AI 输入实体不存在或不属于当前项目");
+      }
+    }
+
+    if (checks.length > 0 && (await Promise.all(checks)).some((row) => !row)) {
+      throw new NotFoundException("AI 输入实体不存在或不属于当前项目");
+    }
+  }
+
   async listGenerations(userId: string, projectId: string, limit = 50) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
     return this.prisma.client.aiGeneration.findMany({
@@ -288,6 +321,7 @@ export class AiService {
 
   async explainDiagnosis(userId: string, projectId: string, dto: ExplainDiagnosisDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertAiEntityLineage(project.id, dto);
     return this.gateway.generateStructured<{
       summary: string;
       explanation: string;
@@ -318,6 +352,7 @@ export class AiService {
 
   async draftRecommendation(userId: string, projectId: string, dto: DraftRecommendationDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertAiEntityLineage(project.id, dto);
     return this.gateway.generateStructured<{
       title: string;
       problem: string;
@@ -342,6 +377,7 @@ export class AiService {
 
   async draftOpportunity(userId: string, projectId: string, dto: DraftOpportunityDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertAiEntityLineage(project.id, dto);
     return this.gateway.generateStructured<{
       title: string;
       objective: string;
@@ -396,6 +432,7 @@ export class AiService {
 
   async draftCampaign(userId: string, projectId: string, dto: DraftCampaignDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertAiEntityLineage(project.id, dto);
     return this.gateway.generateStructured<{
       campaignName: string;
       objective: string;
@@ -646,6 +683,7 @@ export class AiService {
 
   async summarizeOutcome(userId: string, projectId: string, dto: SummarizeOutcomeDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertAiEntityLineage(project.id, dto);
     return this.gateway.generateStructured<{
       summary: string;
       majorChanges: string[];
@@ -667,6 +705,7 @@ export class AiService {
 
   async explainAttribution(userId: string, projectId: string, dto: ExplainAttributionDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertAiEntityLineage(project.id, dto);
     return this.gateway.generateStructured<{
       explanation: string;
       keyFactors: string[];
@@ -688,6 +727,7 @@ export class AiService {
 
   async summarizeReport(userId: string, projectId: string, dto: SummarizeReportDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertAiEntityLineage(project.id, dto);
     return this.gateway.generateStructured<{
       executiveSummary: string;
       keyFindings: string[];
@@ -713,6 +753,7 @@ export class AiService {
 
   async summarizeLearning(userId: string, projectId: string, dto: SummarizeLearningDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertAiEntityLineage(project.id, dto);
     return this.gateway.generateStructured<{
       patternExplanation: string;
       scopeOfApplicability: string[];
