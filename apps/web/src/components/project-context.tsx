@@ -52,10 +52,22 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         if (controller.signal.aborted) return;
         setMe(identity); setProjects(options.projects);
         const segments = pathname.split("/").filter(Boolean);
-        const detail = segments.length === 3 && !["new", "compare"].includes(segments[2]);
+        const staticSubpages = ["new", "compare", "verification", "publications"];
+        let isDetail = false;
+        let resSection = "";
+        let resId = "";
+        if (segments.length === 3 && !staticSubpages.includes(segments[2])) {
+          isDetail = true;
+          resSection = segments[1];
+          resId = segments[2];
+        } else if (segments.length === 4 && segments[1] === "content" && segments[2] === "publications") {
+          isDetail = true;
+          resSection = "publications";
+          resId = segments[3];
+        }
         let id = requested;
-        if (detail) {
-          const owner = await resourceProject(segments[1], segments[2], controller.signal);
+        if (isDetail) {
+          const owner = await resourceProject(resSection, resId, controller.signal);
           id = owner.projectId; setResourceName(owner.name ?? "详情");
         }
         if (id && !options.projects.some(p => p.id === id)) throw new Error("项目不存在或无权访问");

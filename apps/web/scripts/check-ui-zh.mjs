@@ -10,10 +10,10 @@
  * - 数值/符号/单位节点
  * 用法：node scripts/check-ui-zh.mjs   （违规→exit 1）
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const ROOT = process.cwd();
+const ROOT = existsSync(join(process.cwd(), "src")) ? process.cwd() : join(process.cwd(), "apps", "web");
 const SRC = join(ROOT, "src");
 const ext = (f) => f.endsWith(".tsx") || f.endsWith(".ts");
 const walk = (d, acc = []) => {

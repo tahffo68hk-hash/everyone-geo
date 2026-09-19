@@ -230,7 +230,7 @@ export function ContentCalendarView({
           <button
             type="button"
             onClick={() => onNavigateToCampaigns()}
-            className="rounded-lg bg-indigo-700 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800"
+            className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-teal-800"
           >
             🚀 前往运营战役管理
           </button>
@@ -239,7 +239,7 @@ export function ContentCalendarView({
             onClick={() => onNavigateToStrategy()}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
-            查看内容战略 (M9A)
+            查看内容战略
           </button>
         </div>
       </div>

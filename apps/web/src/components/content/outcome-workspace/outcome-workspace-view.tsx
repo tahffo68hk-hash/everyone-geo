@@ -9,6 +9,7 @@ import {
   type AssetOutcomeWorkspace,
   type VerificationAssetListItem,
 } from "@/lib/outcome-api";
+import { PageHeader, LoadingSkeleton } from "@/components/ui";
 import { PublishedAssetsTable } from "./published-assets-table";
 import { AssetOutcomeOverview } from "./asset-outcome-overview";
 
@@ -97,37 +98,35 @@ export function OutcomeWorkspaceView({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* 顶部标题与说明 */}
       {!selectedAssetId && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">效果验证与归因工作台</h1>
-              <p className="mt-1 text-xs text-slate-500 max-w-2xl leading-relaxed">
-                追踪已发布落地资产的 GEO 复测表现、测试条件一致性、前后评测观测事实与归因关联推断。
-              </p>
-            </div>
+        <PageHeader
+          title="效果验证与归因工作台"
+          description="追踪已发布落地资产的 GEO 复测表现、测试条件一致性、前后评测观测事实与归因关联推断。"
+          actions={
             <button
               type="button"
               disabled={loading}
               onClick={() => void loadAssetsList()}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 transition"
+              className="ui-button text-xs"
             >
               刷新列表
             </button>
-          </div>
-        </div>
+          }
+        />
       )}
 
       {/* 反馈通知 */}
       {feedback && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 flex items-center justify-between animate-fadeIn">
-          <span>{feedback}</span>
+        <div className="surface p-3 text-xs text-teal-900 border-teal-200 bg-teal-50/80 flex items-center justify-between">
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden="true">✓</span> {feedback}
+          </span>
           <button
             type="button"
             onClick={() => setFeedback(null)}
-            className="text-blue-500 hover:text-blue-700"
+            className="text-teal-600 hover:text-teal-800 text-xs px-1"
           >
             ✕
           </button>
@@ -136,12 +135,12 @@ export function OutcomeWorkspaceView({
 
       {/* 错误提示 */}
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 flex items-center justify-between">
+        <div className="surface p-3 text-xs text-rose-800 border-rose-200 bg-rose-50/80 flex items-center justify-between">
           <span>{error}</span>
           <button
             type="button"
             onClick={() => setError(null)}
-            className="text-rose-500 hover:text-rose-700"
+            className="text-rose-600 hover:text-rose-800 text-xs px-1"
           >
             ✕
           </button>
@@ -151,10 +150,7 @@ export function OutcomeWorkspaceView({
       {/* 主视图切换 */}
       {selectedAssetId && workspaceData ? (
         loadingWorkspace ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-xs">
-            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-700 border-r-transparent align-[-0.125em]" />
-            <p className="mt-4 text-xs text-slate-500">正在加载效果验证与归因明细…</p>
-          </div>
+          <LoadingSkeleton rows={5} />
         ) : (
           <AssetOutcomeOverview
             workspace={workspaceData}
@@ -168,10 +164,7 @@ export function OutcomeWorkspaceView({
           />
         )
       ) : loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-xs">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-700 border-r-transparent align-[-0.125em]" />
-          <p className="mt-4 text-xs text-slate-500">正在加载已发布落地资产与复测数据…</p>
-        </div>
+        <LoadingSkeleton rows={6} />
       ) : (
         <PublishedAssetsTable
           assets={assets}

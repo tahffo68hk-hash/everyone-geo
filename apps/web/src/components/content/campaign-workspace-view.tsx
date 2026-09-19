@@ -177,16 +177,16 @@ export function CampaignWorkspaceView({
           <button
             type="button"
             onClick={onOpenCreateCampaign}
-            className="rounded-lg bg-indigo-700 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800"
+            className="ui-button primary text-xs"
           >
-            ✨ 新建首个运营战役
+            新建首个运营战役
           </button>
           <button
             type="button"
             onClick={() => onNavigateToStrategy()}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="ui-button secondary text-xs"
           >
-            查看内容战略库 (M9A)
+            查看内容战略库
           </button>
         </div>
       </div>
@@ -228,21 +228,21 @@ export function CampaignWorkspaceView({
           <button
             type="button"
             onClick={onOpenCreateCampaign}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800"
+            className="ui-button primary text-xs"
           >
-            ✨ 新建运营战役
+            新建运营战役
           </button>
         </div>
       </div>
 
       {/* 消息提示 */}
       {error && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">
+        <div role="alert" className="surface p-3 text-xs text-rose-800 border-rose-200 bg-rose-50/80">
           {error}
         </div>
       )}
       {successMsg && (
-        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-800">
+        <div role="status" className="surface p-3 text-xs text-teal-800 border-teal-200 bg-teal-50/80">
           {successMsg}
         </div>
       )}
@@ -267,7 +267,7 @@ export function CampaignWorkspaceView({
                   onClick={() => setSelectedCampaignId(c.id)}
                   className={`w-full rounded-xl border p-3.5 text-left transition-all ${
                     isSelected
-                      ? "border-indigo-600 bg-indigo-50/50 shadow-xs"
+                      ? "border-teal-600 bg-teal-50/50 shadow-xs"
                       : "border-slate-200 bg-white hover:border-slate-300"
                   }`}
                 >
@@ -275,11 +275,14 @@ export function CampaignWorkspaceView({
                     <h4 className="line-clamp-1 text-xs font-bold text-slate-900">{c.name}</h4>
                     <CampaignStatusBadge status={c.status} />
                   </div>
-                  <p className="mt-1.5 line-clamp-2 text-[11px] text-slate-500">{c.objective}</p>
-                  <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-400">
+                  <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+                    {c.objective || c.description || "无战役描述"}
+                  </p>
+                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
                     <span>
                       {c.startDate?.slice(0, 10)} ~ {c.endDate?.slice(0, 10)}
                     </span>
+                    <span>{c.scheduleItems?.length ?? 0} 生产项</span>
                   </div>
                 </button>
               );
@@ -287,20 +290,16 @@ export function CampaignWorkspaceView({
           </div>
         </aside>
 
-        {/* 右侧：战役详情与生产管控 */}
+        {/* 右侧：战役全景看板 */}
         <div className="space-y-6 lg:col-span-3">
           {loadingDetail ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6">
-              <LoadingSkeleton rows={6} />
-            </div>
+            <LoadingSkeleton rows={5} />
           ) : !campaignDetail ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
-              请从左侧选择一个运营战役查看详情
-            </div>
+            <EmptyState title="请选择左侧战役查看全景" description="从战役列表选择即可查看生产进度、日历排期与执行细则。" />
           ) : (
             <>
               {/* 战役基本信息 Banner */}
-              <section className="rounded-2xl border border-indigo-100 bg-linear-to-r from-indigo-50/50 via-white to-indigo-50/20 p-6 shadow-xs">
+              <section className="surface p-6 bg-linear-to-r from-teal-50/40 via-white to-slate-50/20">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
@@ -326,28 +325,28 @@ export function CampaignWorkspaceView({
                       value={campaignDetail.status}
                       disabled={updatingStatus}
                       onChange={(e) => handleStatusChange(e.target.value as CampaignStatus)}
-                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 focus:border-indigo-500 focus:outline-hidden"
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 focus:border-teal-600 focus:outline-hidden"
                     >
-                      <option value="ACTIVE">执行中 (ACTIVE)</option>
-                      <option value="PAUSED">暂停中 (PAUSED)</option>
-                      <option value="COMPLETED">已完成 (COMPLETED)</option>
-                      <option value="ARCHIVED">已归档 (ARCHIVED)</option>
+                      <option value="ACTIVE">执行中</option>
+                      <option value="PAUSED">已暂停</option>
+                      <option value="COMPLETED">已完成</option>
+                      <option value="ARCHIVED">已归档</option>
                     </select>
 
                     <button
                       type="button"
                       onClick={() => onNavigateToQueue(campaignDetail.id)}
-                      className="rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800"
+                      className="ui-button primary text-xs"
                     >
-                      📋 进入生产队列
+                      进入生产队列
                     </button>
 
                     <button
                       type="button"
                       onClick={() => onNavigateToCalendar(campaignDetail.id)}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      className="ui-button secondary text-xs"
                     >
-                      📅 查看日历排期
+                      查看日历排期
                     </button>
                   </div>
                 </div>

@@ -387,14 +387,30 @@ export function formatReasonCode(code: string): string {
   return map[code] ?? code;
 }
 
+export function formatRetestStatus(status?: string): { label: string; badgeClass: string } {
+  switch (status) {
+    case "COMPLETED":
+    case "SUCCEEDED":
+      return { label: "已完成", badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-300" };
+    case "RUNNING":
+      return { label: "进行中", badgeClass: "bg-teal-50 text-teal-800 border-teal-300" };
+    case "FAILED":
+      return { label: "执行失败", badgeClass: "bg-rose-50 text-rose-800 border-rose-300" };
+    case "PENDING":
+    default:
+      return { label: "排队中", badgeClass: "bg-slate-100 text-slate-700 border-slate-300" };
+  }
+}
+
 export function formatConfounderCode(code: string): string {
+  const normalized = code.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase();
   const map: Record<string, string> = {
     MULTIPLE_INTERVENTIONS: "同一观察窗口内有多篇针对该问题的发布内容同时生效",
     MODEL_CHANGED: "前后两次测试所用模型不一致",
     RETRIEVAL_MODE_CHANGED: "前后两次测试的检索模式不一致",
     UNVERIFIED_ASSET: "该落地资产尚未完成平台或人工核验",
   };
-  return map[code] ?? code;
+  return map[normalized] ?? map[code] ?? code;
 }
 
 export function formatPlatform(platform?: string): string {

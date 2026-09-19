@@ -109,8 +109,8 @@ export function CreateCampaignModal({
       <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div>
-            <span className="inline-flex items-center gap-1 rounded bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-800">
-              M9B 战役实例化
+            <span className="inline-flex items-center gap-1 rounded bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-800">
+              战役实例化
             </span>
             <h3 id="create-campaign-modal-title" className="mt-1 text-lg font-bold text-slate-900">
               创建运营战役 (Campaign)
@@ -255,7 +255,7 @@ export function CreateCampaignModal({
             <button
               type="submit"
               disabled={creating || strategies.length === 0}
-              className="rounded-lg bg-indigo-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 shadow-xs disabled:opacity-50"
+              className="rounded-lg bg-teal-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 shadow-xs disabled:opacity-50"
             >
               {creating ? "正在实例化战役…" : "确认创建战役"}
             </button>

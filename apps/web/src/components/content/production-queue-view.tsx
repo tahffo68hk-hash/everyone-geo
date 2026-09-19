@@ -373,29 +373,47 @@ export function ProductionQueueView({
       {/* 顶部指标 Banner */}
       {queueData?.summary && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-            <span className="text-xs font-semibold text-slate-500">待生产总数</span>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{queueData.summary.total}</p>
+          <div className="metric-card">
+            <span className="metric-label">待生产总数</span>
+            <strong className="text-slate-900">{queueData.summary.total}</strong>
+            <span className="metric-note">排期计划总量</span>
           </div>
-          <div className="rounded-2xl border border-red-200 bg-red-50/50 p-4 shadow-xs">
-            <span className="text-xs font-semibold text-red-700">已逾期条目</span>
-            <p className="mt-1 text-2xl font-bold text-red-700">{queueData.summary.overdueCount}</p>
+          <div className="metric-card">
+            <span className="metric-label">已逾期条目</span>
+            <strong className={queueData.summary.overdueCount > 0 ? "text-rose-700" : "text-slate-800"}>
+              {queueData.summary.overdueCount}
+            </strong>
+            <span className="metric-note">
+              {queueData.summary.overdueCount > 0 ? "需优先安排生产" : "进度正常"}
+            </span>
           </div>
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 shadow-xs">
-            <span className="text-xs font-semibold text-amber-700">依据/素材被阻断</span>
-            <p className="mt-1 text-2xl font-bold text-amber-700">{queueData.summary.blockedCount}</p>
+          <div className="metric-card">
+            <span className="metric-label">依据/素材阻断</span>
+            <strong className={queueData.summary.blockedCount > 0 ? "text-amber-700" : "text-slate-800"}>
+              {queueData.summary.blockedCount}
+            </strong>
+            <span className="metric-note">
+              {queueData.summary.blockedCount > 0 ? "需补充事实/物料" : "前置就绪"}
+            </span>
           </div>
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-xs">
-            <span className="text-xs font-semibold text-emerald-700">可开始生产</span>
-            <p className="mt-1 text-2xl font-bold text-emerald-700">{queueData.summary.readyCount}</p>
+          <div className="metric-card">
+            <span className="metric-label">可开始生产</span>
+            <strong className={queueData.summary.readyCount > 0 ? "text-emerald-700" : "text-slate-800"}>
+              {queueData.summary.readyCount}
+            </strong>
+            <span className="metric-note">前置条件完全满足</span>
           </div>
-          <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 shadow-xs">
-            <span className="text-xs font-semibold text-blue-700">生产中 / 草稿已建</span>
-            <p className="mt-1 text-2xl font-bold text-blue-700">{queueData.summary.inProgressCount}</p>
+          <div className="metric-card">
+            <span className="metric-label">生产推进中</span>
+            <strong className={queueData.summary.inProgressCount > 0 ? "text-teal-700" : "text-slate-800"}>
+              {queueData.summary.inProgressCount}
+            </strong>
+            <span className="metric-note">草稿已建/审核中</span>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-xs">
-            <span className="text-xs font-semibold text-slate-600">已完成生产</span>
-            <p className="mt-1 text-2xl font-bold text-slate-800">{queueData.summary.doneCount}</p>
+          <div className="metric-card">
+            <span className="metric-label">已完成生产</span>
+            <strong className="text-slate-700">{queueData.summary.doneCount}</strong>
+            <span className="metric-note">已进入发布或复测</span>
           </div>
         </div>
       )}

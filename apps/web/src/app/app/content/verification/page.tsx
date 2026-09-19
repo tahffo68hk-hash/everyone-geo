@@ -10,7 +10,7 @@ export default function ContentVerificationPage() {
   const assetId = searchParams.get("assetId") || undefined;
 
   return (
-    <main className="p-6">
+    <main className="py-2">
       <OutcomeWorkspaceView projectId={projectId} initialAssetId={assetId} />
     </main>
   );

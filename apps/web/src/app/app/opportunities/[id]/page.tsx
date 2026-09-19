@@ -327,14 +327,14 @@ export default function OpportunityDetailPage() {
               <div className="mt-3 border-t border-indigo-200 pt-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <span className="text-xs font-bold text-indigo-900">✨ GEO 内容战略与生产计划 (M9A)</span>
+                    <span className="text-xs font-bold text-slate-900">✨ GEO 内容战略与生产计划</span>
                     <p className="mt-0.5 text-xs text-slate-500">回答 9 大战略问题，并一键生成覆盖微信、小红书、B站、抖音、微博的多平台生产计划与草稿。</p>
                   </div>
                   <button
                     type="button"
                     disabled={operating}
                     onClick={() => void createContentStrategy()}
-                    className="rounded-lg bg-indigo-700 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800 disabled:opacity-50"
+                    className="rounded-lg bg-teal-700 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-teal-800 disabled:opacity-50"
                   >
                     {operating ? "正在生成战略…" : "生成内容战略与计划 →"}
                   </button>
