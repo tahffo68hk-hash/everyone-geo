@@ -154,9 +154,7 @@ everyone-geo (geo-platform)
 │   ├── database/      # Prisma ORM + PostgreSQL 17 架构 + 数据库触发器 + 种子迁移
 │   ├── geo-core/      # 纯函数 GEO 计算核心：指标计算、污染检测、快照对比、中立性审计
 │   ├── llm/           # 统一 Provider 抽象网关（DeepSeek, Qwen, Mock Provider）
-│   ├── queue/         # Redis / BullMQ 强类型任务契约与调度配置
-│   ├── shared/        # 跨项目通用工具函数与 DTO 契约
-│   └── ui/            # 共享 UI 组件库体系
+│   └── queue/         # Redis / BullMQ 强类型任务契约与调度配置
 ├── docs/              # 完整的架构、设计决策与用户指南文档
 │   ├── USER_GUIDE.md  # 详细用户使用手册
 │   ├── ARCHITECTURE.md# 架构设计与不可变证据链标准
@@ -216,8 +214,8 @@ cp .env.example .env
 docker compose up -d
 
 # 5. 执行数据库迁移与初始化种子数据
-pnpm --filter @geolens/database migrate
-pnpm --filter @geolens/database db:seed
+pnpm --filter @geo/database migrate
+pnpm --filter @geo/database db:seed
 
 # 6. 启动所有服务（Web + API + Worker 并发运行）
 pnpm dev

@@ -59,71 +59,22 @@ export interface AiGatewayResponse<T = any> {
   completedAt: string;
 }
 
-// Centralized Model Pricing Configuration (Pricing Version: 2026-09)
-export interface ModelPricing {
-  costPerInputToken: number; // USD per token
-  costPerOutputToken: number; // USD per token
-  currency: "USD";
-  pricingVersion: string;
-}
+import {
+  AI_MODEL_PRICING,
+  calculateEstimatedCost,
+  type ModelPricing,
+  InteractiveRuntime,
+  LLMProviderError,
+  ProviderDisabledError,
+  ProviderNotConfiguredError,
+  ProviderAuthError,
+  ProviderRateLimitError,
+  ProviderServerError,
+  ProviderNetworkError,
+  ProviderTimeoutError,
+} from "@geo/llm";
 
-export const AI_MODEL_PRICING: Record<string, ModelPricing> = {
-  // DeepSeek: $0.14 / 1M prompt, $0.28 / 1M completion (USD)
-  "deepseek-chat": {
-    costPerInputToken: 0.00000014,
-    costPerOutputToken: 0.00000028,
-    currency: "USD",
-    pricingVersion: "2026-09",
-  },
-  "deepseek-reasoner": {
-    costPerInputToken: 0.00000055,
-    costPerOutputToken: 0.00000219,
-    currency: "USD",
-    pricingVersion: "2026-09",
-  },
-  // Qwen Plus: $0.80 / 1M prompt ($0.0000008/token), $2.00 / 1M completion ($0.000002/token)
-  "qwen-plus": {
-    costPerInputToken: 0.0000008,
-    costPerOutputToken: 0.000002,
-    currency: "USD",
-    pricingVersion: "2026-09",
-  },
-  "qwen-turbo": {
-    costPerInputToken: 0.0000003,
-    costPerOutputToken: 0.0000006,
-    currency: "USD",
-    pricingVersion: "2026-09",
-  },
-  "qwen-max": {
-    costPerInputToken: 0.0000024,
-    costPerOutputToken: 0.0000096,
-    currency: "USD",
-    pricingVersion: "2026-09",
-  },
-  // Mock Engine: $0
-  "mock-ai-engine": {
-    costPerInputToken: 0,
-    costPerOutputToken: 0,
-    currency: "USD",
-    pricingVersion: "2026-09",
-  },
-};
-
-export function calculateEstimatedCost(
-  model: string,
-  inputTokens: number | null,
-  outputTokens: number | null,
-): number | null {
-  if (inputTokens == null || outputTokens == null) return null;
-  const pricing = AI_MODEL_PRICING[model];
-  if (!pricing) {
-    // 未知模型不计算或估算为 null，避免把收费模型误报为 0
-    return null;
-  }
-  return Number(
-    (inputTokens * pricing.costPerInputToken + outputTokens * pricing.costPerOutputToken).toFixed(6),
-  );
-}
+export { AI_MODEL_PRICING, calculateEstimatedCost, type ModelPricing };
 
 // In-flight debounce map: key = `${organizationId}:${feature}:${hash/idempotencyKey}`
 const pendingRequests = new Map<string, Promise<AiGatewayResponse<any>>>();
@@ -161,6 +112,7 @@ const STRUCTURED_OUTPUT_FIELDS: Record<string, Record<string, "string" | "number
 @Injectable()
 export class AiGatewayService {
   private readonly logger = new Logger(AiGatewayService.name);
+  private readonly runtime = new InteractiveRuntime();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -277,34 +229,31 @@ export class AiGatewayService {
         activeProvider = targetProvider;
         if (targetProvider === "mock") {
           response = await this.executeMock<T>(req.feature, req.input, req.model || "mock-ai-engine");
-        } else if (targetProvider === "deepseek") {
-          try {
-            response = await this.executeDeepSeek(systemPrompt, userPrompt, req.model, req.temperature, req.maxTokens, req.timeoutMs);
-          } catch (dsErr: any) {
-            // auto 模式下如果 DeepSeek 失败且配置了 Qwen，真实 failover，绝不降级 Mock
-            if (isAuto && process.env.QWEN_API_KEY?.trim()) {
-              this.logger.warn(`[AiGateway] Primary provider 'deepseek' failed (${dsErr.message}), failing over to 'qwen'...`);
-              activeProvider = "qwen";
-              response = await this.executeQwen(systemPrompt, userPrompt, undefined, req.temperature, req.maxTokens, req.timeoutMs);
-            } else {
-              throw dsErr;
-            }
-          }
-        } else if (targetProvider === "qwen") {
-          try {
-            response = await this.executeQwen(systemPrompt, userPrompt, req.model, req.temperature, req.maxTokens, req.timeoutMs);
-          } catch (qwenErr: any) {
-            // auto 模式下如果 Qwen 失败且配置了 DeepSeek，真实 failover，绝不降级 Mock
-            if (isAuto && process.env.DEEPSEEK_API_KEY?.trim()) {
-              this.logger.warn(`[AiGateway] Primary provider 'qwen' failed (${qwenErr.message}), failing over to 'deepseek'...`);
-              activeProvider = "deepseek";
-              response = await this.executeDeepSeek(systemPrompt, userPrompt, undefined, req.temperature, req.maxTokens, req.timeoutMs);
-            } else {
-              throw qwenErr;
-            }
-          }
         } else {
-          throw new BadRequestException(`不支持的 Provider: ${targetProvider}`);
+          try {
+            const runtimeRes = await this.runtime.execute({
+              provider: req.provider || "auto",
+              systemPrompt,
+              userPrompt,
+              model: req.model,
+              temperature: req.temperature,
+              maxTokens: req.maxTokens,
+              timeoutMs: req.timeoutMs,
+            });
+            activeProvider = runtimeRes.provider as any;
+            response = {
+              content: runtimeRes.content,
+              model: runtimeRes.model,
+              actualModel: runtimeRes.actualModel,
+              inputTokens: runtimeRes.usage?.promptTokens ?? null,
+              outputTokens: runtimeRes.usage?.completionTokens ?? null,
+              totalTokens: runtimeRes.usage?.totalTokens ?? null,
+              estimatedCost: runtimeRes.estimatedCost,
+              requestId: runtimeRes.requestId,
+            };
+          } catch (llmErr: any) {
+            this.handleLlmError(llmErr);
+          }
         }
       } catch (err: any) {
         status = "FAILED";
@@ -439,232 +388,39 @@ export class AiGatewayService {
   }
 
   /**
-   * 解析目标 Provider，支持 auto 自适应路由与真实大模型强制策略
+   * 解析目标 Provider，委托 @geo/llm InteractiveRuntime 统一处理
    */
   private resolveProvider(requested?: AiProviderName): "deepseek" | "qwen" | "mock" {
-    const isTest = process.env.NODE_ENV === "test";
-    const forceReal = process.env.FORCE_REAL_AI === "true";
-    const realEnabled = process.env.ENABLE_REAL_PROVIDERS === "true";
-    const explicitMockMode = process.env.AI_PROVIDER_MODE === "mock" || process.env.GENERATION_PROVIDER_MODE === "mock";
-
-    // 1. 显式请求 mock
-    if (requested === "mock") {
-      return "mock";
+    try {
+      return this.runtime.resolveProvider(requested || "auto");
+    } catch (err: any) {
+      this.handleLlmError(err);
     }
+  }
 
-    // 2. 显式请求 deepseek
-    if (requested === "deepseek") {
-      if (!realEnabled && !forceReal && !isTest) throw new ServiceUnavailableException("真实 AI Provider 当前未启用");
-      if (!process.env.DEEPSEEK_API_KEY?.trim()) {
-        throw new ServiceUnavailableException("DeepSeek API Key 未配置");
-      }
-      return "deepseek";
+  /**
+   * 统一异常映射：将 @geo/llm 运行时错误映射为 NestJS HTTP 异常
+   */
+  private handleLlmError(err: any): never {
+    if (err instanceof ProviderDisabledError) {
+      throw new ServiceUnavailableException("真实 AI Provider 当前未启用");
     }
-
-    // 3. 显式请求 qwen
-    if (requested === "qwen") {
-      if (!realEnabled && !forceReal && !isTest) throw new ServiceUnavailableException("真实 AI Provider 当前未启用");
-      if (!process.env.QWEN_API_KEY?.trim()) {
-        throw new ServiceUnavailableException("Qwen API Key 未配置");
-      }
-      return "qwen";
-    }
-
-    // 4. 测试环境默认保持确定性 Mock；真实 Provider 测试必须显式指定 provider
-    // 或开启 FORCE_REAL_AI，避免宿主 .env 意外烧额度并使回归结果失真。
-    if (isTest && !forceReal) {
-      return "mock";
-    }
-
-    // 显式 Mock 模式只允许在未强制真实 Provider 时生效。
-    if (explicitMockMode && !forceReal && !realEnabled) {
-      return "mock";
-    }
-
-    // 5. 生产环境、显式开启真实大模型或测试开启 FORCE_REAL_AI：必须使用真实大模型，绝不静默降级为 Mock
-    if (realEnabled || forceReal || process.env.NODE_ENV === "production") {
-      if (process.env.DEEPSEEK_API_KEY?.trim()) return "deepseek";
-      if (process.env.QWEN_API_KEY?.trim()) return "qwen";
+    if (err instanceof ProviderNotConfiguredError) {
       throw new ServiceUnavailableException("未配置任何可用的真实 AI Provider (DEEPSEEK_API_KEY / QWEN_API_KEY)");
     }
-
-    throw new ServiceUnavailableException("真实 AI Provider 当前不可用；请显式选择 Mock 模式用于测试");
-  }
-
-  /**
-   * 真实调用 DeepSeek API (带有限重试与超时控制)
-   */
-  private async executeDeepSeek(
-    systemPrompt: string,
-    userPrompt: string,
-    modelOverride?: string,
-    temperature = 0.7,
-    maxTokens = 4096,
-    timeoutMs = 45000,
-  ) {
-    const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
-    if (!apiKey) throw new ServiceUnavailableException("DeepSeek API Key 未配置");
-
-    const baseUrl = (process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com").replace(/\/+$/, "");
-    const model = modelOverride?.trim() || process.env.DEEPSEEK_MODEL?.trim() || "deepseek-chat";
-
-    return this.callOpenAiCompatibleApi({
-      provider: "deepseek",
-      url: `${baseUrl}/chat/completions`,
-      apiKey,
-      model,
-      systemPrompt,
-      userPrompt,
-      temperature,
-      maxTokens,
-      timeoutMs,
-    });
-  }
-
-  /**
-   * 真实调用 Qwen (DashScope 兼容接口)
-   */
-  private async executeQwen(
-    systemPrompt: string,
-    userPrompt: string,
-    modelOverride?: string,
-    temperature = 0.7,
-    maxTokens = 4096,
-    timeoutMs = 45000,
-  ) {
-    const apiKey = process.env.QWEN_API_KEY?.trim();
-    if (!apiKey) throw new ServiceUnavailableException("Qwen API Key 未配置");
-
-    const baseUrl = (process.env.QWEN_BASE_URL?.trim() || "https://dashscope.aliyuncs.com/compatible-mode/v1").replace(/\/+$/, "");
-    const model = modelOverride?.trim() || process.env.QWEN_MODEL?.trim() || "qwen-plus";
-
-    return this.callOpenAiCompatibleApi({
-      provider: "qwen",
-      url: `${baseUrl}/chat/completions`,
-      apiKey,
-      model,
-      systemPrompt,
-      userPrompt,
-      temperature,
-      maxTokens,
-      timeoutMs,
-    });
-  }
-
-  /**
-   * OpenAI-compatible 通用 HTTP 请求驱动器
-   */
-  private async callOpenAiCompatibleApi(params: {
-    provider: string;
-    url: string;
-    apiKey: string;
-    model: string;
-    systemPrompt: string;
-    userPrompt: string;
-    temperature: number;
-    maxTokens: number;
-    timeoutMs: number;
-  }) {
-    const maxRetries = 2;
-    let attempt = 0;
-    let lastError: any = null;
-
-    while (attempt <= maxRetries) {
-      attempt++;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), params.timeoutMs);
-
-      try {
-        const payload = {
-          model: params.model,
-          messages: [
-            { role: "system", content: params.systemPrompt },
-            { role: "user", content: params.userPrompt },
-          ],
-          temperature: params.temperature,
-          max_tokens: params.maxTokens,
-          stream: false,
-        };
-
-        const res = await fetch(params.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${params.apiKey}`,
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timer);
-
-        if (!res.ok) {
-          const status = res.status;
-          const errBody = await res.text().catch(() => "");
-          this.logger.warn(`[${params.provider}] API returned ${status}`);
-
-          let detailedMsg = "";
-          try {
-            const parsed = JSON.parse(errBody);
-            detailedMsg = parsed?.message || parsed?.error?.message || parsed?.code || "";
-          } catch {}
-
-          const suffix = detailedMsg ? `: ${detailedMsg}` : "";
-
-          if (status === 401 || status === 403) {
-            throw new ServiceUnavailableException(`${params.provider} API 密钥无效或未授权 (HTTP ${status}${suffix})`);
-          }
-          if (status === 429) {
-            if (attempt <= maxRetries) {
-              await new Promise((r) => setTimeout(r, attempt * 1000));
-              continue;
-            }
-            throw new ServiceUnavailableException(`${params.provider} API 速率受限 (429)${suffix}，请稍后重试`);
-          }
-          if (status >= 500 && attempt <= maxRetries) {
-            await new Promise((r) => setTimeout(r, attempt * 800));
-            continue;
-          }
-          throw new ServiceUnavailableException(`${params.provider} 调用失败 (HTTP ${status}${suffix})`);
-        }
-
-        const data: any = await res.json();
-        const choice = data?.choices?.[0];
-        const content = choice?.message?.content || "";
-        const actualModel = data?.model || null;
-
-        const usage = data?.usage;
-        const inputTokens = usage?.prompt_tokens ?? null;
-        const outputTokens = usage?.completion_tokens ?? null;
-        const totalTokens = usage?.total_tokens ?? null;
-
-        const estimatedCost = calculateEstimatedCost(params.model, inputTokens, outputTokens);
-
-        return {
-          content,
-          model: params.model,
-          actualModel,
-          inputTokens,
-          outputTokens,
-          totalTokens,
-          estimatedCost,
-          requestId: data?.id || null,
-        };
-      } catch (err: any) {
-        clearTimeout(timer);
-        lastError = err;
-        if (err.name === "AbortError" || err.name === "TimeoutError") {
-          throw new ServiceUnavailableException(`${params.provider} 调用超时 (${params.timeoutMs}ms)`);
-        }
-        if (attempt <= maxRetries && (err.code === "ECONNRESET" || err.code === "ETIMEDOUT")) {
-          await new Promise((r) => setTimeout(r, attempt * 1000));
-          continue;
-        }
-        throw err;
-      }
+    if (err instanceof ProviderAuthError) {
+      throw new ServiceUnavailableException(`API 密钥无效或未授权 (HTTP ${err.httpStatus || 401})`);
     }
-
-    throw lastError || new InternalServerErrorException("重试后仍然失败");
+    if (err instanceof ProviderRateLimitError) {
+      throw new ServiceUnavailableException("API 速率受限，请稍后重试");
+    }
+    if (err instanceof ProviderTimeoutError) {
+      throw new ServiceUnavailableException("AI 调用超时，请稍后重试");
+    }
+    if (err instanceof LLMProviderError) {
+      throw new ServiceUnavailableException(err.message);
+    }
+    throw err;
   }
 
   /**

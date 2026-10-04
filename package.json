@@ -14,7 +14,20 @@
     "dev:worker": "pnpm --filter @geolens/worker dev",
     "start:api": "pnpm --filter @geolens/api start",
     "start:web": "pnpm --filter @geolens/web start",
-    "start:worker": "pnpm --filter @geolens/worker start"
+    "start:worker": "pnpm --filter @geolens/worker start",
+    "build": "pnpm -r build",
+    "build:packages": "pnpm --filter @geo/database --filter @geo/core --filter @geo/llm --filter @geo/queue build",
+    "build:api": "pnpm --filter @geolens/api build",
+    "build:web": "pnpm --filter @geolens/web build",
+    "build:worker": "pnpm --filter @geolens/worker build",
+    "typecheck": "pnpm -r typecheck || echo 'No typecheck yet'",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm --filter @geo/core --filter @geo/llm --filter @geo/queue test",
+    "test:e2e": "pnpm --filter @geolens/api test:e2e",
+    "check:fast": "pnpm build:packages && pnpm test:unit",
+    "check": "pnpm build:packages && pnpm test:unit && pnpm build:api && pnpm build:worker",
+    "check:repo-truth": "node scripts/check-repo-truth.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

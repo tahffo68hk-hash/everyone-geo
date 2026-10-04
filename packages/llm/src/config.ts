@@ -49,8 +49,9 @@ export interface QwenProviderEnv {
 
 /** Qwen（DashScope OpenAI-compatible mode）服务端配置；Key 只进内存/env。 */
 export function readQwenProviderEnv(env: NodeJS.ProcessEnv = process.env): QwenProviderEnv {
+  const rawKey = env.QWEN_API_KEY || env.DASHSCOPE_API_KEY;
   return {
-    apiKey: env.QWEN_API_KEY && env.QWEN_API_KEY.trim() !== '' ? env.QWEN_API_KEY.trim() : null,
+    apiKey: rawKey && rawKey.trim() !== '' ? rawKey.trim() : null,
     baseUrl: (env.QWEN_BASE_URL && env.QWEN_BASE_URL.trim() !== '' ? env.QWEN_BASE_URL.trim() : QWEN_DEFAULT_BASE_URL).replace(/\/+$/u, ''),
     model: env.QWEN_MODEL && env.QWEN_MODEL.trim() !== '' ? env.QWEN_MODEL.trim() : QWEN_DEFAULT_MODEL,
     timeoutMs: boundedInt(env.QWEN_TIMEOUT_MS, DEFAULT_REAL_PROVIDER_TIMEOUT_MS, 5000, 120_000),
