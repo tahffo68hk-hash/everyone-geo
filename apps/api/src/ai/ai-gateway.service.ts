@@ -73,41 +73,12 @@ import {
   ProviderNetworkError,
   ProviderTimeoutError,
 } from "@geo/llm";
+import { validateCapabilityOutput } from "./contracts";
 
 export { AI_MODEL_PRICING, calculateEstimatedCost, type ModelPricing };
 
 // In-flight debounce map: key = `${organizationId}:${feature}:${hash/idempotencyKey}`
 const pendingRequests = new Map<string, Promise<AiGatewayResponse<any>>>();
-
-const STRUCTURED_OUTPUT_FIELDS: Record<string, Record<string, "string" | "number" | "array">> = {
-  query_set_generation: { querySetName: "string", description: "string", queries: "array" },
-  query_expansion: { expandedQueries: "array" },
-  query_rewrite: { originalQuery: "string", rewrittenQueries: "array" },
-  query_classify: { intent: "string", category: "string", queryType: "string", confidence: "number", rationale: "string" },
-  geo_topic_detection: { coreTopics: "array", geoTopics: "array", entities: "array", comparisonDimensions: "array", decisionDimensions: "array" },
-  geo_keyword_extraction: { keywords: "array" },
-  geo_keyword_gap: { gaps: "array", disclaimer: "string" },
-  geo_clustering: { clusters: "array" },
-  diagnosis_explanation: { summary: "string", explanation: "string", keyFindings: "array", supportingEvidenceIds: "array", limitations: "array" },
-  recommendation_draft: { title: "string", problem: "string", action: "string", expectedObservableSignal: "string", priorityRationale: "string", dependencies: "array", risks: "array" },
-  opportunity_draft: { title: "string", objective: "string", problemStatement: "string", priorityQueries: "array", suggestedContentAngle: "string", estimatedEffort: "string" },
-  strategy_draft: { objective: "string", priorityQuestions: "array", targetAudiences: "array", contentDirections: "array", successObservationPlan: "array", risks: "array" },
-  campaign_draft: { campaignName: "string", objective: "string", targetQueries: "array", contentPlan: "array", channelSuggestions: "array", milestones: "array" },
-  content_brief: { titleIdeas: "array", contentObjective: "string", targetAudience: "string", questionsToAnswer: "array", keyEntities: "array", outline: "array", evidenceRequirements: "array", citationRequirements: "array", cta: "string" },
-  content_titles: { titles: "array" },
-  content_outline: { outline: "array" },
-  content_draft: { title: "string", body: "string", summary: "string", tags: "array", faqSection: "array" },
-  content_rewrite: { originalContent: "string", rewrittenContent: "string", changeSummary: "string", diffHighlights: "array" },
-  content_geo_opt: { missingQuestions: "array", missingEntities: "array", missingFacts: "array", structuralFeedback: "array", suggestedFaq: "array", optimizedContent: "string" },
-  content_faq: { faqs: "array" },
-  fact_risk_scan: { claims: "array", overallRisk: "string", suggestions: "array" },
-  competitor_candidates: { candidates: "array" },
-  outcome_summary: { summary: "string", majorChanges: "array", observedTrends: "array", disclaimer: "string" },
-  attribution_explanation: { explanation: "string", keyFactors: "array", confoundingNotes: "array", attributionStatusNotice: "string" },
-  report_summary: { executiveSummary: "string", keyFindings: "array", evidenceLimitations: "array", recommendedNextSteps: "array" },
-  learning_summary: { patternExplanation: "string", scopeOfApplicability: "array", limitations: "array", testableHypotheses: "array", singleSampleWarning: "string" },
-  learning_actions: { proposedActions: "array", disclaimer: "string" },
-};
 
 @Injectable()
 export class AiGatewayService {
@@ -292,16 +263,73 @@ export class AiGatewayService {
       const latencyMs = Math.round(performance.now() - startTimeMs);
       const completedAt = new Date();
 
-      // 3. 结构化 JSON 解析与校验
+      // 3. 结构化 JSON 解析与有限修复策略 (MAX_STRUCTURED_OUTPUT_REPAIR = 1)
       let parsedData: T | undefined = undefined;
+      const MAX_STRUCTURED_OUTPUT_REPAIR = 1;
+      let repairAttempts = 0;
+      let wasRepaired = false;
+
       if (req.parseJson) {
-        try {
-          parsedData = this.cleanAndParseJson<T>(response.content);
-          this.validateStructuredOutput(req.feature, parsedData);
-        } catch (err: any) {
+        let currentContent = response.content;
+        let lastParseOrValError: Error | null = null;
+
+        for (let attempt = 0; attempt <= MAX_STRUCTURED_OUTPUT_REPAIR; attempt++) {
+          try {
+            parsedData = this.cleanAndParseJson<T>(currentContent);
+            this.validateStructuredOutput(req.feature, parsedData);
+            lastParseOrValError = null;
+            if (attempt > 0) {
+              wasRepaired = true;
+              response.content = currentContent;
+            }
+            break;
+          } catch (err: any) {
+            lastParseOrValError = err;
+            // 仅对真实 Provider 执行有限修复，Mock 模式无需网络修复
+            if (attempt < MAX_STRUCTURED_OUTPUT_REPAIR && targetProvider !== "mock") {
+              repairAttempts++;
+              this.logger.warn(`[AiGateway] Structured output invalid for ${req.feature} (${err.message}), executing repair attempt ${repairAttempts}/${MAX_STRUCTURED_OUTPUT_REPAIR}...`);
+              try {
+                const repairPrompt = `The previous JSON response failed validation:
+Error: ${err.message}
+
+Previous raw output:
+${currentContent.slice(0, 2000)}
+
+Please return ONLY the corrected, valid JSON conforming to the original schema. No markdown formatting, no explanations, no wrappers. Just the raw JSON object.`;
+
+                const repairRes = await this.runtime.execute({
+                  provider: activeProvider === "auto" ? "auto" : activeProvider,
+                  systemPrompt: "You are a JSON repair specialist. Output ONLY valid, parseable JSON conforming to the required schema.",
+                  userPrompt: repairPrompt,
+                  model: req.model,
+                  temperature: 0.2,
+                  maxTokens: req.maxTokens || 4096,
+                  timeoutMs: 30000,
+                });
+
+                currentContent = repairRes.content;
+                // 累计用量与成本
+                if (repairRes.usage) {
+                  response.inputTokens = (response.inputTokens || 0) + (repairRes.usage.promptTokens || 0);
+                  response.outputTokens = (response.outputTokens || 0) + (repairRes.usage.completionTokens || 0);
+                  response.totalTokens = (response.totalTokens || 0) + (repairRes.usage.totalTokens || 0);
+                }
+                if (repairRes.estimatedCost != null) {
+                  response.estimatedCost = Number(((response.estimatedCost || 0) + repairRes.estimatedCost).toFixed(6));
+                }
+              } catch (repairCallErr: any) {
+                this.logger.warn(`[AiGateway] Repair call failed: ${repairCallErr.message}`);
+                break;
+              }
+            }
+          }
+        }
+
+        if (lastParseOrValError) {
           status = "FAILED";
-          errorCode = err?.code === "STRUCTURED_OUTPUT_INVALID" ? err.code : "JSON_PARSE_ERROR";
-          errorMessage = `大模型输出未能解析为有效 JSON: ${err.message}`;
+          errorCode = (lastParseOrValError as any)?.code === "STRUCTURED_OUTPUT_INVALID" ? (lastParseOrValError as any).code : "JSON_PARSE_ERROR";
+          errorMessage = `大模型输出未能解析为有效 JSON: ${lastParseOrValError.message}${repairAttempts > 0 ? ` (已尝试修复 ${repairAttempts} 次仍失败)` : ""}`;
 
           await this.recordAudit({
             organizationId: req.organizationId,
@@ -315,7 +343,7 @@ export class AiGatewayService {
             requestedModel: req.model || response.model,
             promptVersion: req.promptVersion,
             inputSnapshot: req.input,
-            outputSnapshot: { rawContent: this.sanitizeSensitiveText(response.content) },
+            outputSnapshot: { rawContent: this.sanitizeSensitiveText(response.content), repairAttempts, wasRepaired },
             status,
             inputTokens: response.inputTokens,
             outputTokens: response.outputTokens,
@@ -981,24 +1009,11 @@ export class AiGatewayService {
   }
 
   private validateStructuredOutput(feature: string, value: unknown): void {
-    const fields = STRUCTURED_OUTPUT_FIELDS[feature];
-    if (!fields) return;
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      const error = new Error(`结构化输出必须是 JSON 对象 (${feature})`);
+    const result = validateCapabilityOutput(feature, value);
+    if (!result.valid) {
+      const error = new Error(`结构化输出校验失败 (${feature}): ${result.errors.join('; ')}`);
       (error as any).code = "STRUCTURED_OUTPUT_INVALID";
       throw error;
-    }
-
-    for (const [field, expected] of Object.entries(fields)) {
-      const actual = (value as Record<string, unknown>)[field];
-      const valid = expected === "array"
-        ? Array.isArray(actual)
-        : typeof actual === expected;
-      if (!valid) {
-        const error = new Error(`结构化输出字段 ${field} 缺失或类型错误，期望 ${expected}`);
-        (error as any).code = "STRUCTURED_OUTPUT_INVALID";
-        throw error;
-      }
     }
   }
 
