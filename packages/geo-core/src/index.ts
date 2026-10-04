@@ -498,3 +498,4 @@ export * from './measurement';
 export * from './pilot';
 export * from './url-safety';
 export * from './query-workspace';
+export * from './measurement-science';
