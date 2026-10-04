@@ -48,7 +48,7 @@
 - **严格的问题语义分流**：
   - **自然发现问题（Discovery Queries）**：模拟真实用户无倾向提问（如“适合小团队的 CRM 工具有哪些？”），评估 AI 自然推荐率。
   - **品牌认知测试（Branded Sanity Queries）**：直接探测 AI 对品牌特性的认知深度与准确性。
-- **🛡️ 专利级防污染守卫（Target Contamination Guard）**：
+- **🛡️ 严格防污染守卫（Target Contamination Guard）**：
   - 自动拦截在“自然发现问题”中误植入品牌词的行为，严防人为制造“虚高可见度”。
 
 <div align="center">
@@ -273,7 +273,7 @@ pnpm --filter @geolens/web build
 - [x] **M2: Database & Multi-Tenant** — PostgreSQL 17 + Prisma 级联外键与多租户隔离
 - [x] **M3: Async Worker Engine** — BullMQ + Redis 确定性 JobId、指数退避重试与宕机自愈
 - [x] **M4: GEO Analysis & Evidence** — 不可变 Raw Evidence 触发器防护、Mention/Position/Citation 5维算法
-- [x] **M5: DeepSeek Real Provider** — 官方 API 直连、真实用量存证、成本守卫与密钥绝对隔离
+- [x] **M5: DeepSeek Real Provider** — 官方 API 直连、真实用量存证、成本守卫与密钥安全隔离保护
 - [x] **M6: Benchmark & Multi-Provider** — Qwen 接入、requested vs response 身份解耦、竞品自动发现
 - [x] **M7: Diagnosis & Optimization** — 智能 GEO 诊断、结构化建议生成、实验评测体系
 - [x] **M8: Target Profile & Pilot Workspace** — 监测对象别名、Target Contamination Guard、站点资产 Before/After 快照

@@ -185,16 +185,19 @@ export function assessComparability(
   const retestRetrievalModes = new Set(retest.map((o) => (o.retrievalMode || '').toLowerCase()));
 
   // If one is api_plain and the other is api_web_search/official_web_ui -> incompatible!
+  const isWebMode = (mode: string) => mode === 'api_web_search' || mode === 'official_web_ui' || mode === 'browser_agent';
   const hasPlainBaseline = baselineRetrievalModes.has('api_plain');
-  const hasWebRetest = retestRetrievalModes.has('api_web_search') || retestRetrievalModes.has('official_web_ui') || retestRetrievalModes.has('browser_agent');
+  const hasWebRetest = Array.from(retestRetrievalModes).some(isWebMode);
+  const hasWebBaseline = Array.from(baselineRetrievalModes).some(isWebMode);
+  const hasPlainRetest = retestRetrievalModes.has('api_plain');
 
-  if (hasPlainBaseline && hasWebRetest) {
+  if ((hasPlainBaseline && hasWebRetest) || (hasWebBaseline && hasPlainRetest)) {
     retrievalModeDrift = true;
     return {
       verdict: 'INCOMPATIBLE',
       modelDrift,
       retrievalModeDrift: true,
-      warnings: [...warnings, '检索环境严重失配：基线为纯模型 API (api_plain)，而复测为联网检索 (web_search)。二者不具备因果可比性。'],
+      warnings: [...warnings, '检索环境严重失配：基线与复测在纯模型 API (api_plain) 与联网检索模式间发生漂移。二者不具备因果可比性。'],
       reasons: ['基线与复测的环境模式本质不同，禁止混为一谈。'],
     };
   }

@@ -27,6 +27,7 @@
     "test:e2e": "pnpm --filter @geolens/api test:e2e",
     "check:fast": "pnpm build:packages && pnpm test:unit",
     "check": "pnpm build:packages && pnpm test:unit && pnpm build:api && pnpm build:worker",
+    "check:full": "pnpm check:repo-truth && pnpm build:packages && pnpm test:unit && pnpm build:api && pnpm build:worker && pnpm test:e2e",
     "check:repo-truth": "node scripts/check-repo-truth.mjs"
   },
   "devDependencies": {

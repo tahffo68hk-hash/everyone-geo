@@ -150,6 +150,46 @@ test('GEO Measurement Science V2 - Retrieval Mode Drift (api_plain vs web_search
   assert.strictEqual(assessment.retrievalModeDrift, true);
 });
 
+test('GEO Measurement Science V2 - Retrieval Mode Drift (web_search vs api_plain is symmetrically INCOMPATIBLE)', () => {
+  const baseline: ObservationSnapshot[] = [
+    {
+      queryId: 'q-1',
+      queryText: '选型推荐',
+      engineKey: 'deepseek-chat',
+      provider: 'deepseek',
+      requestedModel: 'deepseek-chat',
+      responseModel: 'deepseek-chat',
+      retrievalMode: 'api_web_search',
+      sourceType: 'official_api',
+      brandMentioned: true,
+      mentionPosition: 1,
+      recommended: true,
+      hasCitation: true,
+    },
+  ];
+
+  const retest: ObservationSnapshot[] = [
+    {
+      queryId: 'q-1',
+      queryText: '选型推荐',
+      engineKey: 'deepseek-chat',
+      provider: 'deepseek',
+      requestedModel: 'deepseek-chat',
+      responseModel: 'deepseek-chat',
+      retrievalMode: 'api_plain',
+      sourceType: 'official_api',
+      brandMentioned: false,
+      mentionPosition: null,
+      recommended: false,
+      hasCitation: false,
+    },
+  ];
+
+  const assessment = assessComparability(baseline, retest);
+  assert.strictEqual(assessment.verdict, 'INCOMPATIBLE');
+  assert.strictEqual(assessment.retrievalModeDrift, true);
+});
+
 test('GEO Measurement Science V2 - Statistical Honesty (Small sample cannot claim strong attribution)', () => {
   // Baseline n=2 (below n=3 threshold)
   const baseline: ObservationSnapshot[] = [

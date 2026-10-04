@@ -1,6 +1,6 @@
-import { DeepSchema, validateDeepSchema } from './schema-validator';
+import { DeepSchema, validateDeepSchema } from '../src/ai/contracts/schema-validator';
 
-describe('Schema Validator', () => {
+describe('Schema Validator E2E Spec', () => {
   it('should validate string types', () => {
     const schema: DeepSchema = { type: 'string', minLength: 2, maxLength: 5 };
     expect(validateDeepSchema(schema, 'abc').valid).toBe(true);
@@ -18,11 +18,11 @@ describe('Schema Validator', () => {
   it('should validate arrays', () => {
     const schema: DeepSchema = {
       type: 'array',
-      items: { type: 'number' }
+      items: { type: 'number' },
     };
     expect(validateDeepSchema(schema, [1, 2, 3]).valid).toBe(true);
     expect(validateDeepSchema(schema, []).valid).toBe(true);
-    
+
     const res = validateDeepSchema(schema, [1, '2']);
     expect(res.valid).toBe(false);
     expect(res.errors).toContain('root[1] must be a number');
@@ -36,14 +36,14 @@ describe('Schema Validator', () => {
           type: 'object',
           properties: {
             name: { type: 'string' },
-            age: { type: 'number', required: false } // age is technically required if it's missing entirely but we handle it via required flag
-          }
-        }
-      }
+            age: { type: 'number', required: false },
+          },
+        },
+      },
     };
-    
+
     expect(validateDeepSchema(schema, { user: { name: 'Alice', age: 30 } }).valid).toBe(true);
-    
+
     const missingName = validateDeepSchema(schema, { user: { age: 30 } });
     expect(missingName.valid).toBe(false);
     expect(missingName.errors).toContain('user.name is required');
@@ -58,11 +58,11 @@ describe('Schema Validator', () => {
           items: {
             type: 'object',
             properties: {
-              intent: { type: 'string', enum: ['INFORMATIONAL', 'COMMERCIAL'] }
-            }
-          }
-        }
-      }
+              intent: { type: 'string', enum: ['INFORMATIONAL', 'COMMERCIAL'] },
+            },
+          },
+        },
+      },
     };
 
     const res = validateDeepSchema(schema, { queries: [{ intent: 'INFORMATIONAL' }, { intent: 'UNKNOWN' }] });

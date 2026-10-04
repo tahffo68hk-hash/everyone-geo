@@ -3,19 +3,19 @@
   "project": "GeoLens",
   "description": "GeoLens — AI Visibility Intelligence（GEO 监测数据平台）。通用 GEO SaaS：任意品牌/产品/软件/服务均可建项目监测其 AI 可见度；产品与品牌无关（product-agnostic）。",
   "currentMilestone": "SYSTEM_OPTIMIZATION",
-  "overallStatus": "PRODUCTION_OPTIMIZED",
+  "overallStatus": "READY_WITH_LIMITATIONS",
   "nextUp": {
     "id": "REAL_PILOT_SELECTION",
     "name": "等待用户选定真实 GEO Pilot 品牌（真实存在、有真实网站、确实想做 GEO）并授权后开始。不做 M9。",
     "status": "AWAITING_USER_BRAND_SELECTION"
   },
-  "updatedAt": "2026-10-04T10:56:27.777Z",
+  "updatedAt": "2026-10-04T15:50:00.000Z",
   "updatedBy": "Principal Engineer / AI Platform Architect",
-  "updatedNote": "完成系统级生产优化：统一 AI Provider 运行时（@geo/llm InteractiveRuntime）、深度强类型契约校验与输出自愈（27 项 AI 能力）、多租户安全防护（CSRF/Origin/Sliding Window Rate Limit/Security Headers）、产品信息架构 5 阶段生命周期重构、GEO 科学度量 V2（重复观测/漂移探测/统计诚实性）、AI Gateway 模块化瘦身（AiAuditService + ai-mock-fixtures）与前端强类型 SDK。",
+  "updatedNote": "完成系统级生产优化独立终审闭环：验证真实提交与测试矩阵，修复孤立测试契约与双向检索漂移探测，纠正里程碑时间线与过度断言，强化仓库基线真实性。",
   "git": {
-    "branch": "master",
-    "head": "4a56409",
-    "headLabel": "feat(ui): add Chinese manual web UI measurement workspace",
+    "branch": "main",
+    "head": "965064c",
+    "headLabel": "docs(repo): synchronize architecture truth and project milestone status",
     "baselineBeforeDX1": "1137d23"
   },
   "realRunEvidence": {
@@ -807,7 +807,7 @@
       "id": "M9",
       "name": "Content Production & Multi-Platform Publications",
       "status": "DONE",
-      "completedAt": "2026-09-20T00:00:00.000Z",
+      "completedAt": "2026-09-18T03:41:45.000Z",
       "summary": [
         "Content Strategy, Campaign, Draft, Variants, Publication Pipeline",
         "Platform Connectors (WeChat, Xiaohongshu, Weibo, Douyin, Bilibili, Baidu, Manual)",
@@ -818,7 +818,7 @@
       "id": "M10",
       "name": "Retest & Outcome Attribution",
       "status": "DONE",
-      "completedAt": "2026-09-25T00:00:00.000Z",
+      "completedAt": "2026-09-19T01:08:41.000Z",
       "summary": [
         "Retest execution gating and frozen snapshot comparisons",
         "OutcomeComparison & OutcomeAttribution modeling",
@@ -829,7 +829,7 @@
       "id": "M11",
       "name": "Learning Signal Foundation",
       "status": "DONE",
-      "completedAt": "2026-09-30T00:00:00.000Z",
+      "completedAt": "2026-09-19T01:23:26.000Z",
       "summary": [
         "Learning signal extraction across outcome attributions",
         "Pattern identification, scope of applicability, testable hypotheses"
