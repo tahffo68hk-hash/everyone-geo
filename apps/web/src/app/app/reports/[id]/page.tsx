@@ -100,13 +100,13 @@ export default function ReportDetailPage() {
           <h1 className="mt-3 text-2xl font-semibold">检测报告</h1>
           {report.completion.partial && (
             <p className="mt-2 inline-block rounded bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
-              ⚠️ 部分完成 —— 本报告不代表完整测试集（成功 {report.completion.succeededRuns} / 总计划 {snap.plannedRuns ?? report.completion.completedRuns + report.completion.failedRuns} 条）
+              部分完成 —— 本报告不代表完整测试集（成功 {report.completion.succeededRuns} / 总计划 {snap.plannedRuns ?? report.completion.completedRuns + report.completion.failedRuns} 条）
             </p>
           )}
         </header>
 
         {/* 报告头 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-lg font-semibold">{report.suiteName} {formatVersion(report.suiteVersion)}</span>
             <span className={badge(report.metricSource === "demo" ? "bg-amber-100 text-amber-800" : report.metricSource === "real" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800")}>{formatMetricSource(report.metricSource)}</span>
@@ -117,7 +117,7 @@ export default function ReportDetailPage() {
         </section>
 
         {/* 核心指标 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-semibold">核心指标</h2>
           {snap.metricQueryScope && (
             <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
@@ -140,7 +140,7 @@ export default function ReportDetailPage() {
         </section>
 
         {/* 场景表现 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-semibold">按场景表现</h2>
           {snap.byCategory.length === 0 ? <p className="mt-3 text-sm text-slate-500">暂无按场景统计（无成功样本或该分析版本无结果）。</p> : (
             <div className="mt-3 overflow-x-auto">
@@ -166,7 +166,7 @@ export default function ReportDetailPage() {
 
         {/* 竞品表现 */}
         {competitor?.status === "ready" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+          <section className="rounded-lg border border-slate-200 bg-white p-6">
             <h2 className="text-lg font-semibold">竞品表现（AI 声量份额 · Share of Voice）</h2>
             <p className="mt-1 text-xs text-slate-500">竞品集合：{competitor.competitorSet.name} {formatVersion(competitor.competitorSet.version)}</p>
             <div className="mt-3 space-y-2">
@@ -186,7 +186,7 @@ export default function ReportDetailPage() {
         )}
 
         {competitor?.status !== "ready" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+          <section className="rounded-lg border border-slate-200 bg-white p-6">
             <h2 className="text-lg font-semibold">竞品表现（AI 声量份额 · Share of Voice）</h2>
             <p className="mt-2 text-sm text-slate-500">
               {competitor === null
@@ -197,7 +197,7 @@ export default function ReportDetailPage() {
         )}
 
         {/* 问题级结果 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-semibold">问题级结果</h2><p className="mt-2 text-sm text-slate-500">检测引擎：{report.engineName} · 点击检测记录查看原始证据。</p>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -224,12 +224,12 @@ export default function ReportDetailPage() {
           </div>
         </section>
 
-        <section id="report-evidence" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6">
+        <section id="report-evidence" className="scroll-mt-24 rounded-lg border border-slate-200 bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">证据清单</h2><button type="button" className="text-sm text-teal-700 underline" onClick={() => setSelection({ label: "全部检测记录", queries: null })}>查看全部</button></div>
           <p className="mt-2 break-words text-sm text-slate-500">当前范围：{selection.label} · {selectedRows.length} 条检测记录。分析仅使用报告冻结版本；缺失版本会明确标注。</p>
           {evidenceLoading ? <p role="status" className="mt-4">正在加载证据清单…</p> : evidenceError ? <p role="alert" className="mt-4 text-red-700">证据清单加载失败：{evidenceError}</p> : selectedRows.length === 0 ? <p className="mt-4 text-sm text-slate-500">当前范围没有可展示的检测记录。</p> : <ul className="mt-4 divide-y divide-slate-100">{selectedRows.map(row => <li key={row.runId} className="flex items-start justify-between gap-4 py-4"><div><p className="text-sm">{row.queryText}</p><p className="mt-1 text-xs text-slate-500">{formatStatus(row.status)} · {row.hasSnapshotAnalysis ? "具有报告冻结分析" : "缺少报告冻结分析"}{row.sanity ? " · 品牌认知测试" : ""}</p></div><button type="button" onClick={() => setEvidenceRunId(row.runId)} className="shrink-0 text-sm text-teal-700 underline">{row.evidenceId ? "查看原始回答" : "查看运行状态"}</button></li>)}</ul>}
         </section>
-        <details className="rounded-2xl border border-slate-200 bg-white p-6"><summary className="cursor-pointer font-semibold">报告技术详情</summary>
+        <details className="rounded-lg border border-slate-200 bg-white p-6"><summary className="cursor-pointer font-semibold">报告技术详情</summary>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
             {[
               ["测试集", `${report.suiteName} v${report.suiteVersion}`],
@@ -246,9 +246,9 @@ export default function ReportDetailPage() {
             ))}
           </dl>
         </details>
-        <section className="rounded-2xl border border-slate-200 bg-white p-6"><h2 className="font-semibold">下一步</h2><p className="mt-2 text-sm text-slate-600">结合原始回答确认遗漏与引用来源，再查看项目洞察制定优化动作。</p><Link href="/app/diagnosis" className="mt-3 inline-block text-sm text-teal-700 underline">查看洞察与优化 →</Link></section>
+        <section className="rounded-lg border border-slate-200 bg-white p-6"><h2 className="font-semibold">下一步</h2><p className="mt-2 text-sm text-slate-600">结合原始回答确认遗漏与引用来源，再查看项目洞察制定优化动作。</p><Link href="/app/diagnosis" className="mt-3 inline-block text-sm text-teal-700 underline">查看洞察与优化 →</Link></section>
         {/* 证据说明 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
           <h2 className="text-sm font-semibold text-slate-700">证据说明</h2>
           <p className="mt-2 text-xs text-slate-500">
             本报告所有指标均可追溯到模型原始回答（Evidence）：报告 → 基准测试 Run → 检测问题 → 检测记录 → 原始证据 → 分析结果。报告为生成时冻结快照，后续编辑测试集 / 竞品集合 / 新增分析版本不会改变本报告。

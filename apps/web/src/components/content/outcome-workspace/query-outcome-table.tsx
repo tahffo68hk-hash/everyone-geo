@@ -214,7 +214,7 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                         e.stopPropagation();
                         onSelectRow(row);
                       }}
-                      className="ui-button text-xs py-1 px-2.5 font-medium text-teal-700 hover:text-teal-800 border-teal-200 bg-teal-50/50 hover:bg-teal-50"
+                      className="ui-button secondary compact"
                     >
                       查看明细
                     </button>

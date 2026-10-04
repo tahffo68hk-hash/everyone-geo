@@ -127,7 +127,7 @@ export default function ReportsComparePage() {
           <p className="mt-2 text-sm text-slate-500">先判定可比性再给出 Δ —— 不同口径绝不无警告解读数字。</p>
         </header>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
           <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr]">
             <label className="text-sm text-slate-600">
               报告 A（Report A）
@@ -154,7 +154,7 @@ export default function ReportsComparePage() {
 
         {result && (
           <>
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 className="text-lg font-semibold">可比性</h2>
               <p className="mt-2">
                 判定结果：
@@ -190,7 +190,7 @@ export default function ReportsComparePage() {
               </table>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 className="text-lg font-semibold">总体指标：A / B / 变化</h2>
               <table className="mt-3 w-full text-left text-sm">
                 <thead className="border-b border-slate-200 text-slate-500">
@@ -210,7 +210,7 @@ export default function ReportsComparePage() {
             </section>
 
             {result.byCategory.length > 0 && (
-              <section className="rounded-2xl border border-slate-200 bg-white p-6">
+              <section className="rounded-lg border border-slate-200 bg-white p-6">
                 <h2 className="text-lg font-semibold">场景对比矩阵（A / B / Δ · 率用百分点 pp）</h2>
                 <table className="mt-3 w-full text-left text-sm">
                   <thead className="border-b border-slate-200 text-slate-500">
@@ -230,7 +230,7 @@ export default function ReportsComparePage() {
                     ))}
                   </tbody>
                 </table>
-                {result.warnings.length > 0 && <p className="mt-3 text-xs text-amber-700">⚠️ {result.warnings.join(" ")} 同一场景分类按名称对齐，跨版本语义可能已变。</p>}
+                {result.warnings.length > 0 && <p className="mt-3 text-xs text-amber-700">{result.warnings.join(" ")} 同一场景分类按名称对齐，跨版本语义可能已变。</p>}
               </section>
             )}
 
@@ -238,7 +238,7 @@ export default function ReportsComparePage() {
 
             {/* 问题级 Evidence A/B：同一 suite 的 queryText 对齐 → 点开两个 Provider 的原始回答 */}
             {evRows.a.length > 0 && evRows.b.length > 0 && (
-              <section className="rounded-2xl border border-slate-200 bg-white p-6">
+              <section className="rounded-lg border border-slate-200 bg-white p-6">
                 <h2 className="text-lg font-semibold">问题级证据对比（同一测试问题 · 两个模型服务的原始回答）</h2>
                 <p className="mt-1 text-xs text-slate-500">回答为什么 {providerLabel(result.reports.a.provider)} 提及/推荐了品牌，而 {providerLabel(result.reports.b.provider)} 没有 —— 直接看原始回答。</p>
                 <div className="mt-3 overflow-x-auto">

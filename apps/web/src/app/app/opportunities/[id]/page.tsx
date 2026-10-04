@@ -178,8 +178,8 @@ export default function OpportunityDetailPage() {
         <div className="mx-auto max-w-6xl space-y-4">
           <div className="h-4 w-1/4 animate-pulse rounded bg-slate-200" />
           <div className="h-10 w-2/3 animate-pulse rounded bg-slate-200" />
-          <div className="h-24 animate-pulse rounded-2xl bg-slate-200" />
-          <div className="h-48 animate-pulse rounded-2xl bg-slate-200" />
+          <div className="h-24 animate-pulse rounded-lg bg-slate-200" />
+          <div className="h-48 animate-pulse rounded-lg bg-slate-200" />
         </div>
       </main>
     );
@@ -201,13 +201,13 @@ export default function OpportunityDetailPage() {
 
         {opp && (
           <>
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
               {OPPORTUNITY_NAV.whyHint}
               <p className="mt-1 text-xs text-amber-700">{OPPORTUNITY_NAV.experimentHint}。</p>
             </section>
 
             {/* 顶部信息 */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`rounded px-2 py-0.5 text-xs font-semibold ${PRIO_BADGE[opp.priority]}`}>{formatOpportunityPriority(opp.priority)}优先级</span>
                 <span className="rounded bg-fuchsia-100 px-2 py-0.5 text-xs text-fuchsia-800">{formatOpportunityAsset(opp.opportunityType)}</span>
@@ -247,19 +247,19 @@ export default function OpportunityDetailPage() {
                 <div className="mt-4 flex gap-2">
                   <button type="button" disabled={operating} onClick={() => void setStatus("APPROVED")} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800 disabled:opacity-50">标记为已规划</button>
                   <button type="button" disabled={operating} onClick={() => void setStatus("DISMISSED")} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50">忽略该机会</button>
-                  <Link href={`/app/content/new?opportunity=${encodeURIComponent(opp.id)}`} className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50">创建内容草稿</Link>
+                  <Link href={`/app/content/new?opportunity=${encodeURIComponent(opp.id)}`} className="ui-button secondary compact">创建内容草稿</Link>
                 </div>
               )}
               {opp.status === "APPROVED" && (
                 <div className="mt-4 flex gap-2">
                   <button type="button" disabled={operating} onClick={() => void setStatus("PROPOSED")} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50">撤回为待评估</button>
-                  <Link href={`/app/content/new?opportunity=${encodeURIComponent(opp.id)}`} className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800">创建内容草稿</Link>
+                  <Link href={`/app/content/new?opportunity=${encodeURIComponent(opp.id)}`} className="ui-button primary compact">创建内容草稿</Link>
                 </div>
               )}
             </section>
 
             {/* M7D：优化实验集成 */}
-            <section className="rounded-2xl border border-cyan-200 bg-cyan-50/40 p-5">
+            <section className="rounded-lg border border-cyan-200 bg-cyan-50/40 p-5">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-semibold text-slate-700">优化实验（Before → 执行 → Frozen Re-test → After）</span>
                 {experiments.length === 0 ? (
@@ -284,7 +284,7 @@ export default function OpportunityDetailPage() {
             </section>
 
             {/* M8B：目标站点资产 + 变更计划 */}
-            <section className="rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
+            <section className="rounded-lg border border-violet-200 bg-violet-50/40 p-5">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-semibold text-slate-700">目标站点资产（M8B）</span>
                 {mappings.length === 0 ? (
@@ -327,14 +327,14 @@ export default function OpportunityDetailPage() {
               <div className="mt-3 border-t border-indigo-200 pt-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <span className="text-xs font-bold text-slate-900">✨ GEO 内容战略与生产计划</span>
+                    <span className="text-xs font-bold text-slate-900">GEO 内容战略与生产计划</span>
                     <p className="mt-0.5 text-xs text-slate-500">回答 9 大战略问题，并一键生成覆盖微信、小红书、B站、抖音、微博的多平台生产计划与草稿。</p>
                   </div>
                   <button
                     type="button"
                     disabled={operating}
                     onClick={() => void createContentStrategy()}
-                    className="rounded-lg bg-teal-700 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-teal-800 disabled:opacity-50"
+                    className="ui-button primary compact disabled:opacity-50"
                   >
                     {operating ? "正在生成战略…" : "生成内容战略与计划 →"}
                   </button>
@@ -343,7 +343,7 @@ export default function OpportunityDetailPage() {
             </section>
 
             {/* Why */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 className="text-base font-semibold">{OPPORTUNITY_NAV.why}</h2>
               <p className="mt-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{opp.rationale}</p>
               {opp.representativeQuery && (
@@ -368,7 +368,7 @@ export default function OpportunityDetailPage() {
             </section>
 
             {/* 建议结构 */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 className="text-base font-semibold">{OPPORTUNITY_NAV.suggestedStructure}</h2>
               <p className="mt-1 text-xs text-slate-400">{OPPORTUNITY_NAV.suggestedStructureHint}</p>
               <ol className="mt-3 space-y-2">
@@ -383,7 +383,7 @@ export default function OpportunityDetailPage() {
             </section>
 
             {/* 目标 Query 表格 */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 className="text-base font-semibold">{OPPORTUNITY_NAV.targetQueries}（{queries.length}）</h2>
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[860px] border-collapse text-sm">
@@ -426,7 +426,7 @@ export default function OpportunityDetailPage() {
             </section>
 
             {/* 证据 */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 className="text-base font-semibold">{OPPORTUNITY_NAV.evidenceSection}（{evidence.length}）</h2>
               <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
                 <span>Evidence Source：{metricSource === "real" ? "Real（真实数据）" : metricSource === "mixed" ? "Mixed" : "Demo / Mock（演示）"}</span>

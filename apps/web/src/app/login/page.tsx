@@ -32,13 +32,13 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+    <main className="auth-page">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+        className="auth-card"
       >
-        <h1 className="text-xl font-semibold text-slate-900">登录 GeoLens</h1>
-        <p className="text-sm text-slate-500">AI 可见度智能平台（AI Visibility Intelligence）</p>
+        <h1 className="auth-title">登录 GeoLens</h1>
+        <p className="auth-subtitle">AI 可见度智能平台（AI Visibility Intelligence）</p>
 
         <label className="block text-sm font-medium text-slate-700">
           邮箱
@@ -67,14 +67,14 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          className="ui-button primary auth-submit"
         >
           {busy ? "登录中…" : "登录"}
         </button>
 
         <p className="text-center text-sm text-slate-500">
           还没有账号？{" "}
-          <Link href="/register" className="text-blue-600 hover:underline">
+          <Link href="/register" className="auth-link">
             注册
           </Link>
         </p>

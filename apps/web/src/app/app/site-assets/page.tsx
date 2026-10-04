@@ -122,7 +122,7 @@ function SiteAssetsInner() {
       {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
       {/* 站点登记 */}
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center gap-2">
           <input
             value={newSite.name} onChange={e => setNewSite({ ...newSite, name: e.target.value })}
@@ -164,7 +164,7 @@ function SiteAssetsInner() {
 
       {/* 资产表 */}
       {siteId && (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-center gap-2 pb-3">
             <input
               value={newAsset.url} onChange={e => setNewAsset({ ...newAsset, url: e.target.value })}
@@ -193,7 +193,7 @@ function SiteAssetsInner() {
             </select>
             <button
               type="button" onClick={addAsset} disabled={busy || !newAsset.url.trim()}
-              className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-40"
+              className="ui-button primary"
             >
               {SITE_NAV.addAsset}
             </button>

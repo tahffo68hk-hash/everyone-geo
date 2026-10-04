@@ -160,7 +160,7 @@ function ManualRunInner() {
       {ws && (
         <>
           {/* 进度 */}
-          <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-4">
               <div className="text-2xl font-semibold text-slate-800">{ws.progress.submitted}<span className="text-base text-slate-400"> / {ws.progress.total}</span></div>
               <div className="flex flex-wrap gap-2 text-xs">
@@ -180,7 +180,7 @@ function ManualRunInner() {
             const skipped = row.status === "SKIPPED";
             const analysis = row.evidence?.analysis;
             return (
-              <section key={row.id} className={`rounded-xl border bg-white p-4 ${submitted ? "border-emerald-200" : skipped ? "border-amber-200" : "border-slate-200"}`}>
+              <section key={row.id} className={`rounded-lg border bg-white p-4 ${submitted ? "border-emerald-200" : skipped ? "border-amber-200" : "border-slate-200"}`}>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">Q{row.sortOrder + 1}</span>
                   <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{row.queryType ? formatQueryType(row.queryType) : "未分类"}</span>
@@ -290,11 +290,11 @@ function ManualRunInner() {
 
           {/* 完成后 CTA */}
           {ws.progress.complete && (
-            <section className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 text-center">
+            <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 text-center">
               <h2 className="text-lg font-semibold text-emerald-900">{MANUAL_NAV.complete}</h2>
               <p className="mt-1 text-xs text-emerald-700">已提交 {ws.progress.submitted} / 共 {ws.progress.total}（跳过 {ws.progress.skipped}）。</p>
               <div className="mt-3 flex justify-center gap-2">
-                <Link href={`/app/benchmark?run=${ws.id}`} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800">{MANUAL_NAV.viewMetrics}</Link>
+                <Link href={`/app/benchmark?run=${ws.id}`} className="ui-button primary">{MANUAL_NAV.viewMetrics}</Link>
                 <button type="button" disabled={ws.progress.submitted === 0} onClick={() => {
                   if (!window.confirm("生成报告？报告为不可变快照。")) return;
                   void (async () => {

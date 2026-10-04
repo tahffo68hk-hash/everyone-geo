@@ -6,6 +6,7 @@ import {
   EMPTY_TEXT, formatAnalysisStatus, formatEntityType, formatRetrievalMode,
   formatSentiment, formatSourceType, formatStatus, friendlyError, withRaw,
 } from "@/lib/labels";
+import { FactInterpretation } from "@/components/productization";
 
 type Analysis = {
   id: string; analysisVersion: string; brandMentioned: boolean; mentionPosition: number | null;
@@ -77,7 +78,7 @@ export function EvidenceDrawer({ runId, onClose, analysisVersion }: { runId: str
     ? evidence?.analyses.find((item) => item.analysisVersion === analysisVersion)
     : evidence?.analyses.find((item) => item.id === analysisId) ?? evidence?.analyses[0];
   return (
-    <dialog ref={dialog} aria-labelledby="evidence-heading" onCancel={onClose} className="m-0 ml-auto h-dvh max-h-dvh w-full max-w-3xl overflow-y-auto rounded-l-2xl bg-white p-6 text-slate-900 shadow-xl backdrop:bg-slate-900/50">
+    <dialog ref={dialog} aria-labelledby="evidence-heading" onCancel={onClose} className="m-0 ml-auto h-dvh max-h-dvh w-full max-w-3xl overflow-y-auto rounded-l-2xl bg-white p-6 text-slate-900 shadow-sm backdrop:bg-slate-900/50">
       <div className="flex items-center justify-between gap-4"><h2 id="evidence-heading" className="text-xl font-semibold">原始证据</h2><button autoFocus type="button" onClick={onClose} className={buttonClass}>关闭</button></div>
 
       <button type="button" onClick={() => setRetry((value) => value + 1)} className={`${buttonClass} mt-3`}>刷新证据</button>
@@ -97,7 +98,10 @@ export function EvidenceDrawer({ runId, onClose, analysisVersion }: { runId: str
           {!analysis ? <p className="text-sm text-slate-500">{analysisVersion !== undefined ? `报告冻结分析版本 ${analysisVersion} 缺失；原始回答仍可查看，不使用其他版本替代。` : run?.analysisStatus === "FAILED" ? "分析失败；原始证据仍可查看。" : "尚无分析结果，可稍后刷新。"}</p> : <>
             {analysisVersion !== undefined ? <p className="text-sm text-slate-600">报告冻结分析版本：{analysisVersion}</p> : <><label htmlFor="analysis-version" className="mr-2 text-sm">已保存分析版本</label>
             <select id="analysis-version" value={analysis.id} onChange={(event) => setAnalysisId(event.target.value)} className="max-w-full rounded border border-slate-300 p-2 text-sm">{evidence.analyses.map((item) => <option key={item.id} value={item.id}>{item.analysisVersion} · {item.createdAt}</option>)}</select></>}
-            <p className="mt-3 text-sm">是否提及品牌：{analysis.brandMentioned ? "是" : "否"} · 首次提及位次：{analysis.mentionPosition ?? "—"} · 是否被推荐：{analysis.recommended ? "是" : "否"} · 情感倾向：{formatSentiment(analysis.sentiment)}</p>
+            <FactInterpretation
+              facts={<span>品牌提及：{analysis.brandMentioned ? "是" : "否"} · 首次提及位次：{analysis.mentionPosition ?? "—"} · 被推荐：{analysis.recommended ? "是" : "否"} · 情感倾向：{formatSentiment(analysis.sentiment)}</span>}
+              interpretation="这里展示的是已保存的分析结果；它是对原始回答的解释，不会覆盖原始证据。"
+            />
             <h4 className="mt-4 font-medium">品牌与竞品提及</h4>
             {!analysis.mentions.length ? <p className="mt-2 text-sm text-slate-500">无提及记录。</p> : <ul className="mt-2 space-y-3 text-sm">{analysis.mentions.map((mention) => <li key={mention.id} className="rounded border border-slate-200 p-3"><p>{mention.displayName}（{mention.canonicalName}） · {formatEntityType(mention.entityType)} · 首次提及位次 {mention.position} · {formatSentiment(mention.sentiment)}</p><p className="mt-1 whitespace-pre-wrap break-words text-slate-600">{mention.context}</p></li>)}</ul>}
             <h4 className="mt-4 font-medium">引用来源</h4>

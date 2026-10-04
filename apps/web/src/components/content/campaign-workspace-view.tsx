@@ -167,8 +167,8 @@ export function CampaignWorkspaceView({
 
   if (campaigns.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
-        <span className="text-3xl">🚀</span>
+      <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
+        
         <h3 className="mt-3 text-base font-semibold text-slate-900">尚未创建任何运营战役 (Campaign)</h3>
         <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
           运营战役是将 GEO 内容战略落地为日常内容生产队列与日历的关键载体。请基于已有的内容战略一键实例化战役。
@@ -208,7 +208,7 @@ export function CampaignWorkspaceView({
   return (
     <div className="space-y-6">
       {/* 顶部总体指标与操作栏 */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
         <div className="flex flex-wrap items-center gap-6">
           <div>
             <span className="text-[11px] font-semibold text-slate-400 uppercase">战役总数</span>
@@ -265,7 +265,7 @@ export function CampaignWorkspaceView({
                   key={c.id}
                   type="button"
                   onClick={() => setSelectedCampaignId(c.id)}
-                  className={`w-full rounded-xl border p-3.5 text-left transition-all ${
+                  className={`w-full rounded-lg border p-3.5 text-left transition-all ${
                     isSelected
                       ? "border-teal-600 bg-teal-50/50 shadow-xs"
                       : "border-slate-200 bg-white hover:border-slate-300"
@@ -353,15 +353,15 @@ export function CampaignWorkspaceView({
               </section>
 
               {/* 战役溯源与 GEO 核心目标 (Lineage & Objective) */}
-              <section className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:grid-cols-2">
-                <div className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50/40 p-3.5">
+              <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-xs sm:grid-cols-2">
+                <div className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50/40 p-3.5">
                   <span className="text-[11px] font-bold text-amber-900 uppercase">聚焦的 GEO 核心缺口</span>
                   <p className="text-xs leading-relaxed text-amber-950 font-medium">
                     {campaignDetail.primaryGeoGap}
                   </p>
                 </div>
 
-                <div className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                <div className="space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-3.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-slate-600 uppercase">战略血统追溯 (Lineage)</span>
                     {campaignDetail.strategyId && (
@@ -384,15 +384,15 @@ export function CampaignWorkspaceView({
               </section>
 
               {/* 严谨事实进度指标 (Factual Progress Metrics - NO FAKE AI SCORES) */}
-              <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+              <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                   <div className="flex items-center gap-2">
                     <h3 className="text-xs font-bold text-slate-900">
-                      📊 战役生产真实进度（事实核验与闭环指标）
+                      战役生产真实进度（事实核验与闭环指标）
                     </h3>
                     {(progress?.overdue ?? 0) > 0 && (
                       <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
-                        ⚠️ {progress?.overdue} 项逾期
+                        {progress?.overdue} 项逾期
                       </span>
                     )}
                   </div>
@@ -411,35 +411,35 @@ export function CampaignWorkspaceView({
 
                 {/* 指标卡片网格 */}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 pt-1">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-slate-500 uppercase">总生产项</span>
                     <p className="text-lg font-bold text-slate-900">{progress?.total ?? 0}</p>
                     <span className="mt-0.5 block text-[10px] text-slate-500">
                       {(progress?.overdue ?? 0) > 0 ? `逾期: ${progress?.overdue}` : "全部已排期"}
                     </span>
                   </div>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-center">
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-amber-700 uppercase">缺少事实/物料</span>
                     <p className="text-lg font-bold text-amber-800">{blockedTotal}</p>
                     <span className="mt-0.5 block text-[10px] text-amber-600">
                       事实: {progress?.blockedFacts ?? 0} · 素材: {progress?.blockedAssets ?? 0}
                     </span>
                   </div>
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 text-center">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-emerald-700 uppercase">就绪可生产</span>
                     <p className="text-lg font-bold text-emerald-800">{progress?.ready ?? 0}</p>
                     <span className="mt-0.5 block text-[10px] text-emerald-600">
                       生产中: {progress?.inProgress ?? 0}
                     </span>
                   </div>
-                  <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3 text-center">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-blue-700 uppercase">已生成草稿</span>
                     <p className="text-lg font-bold text-blue-800">{progress?.draftCreated ?? 0}</p>
                     <span className="mt-0.5 block text-[10px] text-blue-600">
                       待审核: {progress?.inReview ?? 0}
                     </span>
                   </div>
-                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-center">
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 text-center">
                     <span className="text-[10px] font-semibold text-indigo-700 uppercase">审核与完成</span>
                     <p className="text-lg font-bold text-indigo-800">{approvedAndDone}</p>
                     <span className="mt-0.5 block text-[10px] text-indigo-600">
@@ -450,11 +450,11 @@ export function CampaignWorkspaceView({
               </section>
 
               {/* 战役排期与生产清单 */}
-              <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+              <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                   <div>
                     <h3 className="text-xs font-bold text-slate-900">
-                      📝 战役内容排期清单 ({scheduleItems.length})
+                      战役内容排期清单 ({scheduleItems.length})
                     </h3>
                     <p className="text-[11px] text-slate-500">
                       根据战略中的平台生产计划自动排期，支持人工微调生产状态、日期与时间
@@ -466,27 +466,27 @@ export function CampaignWorkspaceView({
                       type="button"
                       disabled={generatingCalendar}
                       onClick={handleGenerateCalendar}
-                      className="rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800 disabled:opacity-50"
+                      className="ui-button primary compact"
                     >
-                      {generatingCalendar ? "排期中..." : "✨ 自动生成工作日排期"}
+                      {generatingCalendar ? "排期中..." : "自动生成工作日排期"}
                     </button>
                   )}
                 </div>
 
                 {scheduleItems.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center">
+                  <div className="rounded-lg border border-dashed border-slate-200 p-8 text-center">
                     <p className="text-xs text-slate-500">该战役暂未生成具体生产排期</p>
                     <button
                       type="button"
                       disabled={generatingCalendar}
                       onClick={handleGenerateCalendar}
-                      className="mt-3 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 disabled:opacity-50"
+                      className="ui-button primary compact mt-3"
                     >
                       点击生成初始排期
                     </button>
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+                  <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
                     {scheduleItems.map((item) => (
                       <div
                         key={item.id}
@@ -507,7 +507,7 @@ export function CampaignWorkspaceView({
                               {item.blockReason && (
                                 <>
                                   <span>·</span>
-                                  <span className="text-amber-700">⚠️ {item.blockReason}</span>
+                                  <span className="text-amber-700">{item.blockReason}</span>
                                 </>
                               )}
                             </div>

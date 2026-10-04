@@ -64,12 +64,12 @@ function PlanInner() {
 
       {plan && (
         <>
-          <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             {CHANGE_PLAN_NAV.noAutoPublish}
             <p className="mt-1 text-xs text-amber-700">{CHANGE_PLAN_NAV.notFinalText}</p>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
+          <section className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
             <p className="text-slate-700">{plan.summary}</p>
             <dl className="mt-3 grid grid-cols-2 gap-3 text-xs md:grid-cols-3">
               <div>
@@ -107,7 +107,7 @@ function PlanInner() {
             )}
             {plan.status === "APPROVED" && (
               <div className="mt-3">
-                <button type="button" disabled={operating} onClick={() => void setStatus("EXECUTED_MANUALLY")} className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50">
+                <button type="button" disabled={operating} onClick={() => void setStatus("EXECUTED_MANUALLY")} className="ui-button primary compact disabled:opacity-50">
                   标记已手动执行
                 </button>
                 <p className="mt-1 text-[11px] text-slate-400">“已执行”表示你确认已按计划人工修改页面；GeoLens 不会自动修改网站。</p>
@@ -115,7 +115,7 @@ function PlanInner() {
             )}
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-slate-700">{CHANGE_PLAN_NAV.item}（{plan.items.length}）</h2>
             <div className="mt-2 space-y-2">
               {plan.items.map(item => (

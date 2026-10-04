@@ -92,9 +92,9 @@ export function EditScheduleModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="schedule-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
     >
-      <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+      <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -121,14 +121,14 @@ export function EditScheduleModal({
         </div>
 
         {error && (
-          <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+          <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
             {error}
           </div>
         )}
 
         {/* 依赖项提示 */}
         {item.dependsOn && (
-          <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 text-xs text-indigo-900">
+          <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50/50 p-3 text-xs text-indigo-900">
             <span className="font-semibold">前置依赖：</span>
             <span>
               {item.dependsOn.planItem?.title} ({item.dependsOn.planItem?.platform}) · 状态：{item.dependsOn.productionStatus}
@@ -229,9 +229,9 @@ export function EditScheduleModal({
               {draftId ? (
                 <Link
                   href={`/app/content/${draftId}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                  className="ui-button secondary compact"
                 >
-                  📝 进入草稿工作台 →
+                  进入草稿工作台 →
                 </Link>
               ) : isReady && onStartProduction ? (
                 <button
@@ -242,11 +242,11 @@ export function EditScheduleModal({
                   }}
                   className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs"
                 >
-                  🚀 立即开始生产
+                  立即开始生产
                 </button>
               ) : isBlocked ? (
                 <span className="text-[11px] text-amber-700 font-medium">
-                  ⚠️ 当前受阻，请先补全依据/物料
+                  当前受阻，请先补全依据/物料
                 </span>
               ) : null}
             </div>
@@ -262,7 +262,7 @@ export function EditScheduleModal({
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-lg bg-indigo-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 shadow-xs disabled:opacity-50"
+                className="ui-button primary compact"
               >
                 {saving ? "正在保存…" : "保存排期"}
               </button>

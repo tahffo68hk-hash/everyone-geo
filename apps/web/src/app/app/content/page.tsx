@@ -553,7 +553,7 @@ export default function ContentWorkspacePage() {
         {activeTab === "operations" && (
           <div className="space-y-6">
             {/* 运营执行二级视图切换 */}
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-100/80 p-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-100/80 p-1.5">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -564,7 +564,7 @@ export default function ContentWorkspacePage() {
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
-                  📋 今日生产队列
+                  今日生产队列
                 </button>
                 <button
                   type="button"
@@ -575,7 +575,7 @@ export default function ContentWorkspacePage() {
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
-                  📅 内容生产日历
+                  内容生产日历
                 </button>
                 <button
                   type="button"
@@ -586,7 +586,7 @@ export default function ContentWorkspacePage() {
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
-                  🚀 运营战役全景
+                  运营战役全景
                 </button>
               </div>
             </div>
@@ -632,8 +632,8 @@ export default function ContentWorkspacePage() {
         {activeTab === "strategy" && (
           <div className="space-y-6">
             {strategies.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
-                <span className="text-3xl">🎯</span>
+              <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
+                
                 <h3 className="mt-3 text-base font-semibold text-slate-900">尚未生成内容战略与生产计划</h3>
                 <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
                   回答“用户为什么要生成这篇内容”：从 GEO 缺口分析出发，自动形成涵盖 9 大战略问题与多平台落地的生产计划。
@@ -644,7 +644,7 @@ export default function ContentWorkspacePage() {
                     onClick={() => setShowNewStrategyModal(true)}
                     className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-800"
                   >
-                    ✨ 一键生成首份内容战略与计划
+                    生成首份内容战略与计划
                   </button>
                 </div>
               </div>
@@ -670,7 +670,7 @@ export default function ContentWorkspacePage() {
                         key={s.id}
                         type="button"
                         onClick={() => setSelectedStrategyId(s.id)}
-                        className={`w-full rounded-xl border p-3.5 text-left transition-all ${
+                        className={`w-full rounded-lg border p-3.5 text-left transition-all ${
                           selectedStrategyId === s.id
                             ? "border-indigo-600 bg-indigo-50/50 shadow-xs"
                             : "border-slate-200 bg-white hover:border-slate-300"
@@ -691,13 +691,13 @@ export default function ContentWorkspacePage() {
                 {/* 右侧：战略 9 大维度与内容生产计划 */}
                 <div className="space-y-6 lg:col-span-3">
                   {loadingStrategy ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                    <div className="rounded-lg border border-slate-200 bg-white p-6">
                       <LoadingSkeleton rows={6} />
                     </div>
                   ) : selectedStrategy ? (
                     <>
                       {/* 战略概览 Banner */}
-                      <section className="rounded-2xl border border-indigo-100 bg-linear-to-r from-indigo-50/70 via-white to-indigo-50/30 p-6 shadow-xs">
+                      <section className="rounded-lg border border-indigo-100 bg-linear-to-r from-indigo-50/70 via-white to-indigo-50/30 p-6 shadow-xs">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="space-y-1">
                             <span className="inline-flex items-center gap-1 rounded bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-800">
@@ -715,12 +715,12 @@ export default function ContentWorkspacePage() {
                               onClick={() => handleOpenCreateCampaign(selectedStrategy)}
                               className="inline-flex items-center rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800"
                             >
-                              🚀 转化为运营战役 (Campaign)
+                              转化为运营战役 (Campaign)
                             </button>
                             {selectedStrategy.sourceOpportunityId && (
                               <Link
                                 href={`/app/opportunities/${selectedStrategy.sourceOpportunityId}`}
-                                className="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                                className="ui-button secondary compact"
                               >
                                 查看关联优化机会 →
                               </Link>
@@ -730,13 +730,13 @@ export default function ContentWorkspacePage() {
                       </section>
 
                       {/* 9 大战略问题全解析 (The 9 Strategic Pillars) */}
-                      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+                      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
                         <h3 className="border-b border-slate-100 pb-3 text-base font-bold text-slate-900">
-                          🎯 战略九问核心解答 (The 9 Strategic Pillars)
+                          战略九问核心解答 (The 9 Strategic Pillars)
                         </h3>
 
                         {/* 1. 当前 GEO 缺口 */}
-                        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                        <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
                           <p className="text-xs font-bold text-amber-900">1. 当前 GEO 缺口是什么？ (GEO Gap)</p>
                           <p className="mt-1.5 text-xs leading-relaxed text-amber-950">{selectedStrategy.geoGap}</p>
                         </div>
@@ -776,13 +776,13 @@ export default function ContentWorkspacePage() {
 
                         {/* 3 & 4. 目标受众与心智目标 */}
                         <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                             <p className="text-xs font-bold text-slate-800">3. 目标受众是谁？ (Target Audience)</p>
                             <p className="mt-1.5 text-xs leading-relaxed text-slate-700">
                               {selectedStrategy.targetAudience}
                             </p>
                           </div>
-                          <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                          <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
                             <p className="text-xs font-bold text-indigo-900">
                               4. 内容应该建立什么心智认知？ (Perception Goal)
                             </p>
@@ -812,7 +812,7 @@ export default function ContentWorkspacePage() {
 
                         {/* 6 & 7. 平台优先级与推荐形式 */}
                         <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
                             <p className="text-xs font-bold text-slate-800">
                               6. 平台优先级与角色分工 (Platform Priorities)
                             </p>
@@ -839,7 +839,7 @@ export default function ContentWorkspacePage() {
                             </div>
                           </div>
 
-                          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
                             <p className="text-xs font-bold text-slate-800">7. 推荐内容形式 (Content Formats)</p>
                             <div className="space-y-2">
                               {selectedStrategy.contentFormats?.map((f, idx) => (
@@ -860,7 +860,7 @@ export default function ContentWorkspacePage() {
 
                         {/* 8 & 9. 事实证据与验证指标 */}
                         <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                             <p className="text-xs font-bold text-slate-800">8. 所需事实与依据 (Evidence Required)</p>
                             <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
                               {selectedStrategy.evidenceRequired?.map((e, idx) => (
@@ -875,7 +875,7 @@ export default function ContentWorkspacePage() {
                             </ul>
                           </div>
 
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                             <p className="text-xs font-bold text-slate-800">9. 成功验证指标 (Validation Metrics)</p>
                             <ul className="mt-2 space-y-2 text-xs text-slate-700">
                               {selectedStrategy.validationMetrics?.map((m, idx) => (
@@ -893,11 +893,11 @@ export default function ContentWorkspacePage() {
                       </section>
 
                       {/* 具体生产落地计划 (Content Plan Items) */}
-                      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+                      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
                         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                           <div>
                             <h3 className="text-base font-bold text-slate-900">
-                              📋 落地内容生产计划 (Content Production Plan)
+                              落地内容生产计划 (Content Production Plan)
                             </h3>
                             <p className="text-xs text-slate-500">
                               明确平台分工、内容形式、生产目的与 GEO 目标；支持一键生成对应草稿并进入创作闭环。
@@ -917,7 +917,7 @@ export default function ContentWorkspacePage() {
                             return (
                               <div
                                 key={item.id}
-                                className="rounded-xl border border-slate-200 bg-slate-50/50 p-5 transition-all hover:border-slate-300 hover:bg-white"
+                                className="rounded-lg border border-slate-200 bg-slate-50/50 p-5 transition-all hover:border-slate-300 hover:bg-white"
                               >
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div className="space-y-1.5">
@@ -981,7 +981,7 @@ export default function ContentWorkspacePage() {
                                     {item.draftId ? (
                                       <Link
                                         href={`/app/content/${item.draftId}`}
-                                        className="rounded-lg bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-800"
+                                        className="ui-button primary compact"
                                       >
                                         查看草稿与变体 →
                                       </Link>
@@ -1033,21 +1033,21 @@ export default function ContentWorkspacePage() {
                                 {/* 准入理由与缺失告警 */}
                                 {item.metadata?.platformEligibilityReason && (
                                   <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/50 p-2.5 text-xs">
-                                    <span className="font-semibold text-indigo-900">🎯 平台入选理由：</span>
+                                    <span className="font-semibold text-indigo-900">平台入选理由：</span>
                                     <span className="text-indigo-950">{item.metadata.platformEligibilityReason}</span>
                                   </div>
                                 )}
 
                                 {item.metadata?.missingFacts && item.metadata.missingFacts.length > 0 && (
                                   <div className="mt-2 rounded-lg border border-red-200 bg-red-50/60 p-2.5 text-xs text-red-800">
-                                    <span className="font-bold text-red-900">⚠️ 缺少事实依据：</span>
+                                    <span className="font-bold text-red-900">缺少事实依据：</span>
                                     <span>{item.metadata.missingFacts.join("、")}（请在知识库中补充核验事实以解锁生成）</span>
                                   </div>
                                 )}
 
                                 {item.metadata?.missingAssets && item.metadata.missingAssets.length > 0 && (
                                   <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-xs text-amber-800">
-                                    <span className="font-bold text-amber-900">🎬 缺少前置物料：</span>
+                                    <span className="font-bold text-amber-900">缺少前置物料：</span>
                                     <span>需要实拍或分镜视频素材（请在素材库中上传物料）</span>
                                   </div>
                                 )}
@@ -1058,7 +1058,7 @@ export default function ContentWorkspacePage() {
                                     <p className="mt-0.5 text-slate-600">{item.objective}</p>
                                   </div>
                                   <div className="rounded-lg border border-slate-200 bg-white p-3">
-                                    <span className="font-semibold text-slate-700">🎯 GEO 目标：</span>
+                                    <span className="font-semibold text-slate-700">GEO 目标：</span>
                                     <p className="mt-0.5 text-slate-600">{item.geoTarget}</p>
                                   </div>
                                 </div>
@@ -1083,7 +1083,7 @@ export default function ContentWorkspacePage() {
                       </section>
                     </>
                   ) : (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+                    <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
                       请从左侧选择一份内容战略进行查看。
                     </div>
                   )}
@@ -1097,17 +1097,17 @@ export default function ContentWorkspacePage() {
         {activeTab === "drafts" && (
           <div className="space-y-6">
             <section className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <p className="text-xs text-slate-500">内容草稿</p>
                 <p className="mt-1 text-2xl font-semibold">{rows.length}</p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <p className="text-xs text-slate-500">已连接账号</p>
                 <p className="mt-1 text-2xl font-semibold">
                   {connections.filter((c) => c.status === "CONNECTED").length}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <p className="text-xs text-slate-500">渠道能力</p>
                 <p className="mt-1 text-sm font-medium">
                   {caps.length ? `${caps.length} 个渠道，均为模拟发布` : "能力信息待加载"}
@@ -1149,7 +1149,7 @@ export default function ContentWorkspacePage() {
                 action="创建内容草稿"
               />
             ) : (
-              <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                 <table className="w-full min-w-[900px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-100 text-left text-xs text-slate-500">
@@ -1209,7 +1209,7 @@ export default function ContentWorkspacePage() {
             )}
 
             {/* 发布列表 */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <section className="rounded-lg border border-slate-200 bg-white p-5">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold">发布列表</h2>
@@ -1313,7 +1313,7 @@ export default function ContentWorkspacePage() {
             </section>
 
             {/* 素材管理 */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <section className="rounded-lg border border-slate-200 bg-white p-5">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold">开发环境素材</h2>
@@ -1366,10 +1366,10 @@ export default function ContentWorkspacePage() {
 
         {/* 模态弹窗：一键生成新内容战略与计划 */}
         {showNewStrategyModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs">
-            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+            <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-base font-bold text-slate-900">✨ 生成 GEO 内容战略与生产计划</h3>
+                <h3 className="text-base font-bold text-slate-900">生成 GEO 内容战略与生产计划</h3>
                 <button
                   type="button"
                   onClick={() => setShowNewStrategyModal(false)}
@@ -1414,7 +1414,7 @@ export default function ContentWorkspacePage() {
                 </div>
 
                 <div className="rounded-lg bg-indigo-50/60 p-3 text-[11px] text-indigo-950 leading-relaxed">
-                  💡 <strong>引擎自动处理</strong>：系统将全面聚合项目 Verified Facts、GEO
+                  <strong>引擎自动处理</strong>：系统将全面聚合项目 Verified Facts、GEO
                   缺口数据与多模型检索结果，自动输出 9 大战略问题解答，并制定覆盖微信公众号、小红书、B站、抖音、微博的 5 平台落地生产计划。
                 </div>
               </div>

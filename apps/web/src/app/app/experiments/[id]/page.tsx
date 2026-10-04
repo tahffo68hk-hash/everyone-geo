@@ -248,7 +248,7 @@ export default function ExperimentDetailPage() {
   const shownEval = evaluations.find(e => e.id === selectedEvalId) ?? latestEvaluation;
 
   if (loading) {
-    return <main className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-8"><div className="mx-auto max-w-6xl space-y-3"><div className="h-4 w-1/3 animate-pulse rounded bg-slate-200" /><div className="h-10 w-2/3 animate-pulse rounded bg-slate-200" /><div className="h-40 animate-pulse rounded-2xl bg-slate-200" /><div className="h-64 animate-pulse rounded-2xl bg-slate-200" /></div></main>;
+    return <main className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-8"><div className="mx-auto max-w-6xl space-y-3"><div className="h-4 w-1/3 animate-pulse rounded bg-slate-200" /><div className="h-10 w-2/3 animate-pulse rounded bg-slate-200" /><div className="h-40 animate-pulse rounded-lg bg-slate-200" /><div className="h-64 animate-pulse rounded-lg bg-slate-200" /></div></main>;
   }
 
   const real = exp?.metricSource === "real";
@@ -270,7 +270,7 @@ export default function ExperimentDetailPage() {
         {exp && (
           <>
             {/* Header */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[exp.status] ?? ""}`}>{formatExperimentStatus(exp.status)}</span>
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{formatMetricSource(exp.metricSource)}</span>
@@ -294,7 +294,7 @@ export default function ExperimentDetailPage() {
             </section>
 
             {/* Baseline */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 className="text-base font-semibold">{EXPERIMENT_NAV.baseline}</h2>
               <div className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
                 <div><dt className="text-xs text-slate-500">套件</dt><dd className="font-medium">{exp.suiteName ? `${exp.suiteName} v${exp.suiteVersion ?? ""}` : "—"}</dd></div>
@@ -307,7 +307,7 @@ export default function ExperimentDetailPage() {
             </section>
 
             {/* M8A：测量有效性（网页验证 guard） */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-semibold">{PILOT_NAV.measurementValidity}（{MEASUREMENT_VERSION_LABEL}）</h2>
                 {exp.status === "PLANNED" && (
@@ -345,11 +345,11 @@ export default function ExperimentDetailPage() {
             </section>
 
             {/* Execution */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-semibold">{EXPERIMENT_NAV.execution}</h2>
                 {executions.length === 0 && (
-                  <button type="button" className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800" onClick={() => setFormOpen(v => !v)}>
+                  <button type="button" className="ui-button primary compact" onClick={() => setFormOpen(v => !v)}>
                     {EXPERIMENT_NAV.recordExecution}
                   </button>
                 )}
@@ -357,7 +357,7 @@ export default function ExperimentDetailPage() {
               </div>
               <p className="mt-1 text-xs text-slate-400">{EXPERIMENT_NAV.executionHint}</p>
               {formOpen && executions.length === 0 && (
-                <div className="mt-3 space-y-2 rounded-xl border border-blue-200 bg-blue-50/40 p-4">
+                <div className="mt-3 space-y-2 rounded-lg border border-blue-200 bg-blue-50/40 p-4">
                   <div className="grid gap-2 sm:grid-cols-2">
                     <label className="block text-sm"><span className="mb-1 block text-xs text-slate-500">执行类型</span>
                       <select className="w-full rounded border border-slate-300 p-2 text-sm" value={form.executionType} onChange={e => setForm(p => ({ ...p, executionType: e.target.value }))}>
@@ -379,7 +379,7 @@ export default function ExperimentDetailPage() {
                       <input className="w-full rounded border border-slate-300 p-2 text-sm" value={form.assetReference} onChange={e => setForm(p => ({ ...p, assetReference: e.target.value }))} placeholder="https://…" />
                     </label>
                   </div>
-                  <button type="button" disabled={operating || !form.changeSummary.trim()} onClick={() => void recordExecution()} className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50">
+                  <button type="button" disabled={operating || !form.changeSummary.trim()} onClick={() => void recordExecution()} className="ui-button primary compact disabled:opacity-50">
                     {operating ? "保存中…" : `${EXPERIMENT_NAV.recordExecution}（用户确认）`}
                   </button>
                 </div>
@@ -401,7 +401,7 @@ export default function ExperimentDetailPage() {
             </section>
 
             {/* Retest Plan */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-6">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-base font-semibold">{EXPERIMENT_NAV.retestPlan}</h2>
                 {!plan && executions.length > 0 && exp.status !== "CANCELLED" && (
@@ -410,7 +410,7 @@ export default function ExperimentDetailPage() {
               </div>
               {executions.length === 0 && exp.status !== "CANCELLED" && <p className="mt-2 text-xs text-slate-500">{EXPERIMENT_NAV.noExecutionFirst}</p>}
               {plan && (
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-4 text-sm">
+                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-4 text-sm">
                   <p className="font-medium">即将以基线冻结口径复测：</p>
                   <p className="mt-1 text-xs text-slate-600">测试问题：{String(plan.queryCount)} · Provider：{String(plan.provider)} · 请求模型：{String(plan.requestedModel ?? "—")} · 数据类型：{formatMetricSource(String(plan.metricSource))} · 分析版本：{String(plan.analysisVersion)} · 预计调用：{String(plan.expectedCallCount)}</p>
                   {real ? (
@@ -450,11 +450,11 @@ export default function ExperimentDetailPage() {
             {/* Outcome / Evaluation */}
             {shownEval && (
               <>
-                <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+                <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
                   {EXPERIMENT_NAV.evaluationNote}
                   <p className="mt-1 text-xs text-amber-700">{EXPERIMENT_NAV.observedNotProven}</p>
                 </section>
-                <section className="rounded-2xl border border-slate-200 bg-white p-6">
+                <section className="rounded-lg border border-slate-200 bg-white p-6">
                   <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-base font-semibold">{EXPERIMENT_NAV.observedOutcome}</h2>
                     <span className={`rounded px-2 py-0.5 text-sm font-semibold ${OUTCOME_BADGE[shownEval.outcome] ?? ""}`}>{formatOutcome(shownEval.outcome)}</span>
@@ -488,7 +488,7 @@ export default function ExperimentDetailPage() {
                 </section>
 
                 {/* KPI Before/After */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-6">
+                <section className="rounded-lg border border-slate-200 bg-white p-6">
                   <h2 className="text-base font-semibold">{EXPERIMENT_NAV.beforeAfterKpi}</h2>
                   <div className="mt-3 overflow-x-auto">
                     <table className="w-full min-w-[640px] border-collapse text-sm">
@@ -525,7 +525,7 @@ export default function ExperimentDetailPage() {
                 </section>
 
                 {/* Query Delta Table */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-6">
+                <section className="rounded-lg border border-slate-200 bg-white p-6">
                   <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-base font-semibold">{EXPERIMENT_NAV.queryDeltaTable}（{queryDeltas.length}）</h2>
                     <select aria-label="Query 变化过滤" className="rounded border border-slate-300 p-1 text-xs" value={queryFilter} onChange={e => setQueryFilter(e.target.value)}>
@@ -583,14 +583,14 @@ export default function ExperimentDetailPage() {
             )}
 
             {/* Attribution */}
-            <section className="rounded-2xl border border-slate-300 bg-slate-50 p-5">
+            <section className="rounded-lg border border-slate-300 bg-slate-50 p-5">
               <h2 className="text-sm font-semibold text-slate-700">{EXPERIMENT_NAV.attribution}</h2>
               <p className="mt-2 text-sm text-slate-600">{EXPERIMENT_NAV.attributionDisclaimer}</p>
               <p className="mt-1 font-mono text-xs text-slate-400">{EXPERIMENT_NAV.observedNotProven}</p>
             </section>
 
             {/* M8C：Pilot Review */}
-            <section className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-5">
+            <section className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-5">
               <div className="flex flex-wrap items-center gap-3">
                 <h2 className="text-base font-semibold text-slate-800">{PILOT_NAV.title}</h2>
                 {!real && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">{PILOT_NAV.demoLabel}</span>}
@@ -611,7 +611,7 @@ export default function ExperimentDetailPage() {
                 <p className="mt-2 text-xs text-slate-500">评估已完成，可生成试点评审（会核对 AFTER 快照变更与测量有效性）。</p>
               ) : (
                 pilotReviews.map(rv => (
-                  <div key={rv.id} className="mt-3 rounded-xl border border-indigo-200 bg-white p-4 text-sm">
+                  <div key={rv.id} className="mt-3 rounded-lg border border-indigo-200 bg-white p-4 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded px-2 py-0.5 text-xs font-semibold ${
                         rv.observedOutcome === "VALIDATED_OBSERVATION" ? "bg-emerald-100 text-emerald-800"
@@ -639,7 +639,7 @@ export default function ExperimentDetailPage() {
 
       {pair && (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setPair(null)}>
-          <div className="w-full max-w-5xl rounded-2xl bg-white p-6 text-slate-900 shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-5xl rounded-lg bg-white p-6 text-slate-900 shadow-sm" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">证据对照（A/B）</h2>
               <button type="button" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100" onClick={() => setPair(null)}>关闭</button>
@@ -649,7 +649,7 @@ export default function ExperimentDetailPage() {
               {[["Before", pair.before], ["After", pair.after]].map(([label, side]) => {
                 const ev = side as Pair["before"];
                 return (
-                  <section key={String(label)} className="rounded-xl border border-slate-200 p-4">
+                  <section key={String(label)} className="rounded-lg border border-slate-200 p-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold">{label === "Before" ? "Before（基线）" : "After（复测）"}</h3>
                       {ev?.runId && <button type="button" className="text-xs text-blue-700 hover:underline" onClick={() => { const runId = ev.runId; setPair(null); setEvidenceRunId(runId); }}>{OPPORTUNITY_NAV.viewRawEvidence}</button>}

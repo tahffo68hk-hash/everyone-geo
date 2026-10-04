@@ -49,7 +49,7 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-xs flex justify-end"
+      className="outcome-drawer-overlay fixed inset-0 z-50 overflow-hidden flex justify-end"
       role="dialog"
       aria-modal="true"
       aria-labelledby="drawer-title"
@@ -57,9 +57,9 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-3xl bg-white h-full shadow-2xl overflow-y-auto flex flex-col">
+      <div className="outcome-drawer-panel w-full max-w-3xl bg-white h-full overflow-y-auto flex flex-col">
         {/* Drawer 顶栏 */}
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur-xs">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 px-6 py-4">
           <div>
             <div className="flex items-center gap-2">
               <span className="status-badge status-active text-xs">
@@ -83,7 +83,7 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+            className="icon-button"
             aria-label="关闭抽屉"
           >
             ✕

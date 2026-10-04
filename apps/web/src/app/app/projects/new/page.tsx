@@ -262,7 +262,7 @@ function NewProjectInner() {
 
       {/* Step 1 项目基本信息 */}
       {step === 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className="rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="text-sm font-semibold text-slate-700">1. 项目基本信息</h2>
           <div className="mt-3 space-y-3">
             <label className="block">
@@ -294,7 +294,7 @@ function NewProjectInner() {
 
       {/* Step 2 监测对象 */}
       {step === 1 && project && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className="rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="text-sm font-semibold text-slate-700">2. 监测对象 —— 项目“{project.name}”</h2>
           <p className="mt-1 text-xs text-slate-500">1 个项目 = 1 个监测对象。想监测另一个品牌/产品，请新建项目，不要改旧项目。</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -367,7 +367,7 @@ function NewProjectInner() {
 
       {/* Step 3 问题集 */}
       {step === 2 && project && target?.canonicalName && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className="rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="text-sm font-semibold text-slate-700">3. 问题集 —— 监测对象：{target.canonicalName}（{formatTargetEntityType(target.entityType)} · {target.productCategory ?? "未设类别"}）</h2>
           <p className="mt-1 text-xs text-slate-500">自然发现问题不含目标品牌，用于衡量 AI 是否会自然提到你的品牌。</p>
 

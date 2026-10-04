@@ -213,7 +213,7 @@ export function ProductionQueueView({
     return (
       <div
         key={item.id}
-        className={`rounded-2xl border bg-white p-5 transition-all hover:shadow-md ${
+        className={`rounded-lg border bg-white p-5 transition-all hover:shadow-md ${
           item.isOverdue
             ? "border-red-300 bg-red-50/10"
             : item.productionStatus === "READY"
@@ -270,9 +270,9 @@ export function ProductionQueueView({
 
             {/* 阻断详情高亮条 */}
             {item.productionStatus === "BLOCKED_FACTS" && (
-              <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50/80 p-2.5 text-xs text-rose-800">
+              <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50/80 p-2.5 text-xs text-rose-800">
                 <div className="flex items-center gap-1.5 font-semibold">
-                  <span aria-hidden="true">🔒</span>
+                  
                   <span>缺少关键核验事实依据，无法直接开始生产</span>
                 </div>
                 {missingFacts.length > 0 && (
@@ -286,9 +286,9 @@ export function ProductionQueueView({
             )}
 
             {item.productionStatus === "BLOCKED_ASSETS" && (
-              <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 text-xs text-amber-800">
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/80 p-2.5 text-xs text-amber-800">
                 <div className="flex items-center gap-1.5 font-semibold">
-                  <span aria-hidden="true">⚠️</span>
+                  
                   <span>
                     {isVideoPlatform
                       ? "该平台（视频类）需要视频素材前置就绪，当前暂无可用视频资产"
@@ -312,7 +312,7 @@ export function ProductionQueueView({
               type="button"
               disabled={isStarting || primaryButtonVariant === "disabled"}
               onClick={primaryButtonAction}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold shadow-xs transition-all ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold shadow-xs transition-all ${
                 primaryButtonVariant === "primary"
                   ? "bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-sm"
                   : primaryButtonVariant === "warning"
@@ -420,18 +420,18 @@ export function ProductionQueueView({
 
       {/* 提示消息 */}
       {error && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
           {error}
         </div>
       )}
       {actionSuccess && (
-        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
           {actionSuccess}
         </div>
       )}
 
       {/* 过滤控制栏 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
         <div className="flex flex-wrap items-center gap-3">
           {/* 战役选择 */}
           <div>
@@ -509,11 +509,11 @@ export function ProductionQueueView({
 
       {/* 队列列表 */}
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
           <LoadingSkeleton rows={5} />
         </div>
       ) : queueData?.items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
           <span className="text-3xl" aria-hidden="true">🎉</span>
           <h3 className="mt-3 text-base font-semibold text-slate-900">当前没有需要处理的内容</h3>
           <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
@@ -605,17 +605,17 @@ export function ProductionQueueView({
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
         >
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center gap-2 text-rose-700">
-              <span className="text-xl" aria-hidden="true">🔒</span>
+              
               <h3 className="text-base font-bold">缺少关键核验事实依据</h3>
             </div>
             <p className="mt-2 text-xs text-slate-600">
               该计划项受到服务端准入安全保护。AI 写作引擎严禁虚构参数，必须有经核实的事实依据方可生成草稿。
             </p>
-            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
               <span className="font-semibold">当前缺失依据：</span>
               <ul className="mt-1.5 list-disc pl-5 space-y-1 text-[11px]">
                 {((viewingMissingFactsItem.planItem?.metadata as any)?.missingFacts || [
@@ -659,17 +659,17 @@ export function ProductionQueueView({
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
         >
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center gap-2 text-amber-700">
-              <span className="text-xl" aria-hidden="true">🎬</span>
+              
               <h3 className="text-base font-bold">缺少视频素材前置物料</h3>
             </div>
             <p className="mt-2 text-xs text-slate-600">
               平台（如 Bilibili、抖音）强依赖实拍或剪辑视频素材，AI 脚本生产前必须确认物料就绪。
             </p>
-            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
               <span className="font-semibold">前置要求：</span>
               <p className="mt-1 text-[11px]">
                 请上传至少一条与本主题（{viewingMissingAssetsItem.planItem?.title}）相符的实拍视频或演示样片，然后将排期状态变更为可开始生产。

@@ -186,7 +186,7 @@ export default function QueriesPage() {
       {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}
 
       {/* 监测对象状态 */}
-      <section className={`rounded-2xl border p-4 text-xs shadow-xs ${target?.brandId ? "border-emerald-200 bg-emerald-50/50 text-emerald-950" : "border-amber-200 bg-amber-50/60 text-amber-950"}`}>
+      <section className={`rounded-lg border p-4 text-xs shadow-xs ${target?.brandId ? "border-emerald-200 bg-emerald-50/50 text-emerald-950" : "border-amber-200 bg-amber-50/60 text-amber-950"}`}>
         {target?.brandId ? (
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-bold">监测对象：{target.canonicalName}</span>
@@ -202,7 +202,7 @@ export default function QueriesPage() {
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span>{QUERY_WORKSPACE_NAV.emptyHint}</span>
-            <Link href={`/app/target?project=${projectId}`} className="rounded-lg bg-teal-700 px-3 py-1.5 font-semibold text-white hover:bg-teal-800">
+            <Link href={`/app/target?project=${projectId}`} className="ui-button primary compact">
               设置监测对象 →
             </Link>
           </div>
@@ -210,7 +210,7 @@ export default function QueriesPage() {
       </section>
 
       {/* 新建问题集与 AI 智能构建 */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-slate-900">基准测试问题集与 AI 智能构建</h2>
           <div className="flex items-center gap-2">
@@ -272,25 +272,25 @@ export default function QueriesPage() {
       >
         {aiModalType === "queryset" && aiQueryResult && (
           <div className="space-y-4">
-            <div className="p-3 bg-zinc-950/60 rounded-lg border border-zinc-800">
-              <span className="text-xs text-zinc-400 font-medium">推荐问题集名称：</span>
-              <p className="text-sm font-bold text-zinc-100 mt-0.5">{aiQueryResult.querySetName}</p>
-              <p className="text-xs text-zinc-400 mt-1">{aiQueryResult.description}</p>
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-xs text-slate-500 font-medium">推荐问题集名称：</span>
+              <p className="text-sm font-bold text-slate-900 mt-0.5">{aiQueryResult.querySetName}</p>
+              <p className="text-xs text-slate-500 mt-1">{aiQueryResult.description}</p>
             </div>
 
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-zinc-300">生成的问题列表（预览确认后方可写入）：</span>
+              <span className="text-xs font-semibold text-slate-700">生成的问题列表（预览确认后方可写入）：</span>
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {aiQueryResult.queries.map((q, idx) => (
-                  <div key={idx} className="p-3 bg-zinc-950/40 rounded-lg border border-zinc-800/80 text-xs flex flex-col gap-1">
+                  <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex flex-col gap-1">
                     <div className="flex items-center justify-between">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${q.queryType === "DISCOVERY" ? "bg-teal-950 text-teal-300 border border-teal-800/60" : "bg-amber-950 text-amber-300 border border-amber-800/60"}`}>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${q.queryType === "DISCOVERY" ? "bg-teal-50 text-teal-700 border border-teal-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
                         {q.queryType === "DISCOVERY" ? "自然发现型 (不含品牌)" : "品牌基线型"}
                       </span>
-                      <span className="text-zinc-500 text-[11px]">{q.category} · {q.intent}</span>
+                      <span className="text-slate-400 text-[11px]">{q.category} · {q.intent}</span>
                     </div>
-                    <p className="text-zinc-200 font-medium text-sm mt-1">{q.text}</p>
-                    <p className="text-zinc-400 text-[11px] mt-0.5">入选依据：{q.rationale}</p>
+                    <p className="text-slate-800 font-medium text-sm mt-1">{q.text}</p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">入选依据：{q.rationale}</p>
                   </div>
                 ))}
               </div>
@@ -301,10 +301,10 @@ export default function QueriesPage() {
         {aiModalType === "geotopic" && aiGeoResult && (
           <div className="space-y-4">
             <div>
-              <span className="text-xs font-semibold text-zinc-300">核心业务主题：</span>
+              <span className="text-xs font-semibold text-slate-700">核心业务主题：</span>
               <div className="flex flex-wrap gap-1.5 mt-1.5">
                 {aiGeoResult.coreTopics.map((ct, idx) => (
-                  <span key={idx} className="px-2.5 py-1 rounded bg-zinc-800 text-zinc-200 text-xs border border-zinc-700">
+                  <span key={idx} className="px-2.5 py-1 rounded bg-slate-100 text-slate-800 text-xs border border-slate-300">
                     {ct}
                   </span>
                 ))}
@@ -312,28 +312,28 @@ export default function QueriesPage() {
             </div>
 
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-zinc-300">GEO 搜索细分主题：</span>
+              <span className="text-xs font-semibold text-slate-700">GEO 搜索细分主题：</span>
               <div className="space-y-2 max-h-48 overflow-y-auto">
                 {aiGeoResult.geoTopics.map((gt, idx) => (
-                  <div key={idx} className="p-2.5 bg-zinc-950/40 rounded-lg border border-zinc-800 text-xs">
+                  <div key={idx} className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-zinc-200">{gt.name}</span>
-                      <span className="text-[10px] text-zinc-400">意图：{gt.userIntent}</span>
+                      <span className="font-semibold text-slate-800">{gt.name}</span>
+                      <span className="text-[10px] text-slate-500">意图：{gt.userIntent}</span>
                     </div>
-                    <p className="text-zinc-400 text-[11px] mt-1">{gt.description}</p>
+                    <p className="text-slate-500 text-[11px] mt-1">{gt.description}</p>
                   </div>
                 ))}
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 pt-1">
-              <div className="p-2.5 bg-zinc-950/40 rounded-lg border border-zinc-800">
-                <span className="text-[11px] font-semibold text-zinc-400">重点对比维度</span>
-                <p className="text-xs text-zinc-300 mt-1">{aiGeoResult.comparisonDimensions.join("、")}</p>
+              <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-[11px] font-semibold text-slate-500">重点对比维度</span>
+                <p className="text-xs text-slate-700 mt-1">{aiGeoResult.comparisonDimensions.join("、")}</p>
               </div>
-              <div className="p-2.5 bg-zinc-950/40 rounded-lg border border-zinc-800">
-                <span className="text-[11px] font-semibold text-zinc-400">购买决策维度</span>
-                <p className="text-xs text-zinc-300 mt-1">{aiGeoResult.decisionDimensions.join("、")}</p>
+              <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-[11px] font-semibold text-slate-500">购买决策维度</span>
+                <p className="text-xs text-slate-700 mt-1">{aiGeoResult.decisionDimensions.join("、")}</p>
               </div>
             </div>
           </div>
@@ -349,7 +349,7 @@ export default function QueriesPage() {
           description={QUERY_WORKSPACE_NAV.emptyHint}
         />
       ) : (
-        <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-xs">
           <table className="w-full text-left text-xs">
             <caption className="sr-only">基准问题集列表</caption>
             <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-semibold">

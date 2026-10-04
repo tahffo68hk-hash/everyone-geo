@@ -322,7 +322,7 @@ export function AssetOutcomeOverview({
 
       {/* AI 归因分析采纳展示 */}
       {aiAnalysisSaved && (
-        <div className="surface p-4 rounded-xl border-teal-200 bg-teal-50/70 text-xs space-y-2">
+        <div className="surface p-4 rounded-lg border-teal-200 bg-teal-50/70 text-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="font-bold text-teal-900 flex items-center gap-1.5">
               <span>🤖</span> 已采纳 AI 归因解读结论

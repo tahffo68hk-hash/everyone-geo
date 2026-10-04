@@ -113,7 +113,7 @@ function TargetInner() {
       {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
       {saved && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{saved}</p>}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="text-xs font-medium text-slate-600">{TARGET_NAV.canonicalName}</span>
@@ -140,7 +140,7 @@ function TargetInner() {
         </button>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-slate-700">{TARGET_NAV.aliases}</h2>
         <p className="mt-1 text-xs text-slate-500">{TARGET_NAV.aliasesHint}</p>
         {target?.aliases.length === 0 && <p className="mt-2 text-sm text-slate-400">{TARGET_NAV.noAlias}</p>}
@@ -173,7 +173,7 @@ function TargetInner() {
       </section>
 
       {!target && (
-        <section className="rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4 text-sm text-amber-800">
+        <section className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-4 text-sm text-amber-800">
           {TARGET_NAV.emptyHint}
         </section>
       )}

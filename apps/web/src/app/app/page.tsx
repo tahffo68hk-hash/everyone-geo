@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useProjectContext } from "@/components/project-context";
 import { PageHeader, MetricCard, StatusBadge, EmptyState, ErrorState, LoadingSkeleton } from "@/components/ui";
+import { ActionList, SetupChecklist, WorkflowRail } from "@/components/productization";
+import { deriveActionItems } from "@/lib/action-center";
 
 type Report = {
   id: string;
@@ -24,6 +26,9 @@ type Activity = {
   createdAt: string;
   resultUrl: string;
 };
+type SuiteSummary = { id: string; queryCount: number };
+type DraftSummary = { id: string; status: string };
+type VerificationSummary = { id: string; title: string; latestRetest: { status: string } | null };
 
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
 
@@ -31,6 +36,10 @@ export default function AppPage() {
   const { projectId, project, target, target: currentTarget, loading: contextLoading } = useProjectContext();
   const [reports, setReports] = useState<Report[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [suites, setSuites] = useState<SuiteSummary[]>([]);
+  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  const [verificationAssets, setVerificationAssets] = useState<VerificationSummary[]>([]);
+  const [latestReportHasDiagnosis, setLatestReportHasDiagnosis] = useState<boolean | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -39,13 +48,28 @@ export default function AppPage() {
     const c = new AbortController();
     setLoading(true);
     setError("");
-    Promise.all([
+    Promise.allSettled([
       api<Report[]>(`/projects/${projectId}/reports`, { signal: c.signal }),
       api<{ items: Activity[] }>(`/activity?projectId=${projectId}&page=1&pageSize=5`, { signal: c.signal }),
+      api<SuiteSummary[]>(`/projects/${projectId}/benchmark-suites`, { signal: c.signal }),
+      api<DraftSummary[]>(`/projects/${projectId}/content-drafts`, { signal: c.signal }),
+      api<{ items: VerificationSummary[] }>(`/projects/${projectId}/verification-assets`, { signal: c.signal }),
     ])
-      .then(([r, a]) => {
-        setReports(r);
-        setActivity(a.items);
+      .then(async ([r, a, s, d, v]) => {
+        if (r.status === "fulfilled") {
+          setReports(r.value);
+          const latestReport = r.value[0];
+          if (latestReport) {
+            try {
+              const diagnoses = await api<Array<{ id: string }>>(`/reports/${latestReport.id}/diagnoses`, { signal: c.signal });
+              if (!c.signal.aborted) setLatestReportHasDiagnosis(diagnoses.length > 0);
+            } catch { if (!c.signal.aborted) setLatestReportHasDiagnosis(false); }
+          } else setLatestReportHasDiagnosis(undefined);
+        }
+        if (a.status === "fulfilled") setActivity(a.value.items);
+        if (s.status === "fulfilled") setSuites(s.value);
+        if (d.status === "fulfilled") setDrafts(d.value);
+        if (v.status === "fulfilled") setVerificationAssets(v.value.items);
       })
       .catch((e) => {
         if (!c.signal.aborted) setError(e instanceof Error ? e.message : "工作台加载失败");
@@ -69,6 +93,25 @@ export default function AppPage() {
   }
 
   const latest = reports[0];
+  const totalQueries = suites.reduce((sum, suite) => sum + (suite.queryCount ?? 0), 0);
+  const actionItems = deriveActionItems({
+    projectId,
+    hasTarget: Boolean(target || currentTarget),
+    suiteCount: suites.length,
+    queryCount: totalQueries,
+    latestReportId: latest?.id,
+    latestReportHasDiagnosis,
+    activity,
+    drafts,
+    assets: verificationAssets,
+  });
+  const setupSteps = [
+    { id: "project", label: "创建项目", description: "确定一个要持续优化的品牌项目。", complete: Boolean(projectId), href: "/app/projects/new", action: "创建项目" },
+    { id: "target", label: "设置监测对象", description: "确认品牌、产品和别名。", complete: Boolean(target || currentTarget), href: `/app/target?project=${projectId}`, action: "设置对象" },
+    { id: "queries", label: "创建问题集", description: "定义要持续监测的用户问题。", complete: suites.length > 0 && totalQueries > 0, href: `/app/queries?project=${projectId}`, action: "创建问题集" },
+    { id: "measurement", label: "运行首次监测", description: "获得第一份真实观测报告。", complete: Boolean(latest), href: `/app/benchmark?project=${projectId}`, action: "运行监测" },
+    { id: "diagnosis", label: "查看诊断", description: "从证据出发决定下一步。", complete: latest ? latestReportHasDiagnosis === true : false, href: `/app/diagnosis?project=${projectId}`, action: "查看诊断" },
+  ] as const;
   return (
     <div className="space-y-6">
       <PageHeader
@@ -92,10 +135,20 @@ export default function AppPage() {
         <LoadingSkeleton rows={5} />
       ) : (
         <>
+          <WorkflowRail
+            current="工作台"
+            steps={[
+              { label: "监测", href: `/app/benchmark?project=${projectId}` },
+              { label: "发现问题", href: `/app/diagnosis?project=${projectId}` },
+              { label: "优化", href: `/app/recommendations?project=${projectId}` },
+              { label: "内容执行", href: `/app/content?project=${projectId}` },
+              { label: "效果验证", href: `/app/content/verification?project=${projectId}` },
+              { label: "学习", href: `/app/experiments?project=${projectId}` },
+            ]}
+          />
+          <SetupChecklist steps={setupSteps as unknown as Array<{ id: string; label: string; description: string; complete: boolean; href: string; action: string }>} />
           <div className="dashboard-note">
-            <span className="status-badge status-active">
-              <span aria-hidden="true">●</span>当前项目
-            </span>
+            <span className="status-badge status-active">当前项目</span>
             <span>指标只来自已生成报告；没有竞品集合时，AI 声量份额显示“不适用”。</span>
           </div>
 
@@ -167,29 +220,9 @@ export default function AppPage() {
               )}
             </section>
 
-            <aside className="surface next-step">
-              <h3>下一步建议</h3>
-              <p>
-                {!target && !currentTarget
-                  ? "先设置监测对象，GeoLens 才能判断 AI 回答中的品牌提及。"
-                  : !latest
-                  ? "运行一次 AI 检测，获得第一份可追溯的报告。"
-                  : "打开最近报告，查看哪些问题缺少品牌提及，再从优化入口开始行动。"}
-              </p>
-              <Link
-                className="ui-button primary w-full text-center"
-                href={
-                  !target && !currentTarget
-                    ? `/app/target?project=${projectId}`
-                    : !latest
-                    ? `/app/monitor?project=${projectId}`
-                    : `/app/reports/${latest.id}`
-                }
-              >
-                {!target && !currentTarget ? "设置监测对象" : !latest ? "运行 AI 检测" : "查看最近报告"}
-              </Link>
-            </aside>
+            <ActionList items={actionItems} title="下一步行动" empty="当前项目没有需要立即处理的事项，可以查看最近报告。" />
           </div>
+          <ActionList items={actionItems.filter((item) => item.kind !== "setup")} title="需要关注" empty="当前没有需要立即处理的监测、内容或复测事项。" />
         </>
       )}
     </div>

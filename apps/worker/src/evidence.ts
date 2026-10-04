@@ -60,7 +60,15 @@ export async function analyzeEvidence(db: PrismaClient, evidenceId: string, opti
   const evidence = await db.evidence.findUniqueOrThrow({ where: { id: evidenceId }, include: { run: { select: { monitorTaskId: true } } } });
   try {
     const existing = await db.analysis.findUnique({ where: { evidenceId_analysisVersion: { evidenceId, analysisVersion: version } } });
-    if (existing) return true;
+    if (existing) {
+      // A previous attempt may have committed Analysis and crashed before
+      // settling the Run. Reconcile the derived status so recovery batches do
+      // not revisit the same row forever and starve newer repairs.
+      if (version === ANALYSIS_VERSION) await db.run.updateMany({ where: { id: evidence.runId, analysisStatus: { not: 'SUCCEEDED' } }, data: {
+        analysisStatus: 'SUCCEEDED', analysisErrorCode: null, analysisAttempts: { increment: 1 },
+      } });
+      return true;
+    }
     const entities = evidence.entitySnapshot as unknown as Entity[];
     if (!Array.isArray(entities)) throw new Error('INVALID_ENTITY_SNAPSHOT');
     const meta = evidence.metadata as Record<string, unknown>;

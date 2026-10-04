@@ -70,7 +70,7 @@ function AssetInner() {
 
       {asset && (
         <>
-          <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
+          <section className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
             <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <div><dt className="text-xs text-slate-500">资产类型</dt><dd className="mt-0.5">{asset.assetType ? formatOpportunityAsset(asset.assetType) : "未知"}</dd></div>
               <div><dt className="text-xs text-slate-500">来源</dt><dd className="mt-0.5">{formatSiteAssetSource(asset.source)}</dd></div>
@@ -90,7 +90,7 @@ function AssetInner() {
             <p className="mt-2 text-xs text-slate-400">{SITE_NAV.urlSafeNote}</p>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-slate-700">{SITE_NAV.manualSnapshot}</h2>
             <p className="mt-1 text-xs text-slate-500">{SITE_NAV.manualSnapshotHint}</p>
             <div className="mt-3 flex flex-wrap items-start gap-2">
@@ -119,14 +119,14 @@ function AssetInner() {
               <button
                 type="button" disabled={busy !== null || (!manual.title.trim() && !manual.text.trim())}
                 onClick={submitManual}
-                className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-40"
+                className="ui-button primary"
               >
                 录入
               </button>
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-slate-700">快照历史</h2>
             {asset.recentSnapshots.length === 0 ? (
               <p className="py-4 text-center text-sm text-slate-500">暂无快照</p>
@@ -156,7 +156,7 @@ function AssetInner() {
             )}
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-slate-700">关联内容机会</h2>
             {asset.mappedOpportunities.length === 0 ? (
               <p className="py-3 text-sm text-slate-500">尚未关联内容机会</p>

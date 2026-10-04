@@ -43,3 +43,11 @@ packages/database/generated/
 # DX1 runtime tracking (PIDs + logs + status snapshot)
 .runtime/
 .tmp_*
+
+# Temporary output & scratch
+scratch/
+*.zip
+output/**
+!output/ui-redesign/
+!output/ui-redesign/after/
+!output/ui-redesign/after/**

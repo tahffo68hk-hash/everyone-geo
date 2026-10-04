@@ -265,7 +265,7 @@ export default function CompetitorsPage() {
         {projects.length > 0 && (
           <>
             {/* 项目 + Run Discovery */}
-            <section aria-labelledby="disc-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section aria-labelledby="disc-heading" className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 id="disc-heading" className="mb-4 text-lg font-semibold">竞品发现（仅消费真实证据）</h2>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-64 flex-1">
@@ -284,7 +284,7 @@ export default function CompetitorsPage() {
             </section>
 
             {/* Candidates */}
-            <section aria-labelledby="cand-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section aria-labelledby="cand-heading" className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 id="cand-heading" className="mb-1 text-lg font-semibold">候选竞品（{candidates.length}）</h2>
               <p className="mb-3 text-xs text-slate-500">状态「待审核」/ 类型「未分类」= 仅事实信号。确认为竞品时必须选择：直接竞品 / 相邻产品 / 替代方案。</p>
               {candidates.length === 0 && <p className="text-sm text-slate-400">{EMPTY_TEXT.candidates} —— 点击「开始发现」从真实证据提取（需先有真实模型服务监测结果）。</p>}
@@ -292,7 +292,7 @@ export default function CompetitorsPage() {
                 {candidates.map(candidate => {
                   const detail = expanded[candidate.id];
                   return (
-                    <article key={candidate.id} className={`rounded-xl border p-4 ${candidate.status === "REJECTED" ? "border-slate-200 bg-slate-50 opacity-70" : "border-slate-200 bg-white"}`}>
+                    <article key={candidate.id} className={`rounded-lg border p-4 ${candidate.status === "REJECTED" ? "border-slate-200 bg-slate-50 opacity-70" : "border-slate-200 bg-white"}`}>
                       <div className="flex flex-wrap items-center gap-2">
                         <button type="button" onClick={() => void toggleExpand(candidate)} className="text-left font-semibold text-blue-800 hover:underline">
                           {candidate.canonicalName}
@@ -407,7 +407,7 @@ export default function CompetitorsPage() {
             </section>
 
             {/* Competitor Sets */}
-            <section aria-labelledby="set-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section aria-labelledby="set-heading" className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 id="set-heading" className="mb-4 text-lg font-semibold">竞品集合（版本化）</h2>
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                 <label className="text-xs text-slate-600">
@@ -428,7 +428,7 @@ export default function CompetitorsPage() {
 
               <div className="mt-4 space-y-2">
                 {sets.map(set => (
-                  <div key={set.id} className="rounded-xl border border-slate-200 p-3">
+                  <div key={set.id} className="rounded-lg border border-slate-200 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{set.name}</span>
                       <span className={badge("bg-blue-100 text-blue-800", formatVersion(set.version))}>{formatVersion(set.version)}</span>
@@ -460,7 +460,7 @@ export default function CompetitorsPage() {
             </section>
 
             {/* Share of Voice */}
-            <section aria-labelledby="sov-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section aria-labelledby="sov-heading" className="rounded-lg border border-slate-200 bg-white p-6">
               <h2 id="sov-heading" className="mb-1 text-lg font-semibold">AI 声量份额（Share of Voice）</h2>
               {sov?.status === "pending" && (
                 <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">

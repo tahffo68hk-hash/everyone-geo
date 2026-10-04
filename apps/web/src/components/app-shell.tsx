@@ -8,13 +8,13 @@ import { EmptyState, ErrorState, LoadingSkeleton } from "./ui";
 import { api } from "@/lib/api";
 
 const sections = [
-  { label: "工作台", path: "/app", icon: "⌂", members: [] },
-  { label: "监测", path: "/app/benchmark", icon: "◉", members: ["benchmark", "monitor", "competitors", "manual-runs"] },
-  { label: "问题集", path: "/app/queries", icon: "≡", members: ["queries"] },
-  { label: "任务中心", path: "/app/activity", icon: "◷", members: ["activity"] },
-  { label: "报告", path: "/app/reports", icon: "▤", members: ["reports"] },
-  { label: "优化", path: "/app/diagnosis", icon: "↗", members: ["diagnosis", "recommendations", "opportunities", "content", "experiments", "site-assets", "change-plans"] },
-  { label: "设置", path: "/app/target", icon: "⚙", members: ["target", "projects"] },
+  { label: "工作台", path: "/app", members: [] },
+  { label: "监测", path: "/app/benchmark", members: ["benchmark", "monitor", "competitors", "manual-runs"] },
+  { label: "问题集", path: "/app/queries", members: ["queries"] },
+  { label: "任务中心", path: "/app/activity", members: ["activity"] },
+  { label: "报告", path: "/app/reports", members: ["reports"] },
+  { label: "优化", path: "/app/diagnosis", members: ["diagnosis", "recommendations", "opportunities", "content", "experiments", "site-assets", "change-plans"] },
+  { label: "设置", path: "/app/target", members: ["target", "projects"] },
 ];
 
 const optimization = [
@@ -76,12 +76,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       <aside className="app-sidebar">
         <Link href={href("/app")} className="app-brand">
-          <span className="brand-symbol" aria-hidden="true">
-            ◎
-          </span>
+          <span className="brand-symbol" aria-hidden="true">G</span>
           GeoLens
         </Link>
-        <p className="sidebar-caption">品牌 AI 可见度智能平台</p>
         <nav aria-label="主导航">
           {sections.map((section) => (
             <Link
@@ -89,17 +86,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               href={href(section.path)}
               aria-current={current === section ? "page" : undefined}
             >
-              <span className="nav-icon" aria-hidden="true">
-                {section.icon}
-              </span>
               {section.label}
             </Link>
           ))}
         </nav>
-        <div className="sidebar-foot">
-          <span>以事实证据理解可见度</span>
-          <p>监测 · 验证 · 闭环优化</p>
-        </div>
       </aside>
 
       <div className="app-body">
@@ -126,7 +116,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 aria-label="新建监测项目"
                 title="新建监测项目"
               >
-                ＋
+                <span aria-hidden="true">＋</span> 新建
               </Link>
             </div>
           </div>

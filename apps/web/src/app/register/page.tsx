@@ -34,13 +34,13 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+    <main className="auth-page">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+        className="auth-card"
       >
-        <h1 className="text-xl font-semibold text-slate-900">注册 GeoLens</h1>
-        <p className="text-sm text-slate-500">
+        <h1 className="auth-title">注册 GeoLens</h1>
+        <p className="auth-subtitle">
           注册后将自动创建你的组织（OWNER）
         </p>
 
@@ -91,14 +91,14 @@ export default function RegisterPage() {
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          className="ui-button primary auth-submit"
         >
           {busy ? "注册中…" : "注册"}
         </button>
 
         <p className="text-center text-sm text-slate-500">
           已有账号？{" "}
-          <Link href="/login" className="text-blue-600 hover:underline">
+          <Link href="/login" className="auth-link">
             登录
           </Link>
         </p>

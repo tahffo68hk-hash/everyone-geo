@@ -250,7 +250,7 @@ export default function BenchmarkPage() {
       {options && (
         <>
           {/* Suite 选择 */}
-          <section aria-labelledby="suite-heading" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+          <section aria-labelledby="suite-heading" className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 id="suite-heading" className="text-base font-bold text-slate-900">基准测试集</h2>
@@ -268,7 +268,7 @@ export default function BenchmarkPage() {
               <p className="mt-3 text-sm text-slate-500">该项目暂无基准测试集（可运行 seed-benchmark-v1 创建 v1）。</p>
             )}
             {suite && (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{suite.name}</span>
                   <span className={badge("bg-teal-100 text-teal-800", `版本 ${formatVersion(suite.version)}`)}>版本 {formatVersion(suite.version)}</span>
@@ -290,7 +290,7 @@ export default function BenchmarkPage() {
 
           {/* Query 列表（信息架构：Category → Intent → Query） */}
           {suite && (
-            <section aria-labelledby="queries-heading" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+            <section aria-labelledby="queries-heading" className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
               <h2 id="queries-heading" className="mb-1 text-base font-bold text-slate-900">测试问题清单</h2>
               <p className="mb-3 text-xs text-slate-500">主指标只统计启用且非品牌控制的问题（当前 {suite.queryCount - suite.sanityQueryCount} 条）；每条运行后可在下方结果中点击查看原始证据。</p>
               <div className="overflow-x-auto">
@@ -322,7 +322,7 @@ export default function BenchmarkPage() {
           )}
 
           {/* Run 控制 + 进度 */}
-          <section aria-labelledby="run-heading" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+          <section aria-labelledby="run-heading" className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
             <h2 id="run-heading" className="mb-4 text-base font-bold text-slate-900">基准测试运行</h2>
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
@@ -347,7 +347,7 @@ export default function BenchmarkPage() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs">
               <div className="flex flex-wrap gap-2">
                 <span className="font-semibold text-slate-700">计划运行数：{plannedRuns} 个测试问题 × 1 个模型服务 = {plannedRuns} 次运行</span>
                 {runType === "demo"
@@ -380,7 +380,7 @@ export default function BenchmarkPage() {
 
           {/* 结果（Overall / Category / Query） */}
           {metrics && (
-            <section aria-labelledby="metrics-heading" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+            <section aria-labelledby="metrics-heading" className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
               <h2 id="metrics-heading" className="mb-3 text-base font-bold text-slate-900">基准测试指标</h2>
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className={badge(
@@ -395,12 +395,12 @@ export default function BenchmarkPage() {
               </div>
               {metrics.competitorScope?.status === "pending-m6b" && (
                 <p role="note" className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  ⚠️ {metrics.competitorScope.note} —— AI 声量份额（Share of Voice）不作对外结论。
+                  {metrics.competitorScope.note} —— AI 声量份额（Share of Voice）不作对外结论。
                 </p>
               )}
 
               {/* Overall */}
-              <div className="mt-4 rounded-xl border border-slate-200 p-4">
+              <div className="mt-4 rounded-lg border border-slate-200 p-4">
                 <h3 className="text-xs font-bold text-slate-700">总体表现（{metrics.overall.queryEligibleCount ?? 0} 条有效问题）</h3>
                 <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
@@ -425,7 +425,7 @@ export default function BenchmarkPage() {
                 {!metrics.byCategory.length && <p className="mt-2 text-xs text-slate-500">{EMPTY_TEXT.analyses}</p>}
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {metrics.byCategory.map(row => (
-                    <div key={row.category} className="rounded-xl border border-slate-200 p-3">
+                    <div key={row.category} className="rounded-lg border border-slate-200 p-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-medium text-slate-900">{formatCategory(row.category)}</span>
                         <span className={badge(row.metrics.visibilityRate != null && row.metrics.visibilityRate > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500", `${row.queryMentionedCount}/${row.queryEligibleCount}`)}>
@@ -509,7 +509,7 @@ function ReportBuilder({ benchmarkRunId, runType }: { benchmarkRunId: string; ru
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
       <h2 className="text-base font-bold text-slate-900">生成 GEO 基准测试报告</h2>
       <p className="mt-1 text-xs text-slate-500">报告 = 不可变快照：生成后测试集 / 分析版本 / 竞品集合 / 指标不再漂移。{runType === "DEMO" ? "演示数据，仅供功能验证。" : "真实数据。"}</p>
       <div className="mt-3 flex flex-wrap items-end gap-3">

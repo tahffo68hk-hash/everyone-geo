@@ -112,7 +112,7 @@ export default function RecommendationsListPage() {
           </p>
         </header>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
           <label htmlFor="project" className="mb-2 block text-sm font-medium">项目</label>
           <select id="project" value={projectId} className="w-full rounded-lg border border-slate-300 p-2 sm:max-w-sm" onChange={event => setProjectId(event.target.value)}>
             {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -122,7 +122,7 @@ export default function RecommendationsListPage() {
         {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {loading && <p role="status" className="text-sm text-slate-500">正在加载优化建议…</p>}
         {!loading && !error && rows.length === 0 && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+          <section className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
             暂无优化建议 —— 请先在「GEO 问题诊断」页为报告生成诊断，再基于诊断生成优化建议。
           </section>
         )}
@@ -131,7 +131,7 @@ export default function RecommendationsListPage() {
             {rows.map(({ run, report }) => {
               const c = run.summary?.priorityCounts ?? { HIGH: 0, MEDIUM: 0, LOW: 0 };
               return (
-                <div key={run.id} className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div key={run.id} className="rounded-lg border border-slate-200 bg-white p-5">
                   <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/app/recommendations/${run.id}`} className="text-base font-semibold text-blue-700 hover:underline">
                       {report.suiteName} {formatVersion(report.suiteVersion)} · 优化建议
@@ -177,34 +177,34 @@ export default function RecommendationsListPage() {
         >
           {aiRecResult && (
             <div className="space-y-4">
-              <div className="p-3 bg-zinc-950/60 rounded-lg border border-zinc-800">
-                <span className="text-xs text-zinc-400 font-medium">建议方案标题：</span>
-                <p className="text-sm font-bold text-zinc-100 mt-1">{aiRecResult.title}</p>
-                <p className="text-xs text-zinc-400 mt-1">定位问题：{aiRecResult.problem}</p>
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-xs text-slate-500 font-medium">建议方案标题：</span>
+                <p className="text-sm font-bold text-slate-900 mt-1">{aiRecResult.title}</p>
+                <p className="text-xs text-slate-500 mt-1">定位问题：{aiRecResult.problem}</p>
               </div>
 
-              <div className="p-3 bg-zinc-950/40 rounded-lg border border-zinc-800/80">
-                <span className="text-xs text-zinc-400 font-medium">建议具体行动：</span>
-                <p className="text-xs text-zinc-200 mt-1.5 leading-relaxed">{aiRecResult.action}</p>
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-xs text-slate-500 font-medium">建议具体行动：</span>
+                <p className="text-xs text-slate-800 mt-1.5 leading-relaxed">{aiRecResult.action}</p>
               </div>
 
-              <div className="p-3 bg-teal-950/20 border border-teal-800/40 rounded-lg text-xs">
-                <span className="font-semibold text-teal-300">预期可观测信号 (Expected Observable Signal)：</span>
+              <div className="p-3 bg-teal-50/20 border border-teal-800/40 rounded-lg text-xs">
+                <span className="font-semibold text-teal-700">预期可观测信号 (Expected Observable Signal)：</span>
                 <p className="text-teal-200/90 mt-1 leading-relaxed">{aiRecResult.expectedObservableSignal}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
-                <div className="p-2.5 bg-zinc-950/40 rounded border border-zinc-800">
-                  <span className="font-semibold text-zinc-400">前置依赖：</span>
-                  <ul className="list-disc pl-4 mt-1 text-zinc-300 space-y-0.5">
+                <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
+                  <span className="font-semibold text-slate-500">前置依赖：</span>
+                  <ul className="list-disc pl-4 mt-1 text-slate-700 space-y-0.5">
                     {aiRecResult.dependencies.map((dep, idx) => (
                       <li key={idx}>{dep}</li>
                     ))}
                   </ul>
                 </div>
-                <div className="p-2.5 bg-zinc-950/40 rounded border border-zinc-800">
+                <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
                   <span className="font-semibold text-amber-400">潜在风险注意：</span>
-                  <ul className="list-disc pl-4 mt-1 text-zinc-300 space-y-0.5">
+                  <ul className="list-disc pl-4 mt-1 text-slate-700 space-y-0.5">
                     {aiRecResult.risks.map((risk, idx) => (
                       <li key={idx}>{risk}</li>
                     ))}

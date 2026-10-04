@@ -188,10 +188,29 @@ test("分析失败不丢 Evidence：analyzer 抛错 → Evidence 保留、Run �
 
 test("recoverAnalyses：把 FAILED(attempts<3) 的成功 Run 补上默认版本分析", async () => {
   // 复用上一条已 FAILED 的 run（analysisAttempts 已被失败路径 increment 到 2，仍 < 3）
-  const target = await prisma.run.findFirstOrThrow({ where: { analysisStatus: "FAILED", analysisAttempts: { lt: 3 } }, orderBy: { createdAt: "desc" } });
-  const recovered = await recoverAnalyses(prisma);
+  const target = await prisma.run.findFirstOrThrow({
+    // Keep this assertion scoped to the fixture. The shared geo_test database
+    // can contain older failed Runs, while recoverAnalyses intentionally
+    // repairs only successful Runs that still have immutable Evidence.
+    where: {
+      status: "SUCCEEDED",
+      analysisStatus: "FAILED",
+      analysisAttempts: { lt: 3 },
+      monitorTask: { projectId: fixture.projectId },
+      evidence: { isNot: null },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  // recoverAnalyses intentionally works in bounded batches. The shared
+  // geo_test database may have more than one batch of older repairable Runs,
+  // so drive the poll loop until this fixture reaches its turn.
+  let recovered: unknown;
+  let dbRun = await prisma.run.findUniqueOrThrow({ where: { id: target.id } });
+  for (let attempt = 0; attempt < 10 && dbRun.analysisStatus !== "SUCCEEDED"; attempt++) {
+    recovered = await recoverAnalyses(prisma);
+    dbRun = await prisma.run.findUniqueOrThrow({ where: { id: target.id } });
+  }
   assert.equal(recovered, undefined, "recoverAnalyses 为同步兜底函数，无返回值");
-  const dbRun = await prisma.run.findUniqueOrThrow({ where: { id: target.id } });
   assert.equal(dbRun.analysisStatus, "SUCCEEDED", "recoverAnalyses 应以默认 analyzer 补分析成功");
   const analysisCount = await prisma.analysis.count({ where: { evidence: { runId: target.id } } });
   assert.equal(analysisCount, 1);

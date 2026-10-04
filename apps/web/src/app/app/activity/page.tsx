@@ -113,7 +113,7 @@ function ActivityInner() {
         <EmptyState title={ACTIVITY_NAV.emptyTitle} description={ACTIVITY_NAV.emptyHint} />
       ) : (
         <>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <caption className="sr-only">任务中心列表</caption>
               <thead className="border-b border-slate-200 bg-slate-50/60 text-left text-xs text-slate-500">

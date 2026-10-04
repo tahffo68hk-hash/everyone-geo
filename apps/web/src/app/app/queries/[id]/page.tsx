@@ -319,7 +319,7 @@ function SuiteInner() {
 
   if (!suite && !error) return <div className="space-y-2" aria-busy="true">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-8 animate-pulse rounded-lg bg-slate-100" />)}</div>;
 
-  if (!suite) return <div role="alert" className="rounded-xl border border-rose-200 bg-white p-6"><h1 className="text-lg font-semibold text-slate-800">问题集加载失败</h1><p className="mt-2 text-sm text-rose-700">{error}</p><button type="button" onClick={() => void load()} className="mt-4 rounded-lg bg-teal-700 px-4 py-2 text-sm text-white">重试</button></div>;
+  if (!suite) return <div role="alert" className="rounded-lg border border-rose-200 bg-white p-6"><h1 className="text-lg font-semibold text-slate-800">问题集加载失败</h1><p className="mt-2 text-sm text-rose-700">{error}</p><button type="button" onClick={() => void load()} className="mt-4 rounded-lg bg-teal-700 px-4 py-2 text-sm text-white">重试</button></div>;
 
   return (
     <div className="space-y-5">
@@ -341,7 +341,7 @@ function SuiteInner() {
           <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => { setManualProduct("qwen-web"); setManualRunType("real"); setManualDisplayedModel(""); setManualOpen(true); }} className="rounded-lg border border-teal-600 bg-white px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-40" title={MANUAL_NAV.entryHint}>
             {MANUAL_NAV.entry}
           </button>
-          <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => setRunOpen(true)} className="rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800 disabled:opacity-40">
+          <button type="button" disabled={busy || (suite?.queryCount ?? 0) === 0 || !target?.canonicalName} onClick={() => setRunOpen(true)} className="ui-button primary compact disabled:opacity-40">
             {QUERY_WORKSPACE_NAV.runBenchmark}
           </button>
         </div>
@@ -352,7 +352,7 @@ function SuiteInner() {
       {notice && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
       {recycleBin && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">回收站仅包含已归档问题。归档是软删除，历史 Run、Report 和 Evidence 保持不变。</p>}
 
-      <section aria-label="问题列表" className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <section aria-label="问题列表" className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4">
           <input aria-label="搜索问题" placeholder="搜索问题内容" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { setSearchApplied(search.trim()); setPage(1); } }} className="min-w-48 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <button type="button" onClick={() => { setSearchApplied(search.trim()); setPage(1); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">搜索</button>
@@ -404,7 +404,7 @@ function SuiteInner() {
       </section>
 
       {/* 问题生成器 */}
-      <details className="rounded-xl border border-slate-200 bg-white p-4">
+      <details className="rounded-lg border border-slate-200 bg-white p-4">
         <summary className="cursor-pointer text-base font-semibold text-slate-700">创建监测问题</summary>
         <p className="text-xs text-slate-500">{QUERY_WORKSPACE_NAV.builderNote}</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -444,7 +444,7 @@ function SuiteInner() {
       </details>
 
       {/* 批量导入 */}
-      <details className="rounded-xl border border-slate-200 bg-white p-4">
+      <details className="rounded-lg border border-slate-200 bg-white p-4">
         <summary className="cursor-pointer text-base font-semibold text-slate-700">批量导入与版本操作</summary>
         <button type="button" onClick={() => void cloneSuite()} disabled={busy} className="my-3 rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">{QUERY_WORKSPACE_NAV.cloneVersion}</button>
         <p className="text-xs text-slate-500">{QUERY_WORKSPACE_NAV.importNote}</p>
@@ -472,7 +472,7 @@ function SuiteInner() {
 
       {archiveOpen && (
         <div role="dialog" aria-modal="true" aria-labelledby="archive-heading" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setArchiveOpen(false)}>
-          <div className="mt-20 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={event => event.stopPropagation()}>
+          <div className="mt-20 w-full max-w-md rounded-lg bg-white p-6 shadow-sm" onClick={event => event.stopPropagation()}>
             <h2 id="archive-heading" className="text-lg font-semibold text-slate-900">归档所选问题</h2>
             <p className="mt-2 text-sm text-slate-600">将归档 {selectedIds.size} 条问题。归档只影响未来执行，不会修改历史运行、报告或 Evidence。</p>
             <div className="mt-5 flex justify-end gap-2">
@@ -485,7 +485,7 @@ function SuiteInner() {
 
       {moveOpen && (
         <div role="dialog" aria-modal="true" aria-labelledby="move-heading" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setMoveOpen(false)}>
-          <div className="mt-20 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={event => event.stopPropagation()}>
+          <div className="mt-20 w-full max-w-md rounded-lg bg-white p-6 shadow-sm" onClick={event => event.stopPropagation()}>
             <h2 id="move-heading" className="text-lg font-semibold text-slate-900">移动到其他问题集</h2>
             <p className="mt-1 text-xs text-slate-500">只显示当前项目下的其他问题集。</p>
             {moveLoading ? <div className="mt-4"><LoadingSkeleton rows={3} /></div> : moveError ? <div className="mt-4"><ErrorState title="问题集加载失败" error={moveError} retry={() => void openMoveDialog()} /></div> : moveSuites.length === 0 ? <p className="mt-4 rounded-lg bg-slate-50 px-3 py-4 text-sm text-slate-600">当前项目没有其他可移动的问题集。</p> : <label className="mt-4 block text-sm text-slate-700">目标问题集
@@ -495,7 +495,7 @@ function SuiteInner() {
             </label>}
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" className="ui-button" onClick={() => setMoveOpen(false)}>取消</button>
-              <button type="button" disabled={busy || moveLoading || !moveSuiteId} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40" onClick={() => void applyBatch("move", moveSuiteId)}>确认移动</button>
+              <button type="button" disabled={busy || moveLoading || !moveSuiteId} className="ui-button primary" onClick={() => void applyBatch("move", moveSuiteId)}>确认移动</button>
             </div>
           </div>
         </div>
@@ -504,7 +504,7 @@ function SuiteInner() {
       {/* 运行前确认 */}
       {runOpen && suite && (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setRunOpen(false)}>
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 text-slate-900 shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 text-slate-900 shadow-sm" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold">{QUERY_WORKSPACE_NAV.runPreflight}</h2>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-slate-500">监测对象</dt><dd className="font-medium">{target?.canonicalName ?? "—"}</dd></div>
@@ -546,7 +546,7 @@ function SuiteInner() {
       {/* 人工 Web UI 检测设置 */}
       {manualOpen && suite && (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setManualOpen(false)}>
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 text-slate-900 shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 text-slate-900 shadow-sm" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold">{MANUAL_NAV.entry}</h2>
             <p className="mt-1 text-xs text-slate-500">{MANUAL_NAV.entryHint}</p>
             <dl className="mt-3 space-y-2 text-sm">

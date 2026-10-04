@@ -220,8 +220,8 @@ export function ContentCalendarView({
 
   if (campaigns.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
-        <span className="text-3xl">📅</span>
+      <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
+        
         <h3 className="mt-3 text-base font-semibold text-slate-900">暂无进行中的运营战役</h3>
         <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
           内容日历必须依托于具体的运营战役 (Campaign)。请先创建运营战役并分配内容生产计划。
@@ -232,7 +232,7 @@ export function ContentCalendarView({
             onClick={() => onNavigateToCampaigns()}
             className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-teal-800"
           >
-            🚀 前往运营战役管理
+            前往运营战役管理
           </button>
           <button
             type="button"
@@ -249,7 +249,7 @@ export function ContentCalendarView({
   return (
     <div className="space-y-6">
       {/* 战役选择与操作工具栏 */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-xs font-semibold text-slate-700">所属运营战役：</label>
           <select
@@ -279,9 +279,9 @@ export function ContentCalendarView({
               type="button"
               disabled={generatingCalendar}
               onClick={() => handleGenerateCalendar("WORKDAYS_ONLY")}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 ui-button primary compact"
             >
-              {generatingCalendar ? "正在规划节奏..." : "✨ 自动生成工作日排期"}
+              {generatingCalendar ? "正在规划节奏..." : "自动生成工作日排期"}
             </button>
           )}
 
@@ -302,25 +302,25 @@ export function ContentCalendarView({
             onClick={() => onNavigateToQueue(selectedCampaignId)}
             className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
-            📋 查看生产队列
+            查看生产队列
           </button>
         </div>
       </div>
 
       {/* 提示消息 */}
       {error && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-xs text-red-800">
           {error}
         </div>
       )}
       {actionSuccess && (
-        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-800">
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-800">
           {actionSuccess}
         </div>
       )}
 
       {/* 时区与排期规则提示条 */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-2 text-xs text-indigo-900">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-2 text-xs text-indigo-900">
         <div className="flex items-center gap-2">
           <span>🕒</span>
           <span>当前时区：<strong className="font-mono">{timezone}</strong></span>
@@ -365,12 +365,12 @@ export function ContentCalendarView({
 
       {/* 日历主体：周视图 7 列 */}
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-8">
+        <div className="rounded-lg border border-slate-200 bg-white p-8">
           <LoadingSkeleton rows={6} />
         </div>
       ) : !hasItems ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
-          <span className="text-3xl">🗓️</span>
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
+          
           <h3 className="mt-3 text-base font-semibold text-slate-900">当前战役尚未生成生产日历</h3>
           <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
             自动排期算法会根据战略中的多平台计划，遵循先图文核心事实、后视频衍生内容的节奏自动生成日历排期。
@@ -382,7 +382,7 @@ export function ContentCalendarView({
               onClick={() => handleGenerateCalendar("WORKDAYS_ONLY")}
               className="rounded-lg bg-indigo-700 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-indigo-800 disabled:opacity-50"
             >
-              {generatingCalendar ? "排期算法运算中..." : "✨ 一键按工作日节奏生成排期"}
+              {generatingCalendar ? "排期算法运算中..." : "按工作日节奏生成排期"}
             </button>
           </div>
         </div>
@@ -393,7 +393,7 @@ export function ContentCalendarView({
             return (
               <div
                 key={day.dateStr}
-                className={`flex min-h-[360px] flex-col rounded-xl border p-2.5 transition-all ${
+                className={`flex min-h-[360px] flex-col rounded-lg border p-2.5 transition-all ${
                   day.isToday
                     ? "border-indigo-500 bg-indigo-50/20 shadow-xs ring-1 ring-indigo-400"
                     : "border-slate-200 bg-white"
@@ -471,7 +471,7 @@ export function ContentCalendarView({
                           {/* 阻断原因简短提示 */}
                           {item.blockReason && isBlocked && (
                             <p className="mt-1.5 line-clamp-1 text-[10px] text-amber-800">
-                              ⚠️ {item.blockReason}
+                              {item.blockReason}
                             </p>
                           )}
 

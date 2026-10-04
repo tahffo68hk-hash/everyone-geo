@@ -126,11 +126,11 @@ function OpportunitiesInner() {
           </p>
         </header>
 
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           {OPPORTUNITY_NAV.whyHint}
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-end gap-3">
             <label htmlFor="project" className="block">
               <span className="mb-1 block text-xs font-medium text-slate-600">项目</span>
@@ -170,7 +170,7 @@ function OpportunitiesInner() {
         {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
         {loading && (
-          <section aria-busy="true" role="status" className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <section aria-busy="true" role="status" className="overflow-hidden rounded-lg border border-slate-200 bg-white">
             <div className="space-y-0">
               {[0, 1, 2, 3, 4].map(i => (
                 <div key={i} className="flex h-11 animate-pulse items-center gap-4 border-b border-slate-100 px-4 last:border-0">
@@ -185,7 +185,7 @@ function OpportunitiesInner() {
         )}
 
         {!loading && !error && rows.length === 0 && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+          <section className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
             <p className="font-medium">{OPPORTUNITY_NAV.empty}</p>
             <p className="mx-auto mt-2 max-w-2xl">{OPPORTUNITY_NAV.emptyHint}</p>
             <p className="mt-4"><Link href="/app/recommendations" className="text-blue-700 hover:underline">{OPPORTUNITY_NAV.backToRecommendations}</Link></p>
@@ -193,22 +193,22 @@ function OpportunitiesInner() {
         )}
 
         {!loading && !error && rows.length > 0 && visible.length === 0 && !noDataLimited && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+          <section className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
             没有符合条件的过滤结果，请调整筛选条件。
           </section>
         )}
 
         {noDataLimited && !error && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+          <section className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
             {OPPORTUNITY_NAV.emptyDataLimited}
           </section>
         )}
 
         {visible.length > 0 && (
-          <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
             <table className="w-full min-w-[1080px] border-collapse text-sm">
               <thead>
-                <tr className="sticky top-0 border-b border-slate-200 bg-slate-100/80 text-left text-xs text-slate-500 backdrop-blur">
+                <tr className="sticky top-0 border-b border-slate-200 bg-slate-100/80 text-left text-xs text-slate-500">
                   <th className="px-3 py-2.5 font-medium">优先级</th>
                   <th className="px-3 py-2.5 font-medium">内容方向</th>
                   <th className="px-3 py-2.5 font-medium">类型</th>

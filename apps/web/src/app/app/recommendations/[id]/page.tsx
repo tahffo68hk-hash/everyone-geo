@@ -150,13 +150,13 @@ export default function RecommendationDetailPage() {
         {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
         {run && (
-          <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <section className="rounded-lg border border-amber-200 bg-amber-50 p-5">
             <p className="text-sm text-amber-900">{RECOMMENDATION_NAV.disclaimer}</p>
           </section>
         )}
 
         {run && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+          <section className="rounded-lg border border-slate-200 bg-white p-6">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-semibold text-slate-700">{RECOMMENDATION_NAV.summary}</span>
               {counts && (
@@ -178,12 +178,12 @@ export default function RecommendationDetailPage() {
 
         {/* M7C：内容机会集成（生成 / 查看；不重复生成） */}
         {run && (
-          <section className="rounded-2xl border border-teal-200 bg-teal-50/50 p-5">
+          <section className="rounded-lg border border-teal-200 bg-teal-50/50 p-5">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm font-semibold text-slate-700">内容机会</span>
               {oppRuns.length === 0 ? (
                 <>
-                  <button type="button" disabled={generating} onClick={() => void generateOpportunities()} className="inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800 disabled:opacity-50">
+                  <button type="button" disabled={generating} onClick={() => void generateOpportunities()} className="inline-flex items-center gap-1 ui-button primary compact disabled:opacity-50">
                     {generating && <span aria-hidden="true" className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
                     {generating ? "正在生成…" : OPPORTUNITY_NAV.generateFirst}
                   </button>
@@ -191,13 +191,13 @@ export default function RecommendationDetailPage() {
                 </>
               ) : (
                 oppRuns.map(oppRun => (
-                  <div key={oppRun.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-teal-200 bg-white px-3 py-2">
+                  <div key={oppRun.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-teal-200 bg-white px-3 py-2">
                     <span className="font-mono text-xs text-slate-500">{oppRun.opportunityVersion}</span>
                     <span className="text-xs text-slate-600">内容机会 {oppRun.opportunityCount ?? oppRun.summary?.opportunityCount ?? 0} 条</span>
                     {(oppRun.summary?.blockedByDataQuality) && (
                       <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">{OPPORTUNITY_NAV.emptyDataLimited}</span>
                     )}
-                    <Link href={`/app/opportunities?run=${oppRun.id}`} className="rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800">
+                    <Link href={`/app/opportunities?run=${oppRun.id}`} className="ui-button primary compact">
                       {OPPORTUNITY_NAV.view} →
                     </Link>
                   </div>
@@ -208,7 +208,7 @@ export default function RecommendationDetailPage() {
         )}
 
         {recs.map(rec => (
-          <section key={rec.id} className="rounded-2xl border border-slate-200 bg-white p-6">
+          <section key={rec.id} className="rounded-lg border border-slate-200 bg-white p-6">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded px-2 py-0.5 text-xs font-semibold ${PRIO_BADGE[rec.priority]}`}>{formatRecommendationPriority(rec.priority)}优先级</span>
               <span className="rounded bg-fuchsia-100 px-2 py-0.5 text-xs text-fuchsia-800">{RECOMMENDATION_NAV.recLabel} · {formatRecommendationType(rec.recommendationType)}</span>
@@ -230,7 +230,7 @@ export default function RecommendationDetailPage() {
             </div>
 
             {/* 行动项 checklist */}
-            <div className="mt-3 rounded-xl border border-slate-200 p-3">
+            <div className="mt-3 rounded-lg border border-slate-200 p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-slate-700">{RECOMMENDATION_NAV.actionItems}（{rec.actionItems?.length ?? 0}）</span>
                 <span className="flex-1" />
@@ -271,7 +271,7 @@ export default function RecommendationDetailPage() {
 
             {/* 依据：Recommendation → Finding → Evidence */}
             {openId === rec.id && (
-              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
                 <p className="text-xs font-semibold text-slate-600">{RECOMMENDATION_NAV.factLabel}依据（点击查看原始回答）</p>
                 {loadingBasis[rec.id] && <p className="mt-2 text-xs text-slate-500">加载中…</p>}
                 {basis[rec.id] && (

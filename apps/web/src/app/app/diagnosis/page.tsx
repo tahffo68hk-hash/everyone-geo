@@ -115,7 +115,7 @@ export default function DiagnosisListPage() {
           </p>
         </header>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
           <label htmlFor="project" className="mb-2 block text-sm font-medium">项目</label>
           <select id="project" value={projectId} className="w-full rounded-lg border border-slate-300 p-2 sm:max-w-sm" onChange={event => setProjectId(event.target.value)}>
             {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -125,12 +125,12 @@ export default function DiagnosisListPage() {
         {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {loading && <p role="status" className="text-sm text-slate-500">正在加载诊断…</p>}
         {!loading && !error && rows.length === 0 && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+          <section className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
             {DIAGNOSIS_NAV.noDiagnosis} —— 请在「GEO 基准测试报告」中为已完成报告点击「生成 GEO 问题诊断」。
           </section>
         )}
         {rows.length > 0 && (
-          <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-4">
+          <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-4">
             <table className="w-full text-left text-sm">
               <caption className="sr-only">GEO 问题诊断列表</caption>
               <thead className="border-b border-slate-200 text-slate-500">
@@ -192,35 +192,35 @@ export default function DiagnosisListPage() {
         >
           {aiExplanationResult && (
             <div className="space-y-4">
-              <div className="p-3 bg-zinc-950/60 rounded-lg border border-zinc-800">
-                <span className="text-xs text-zinc-400 font-medium">执行摘要：</span>
-                <p className="text-sm text-zinc-200 mt-1 leading-relaxed">{aiExplanationResult.summary}</p>
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-xs text-slate-500 font-medium">执行摘要：</span>
+                <p className="text-sm text-slate-800 mt-1 leading-relaxed">{aiExplanationResult.summary}</p>
               </div>
 
-              <div className="p-3 bg-zinc-950/40 rounded-lg border border-zinc-800/80">
-                <span className="text-xs text-zinc-400 font-medium">详细解读分析：</span>
-                <p className="text-xs text-zinc-300 mt-1.5 leading-relaxed">{aiExplanationResult.explanation}</p>
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-xs text-slate-500 font-medium">详细解读分析：</span>
+                <p className="text-xs text-slate-700 mt-1.5 leading-relaxed">{aiExplanationResult.explanation}</p>
               </div>
 
               {aiExplanationResult.keyFindings.length > 0 && (
                 <div className="space-y-2">
-                  <span className="text-xs font-semibold text-zinc-300">关键发现与影响判定：</span>
+                  <span className="text-xs font-semibold text-slate-700">关键发现与影响判定：</span>
                   {aiExplanationResult.keyFindings.map((kf, idx) => (
-                    <div key={idx} className="p-2.5 bg-zinc-950/30 rounded border border-zinc-800 text-xs">
+                    <div key={idx} className="p-2.5 bg-zinc-950/30 rounded border border-slate-200 text-xs">
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-zinc-200">{kf.point}</span>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${kf.impact === "HIGH" ? "bg-red-950 text-red-300" : "bg-amber-950 text-amber-300"}`}>
+                        <span className="font-semibold text-slate-800">{kf.point}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${kf.impact === "HIGH" ? "bg-red-950 text-red-300" : "bg-amber-50 text-amber-700"}`}>
                           影响：{kf.impact}
                         </span>
                       </div>
-                      <p className="text-zinc-400 text-[11px] mt-1">{kf.reason}</p>
+                      <p className="text-slate-500 text-[11px] mt-1">{kf.reason}</p>
                     </div>
                   ))}
                 </div>
               )}
 
               {aiExplanationResult.limitations.length > 0 && (
-                <div className="p-2.5 bg-amber-950/20 border border-amber-800/40 rounded text-[11px] text-amber-300/90">
+                <div className="p-2.5 bg-amber-50/20 border border-amber-800/40 rounded text-[11px] text-amber-700/90">
                   <span className="font-semibold">证据与观测局限：</span>
                   <ul className="list-disc pl-4 mt-1 space-y-0.5">
                     {aiExplanationResult.limitations.map((lim, idx) => (

@@ -90,7 +90,6 @@ export function StatusBadge({ status }: { status: string }) {
           : ""
       }`}
     >
-      <span aria-hidden="true">●</span>
       {displayText}
     </span>
   );
@@ -109,9 +108,6 @@ export function EmptyState({
 }) {
   return (
     <section className="empty-state">
-      <span aria-hidden="true" className="empty-mark">
-        ◎
-      </span>
       <h2>{title}</h2>
       <p>{description}</p>
       {href && action && (

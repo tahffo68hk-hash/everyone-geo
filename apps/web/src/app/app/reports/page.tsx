@@ -140,7 +140,7 @@ export default function ReportsPage() {
             </Link>
             <Link
               href="/app/reports/compare"
-              className="rounded-lg bg-teal-700 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-teal-800"
+              className="ui-button primary compact"
             >
               报告对比 →
             </Link>
@@ -160,7 +160,7 @@ export default function ReportsPage() {
           action="前往基准测试"
         />
       ) : (
-        <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-xs">
           <table className="w-full text-left text-xs">
             <caption className="sr-only">基准测试报告列表</caption>
             <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-semibold">
@@ -239,16 +239,16 @@ export default function ReportsPage() {
       >
         {aiReportResult && (
           <div className="space-y-4">
-            <div className="p-3 bg-zinc-950/60 rounded-lg border border-zinc-800">
-              <span className="text-xs text-zinc-400 font-medium">执行摘要：</span>
-              <p className="text-sm text-zinc-200 mt-1 leading-relaxed">{aiReportResult.executiveSummary}</p>
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-xs text-slate-500 font-medium">执行摘要：</span>
+              <p className="text-sm text-slate-800 mt-1 leading-relaxed">{aiReportResult.executiveSummary}</p>
             </div>
 
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-zinc-300">核心洞察与发现：</span>
-              <ul className="space-y-1.5 text-xs text-zinc-300">
+              <span className="text-xs font-semibold text-slate-700">核心洞察与发现：</span>
+              <ul className="space-y-1.5 text-xs text-slate-700">
                 {aiReportResult.keyFindings.map((kf, idx) => (
-                  <li key={idx} className="p-2.5 bg-zinc-950/40 rounded border border-zinc-800 flex items-start gap-2">
+                  <li key={idx} className="p-2.5 bg-slate-50 rounded border border-slate-200 flex items-start gap-2">
                     <span className="text-indigo-400 font-bold">•</span>
                     <span>{kf}</span>
                   </li>
@@ -268,8 +268,8 @@ export default function ReportsPage() {
             )}
 
             {aiReportResult.evidenceLimitations.length > 0 && (
-              <div className="p-2.5 bg-zinc-950/40 border border-zinc-800 rounded text-[11px] text-zinc-400">
-                <span className="font-semibold text-zinc-300">数据与观测局限性：</span>
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-500">
+                <span className="font-semibold text-slate-700">数据与观测局限性：</span>
                 <ul className="list-disc pl-4 mt-1 space-y-0.5">
                   {aiReportResult.evidenceLimitations.map((lim, idx) => (
                     <li key={idx}>{lim}</li>

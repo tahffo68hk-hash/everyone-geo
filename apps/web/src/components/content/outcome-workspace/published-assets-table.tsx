@@ -224,7 +224,7 @@ export function PublishedAssetsTable({
                           e.stopPropagation();
                           onSelectAsset(asset.id);
                         }}
-                        className="ui-button text-xs py-1 px-2.5 font-medium text-teal-700 hover:text-teal-800 border-teal-200 bg-teal-50/50 hover:bg-teal-50"
+                        className="ui-button secondary compact"
                       >
                         效果详情
                       </button>

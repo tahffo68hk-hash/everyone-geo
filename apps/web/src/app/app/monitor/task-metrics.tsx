@@ -47,7 +47,7 @@ export function TaskMetrics({ taskId, taskStatus }: { taskId: string; taskStatus
     void poll();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
   }, [taskId, taskStatus, retry]);
-  return <section aria-labelledby="metrics-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
+  return <section aria-labelledby="metrics-heading" className="rounded-lg border border-slate-200 bg-white p-6">
     <div className="flex items-center justify-between gap-4"><h2 id="metrics-heading" className="text-lg font-semibold">任务指标</h2><button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100" onClick={() => setRetry((value) => value + 1)}>刷新指标</button></div>
     <p className="mt-2 text-xs text-slate-500">指标版本：{metrics?.metricVersion ?? "geolens-v1"} · 分析版本：{metrics?.analysisVersion ?? "m4-rule-v1"} · 缺失值显示为 —</p>
     {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}

@@ -165,7 +165,7 @@ export default function MonitorPage() {
           <p className="mt-2 text-sm text-slate-500">选择项目、检测问题与检测引擎（Mock/Demo 为模拟数据，DeepSeek API 为真实模型服务）创建任务并查看执行进度。</p>
         </header>
 
-        <section aria-labelledby="create-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
+        <section aria-labelledby="create-heading" className="rounded-lg border border-slate-200 bg-white p-6">
           <h2 id="create-heading" className="mb-4 text-lg font-semibold">创建任务</h2>
           {optionsLoading ? <p role="status">正在加载项目和引擎…</p> : optionsError ? (
             <div>
@@ -223,13 +223,13 @@ export default function MonitorPage() {
               </fieldset>
               <p className="text-sm text-slate-500">本次共 {queryIds.length * engineIds.length} 次运行。</p>
               {createError && <p role="alert" className="text-sm text-red-700">{createError}</p>}
-              <button type="submit" disabled={!canCreate} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">{creating ? "正在创建…" : "创建监测任务"}</button>
+              <button type="submit" disabled={!canCreate} className="ui-button primary">{creating ? "正在创建…" : "创建监测任务"}</button>
             </form>
           )}
         </section>
 
         {taskId && (
-          <section aria-labelledby="task-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
+          <section aria-labelledby="task-heading" className="rounded-lg border border-slate-200 bg-white p-6">
             <h2 id="task-heading" className="text-lg font-semibold">任务进度</h2>
             <p className="mt-1 break-all text-xs text-slate-500">任务 ID：{taskId}</p>
             {pollError && <div role="alert" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><p>{pollError}</p><button type="button" className="mt-2 underline" onClick={() => setPollRetry((value) => value + 1)}>立即重试</button></div>}

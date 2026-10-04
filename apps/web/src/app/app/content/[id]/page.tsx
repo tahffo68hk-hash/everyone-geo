@@ -462,7 +462,7 @@ export default function ContentDraftDetailPage() {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("FACT_CHECK_REQUIRED")) {
         setError(
-          "⚠️ 审批已被事实守卫拦截：草稿中包含未核验的数值、极限词或功效声明。请在「事实核查守卫」中完成安全改写或补充已核验事实后再批准！"
+          "审批已被事实守卫拦截：草稿中包含未核验的数值、极限词或功效声明。请在「事实核查守卫」中完成安全改写或补充已核验事实后再批准！"
         );
         setActiveTab("fact-check");
       } else {
@@ -823,7 +823,7 @@ export default function ContentDraftDetailPage() {
         </Link>
 
         {/* 顶部标题与元数据 */}
-        <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+        <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex flex-wrap items-center gap-3">
@@ -878,12 +878,12 @@ export default function ContentDraftDetailPage() {
 
         {/* 提示消息 */}
         {error && (
-          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-xs">
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-xs">
             <strong>操作遇到问题：</strong> {error}
           </div>
         )}
         {successMsg && (
-          <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 shadow-xs">
+          <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 shadow-xs">
             {successMsg}
           </div>
         )}
@@ -893,15 +893,15 @@ export default function ContentDraftDetailPage() {
           {/* 左侧主要区域 */}
           <div className="space-y-6">
             {/* 工作台 5 标签导航栏 */}
-            <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xs">
+            <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-xs">
               <button
                 type="button"
                 onClick={() => setActiveTab("ai-gen")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                   activeTab === "ai-gen" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                <span>✨</span>
+                <span className="text-[10px] font-semibold text-teal-700">AI</span>
                 <span>AI 平台生成</span>
                 <span
                   className={`rounded-full px-2 py-0.2 text-xs ${
@@ -915,11 +915,11 @@ export default function ContentDraftDetailPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab("fact-check")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                   activeTab === "fact-check" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                <span>🛡️</span>
+                
                 <span>事实核查守卫</span>
                 {claimCheckResult?.blocking && (
                   <span className="rounded-full bg-red-500 px-2 py-0.2 text-xs text-white">拦截中</span>
@@ -938,7 +938,7 @@ export default function ContentDraftDetailPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab("image-gen")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                   activeTab === "image-gen" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
@@ -958,7 +958,7 @@ export default function ContentDraftDetailPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab("runs-history")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                   activeTab === "runs-history" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
@@ -976,18 +976,18 @@ export default function ContentDraftDetailPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab("draft-editor")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                   activeTab === "draft-editor" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                <span>📝</span>
+                
                 <span>草稿底稿直接编辑</span>
               </button>
             </div>
 
             {/* 板块 1: AI 平台生成 */}
             {activeTab === "ai-gen" && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-5">
+              <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">国内平台文案生成与适配</h2>
@@ -1000,7 +1000,7 @@ export default function ContentDraftDetailPage() {
                       type="button"
                       disabled={applying || locked}
                       onClick={() => void handleApplyVariant()}
-                      className="ui-button font-medium border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                      className="ui-button primary font-medium"
                     >
                       {applying ? "应用中…" : "采纳为此草稿新版本"}
                     </button>
@@ -1017,7 +1017,7 @@ export default function ContentDraftDetailPage() {
                         key={p.id}
                         type="button"
                         onClick={() => setSelectedPlatform(p.id)}
-                        className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition ${
+                        className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition ${
                           isSelected
                             ? "bg-blue-700 text-white shadow-xs"
                             : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -1053,7 +1053,7 @@ export default function ContentDraftDetailPage() {
                 {currentPlatformVariant ? (
                   <div className="space-y-5">
                     {/* 版本元信息条 */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-md bg-blue-100 px-2 py-0.5 font-semibold text-blue-800">
                           {currentPlatformVariant.contentType}
@@ -1076,7 +1076,7 @@ export default function ContentDraftDetailPage() {
                     </div>
 
                     {/* 标题与封面文案 */}
-                    <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+                    <div className="space-y-3 rounded-lg border border-slate-200 p-4">
                       <div>
                         <span className="text-xs font-semibold text-slate-500">适配主标题</span>
                         <h3 className="mt-1 text-base font-bold text-slate-900">{currentPlatformVariant.title}</h3>
@@ -1113,7 +1113,7 @@ export default function ContentDraftDetailPage() {
                     </div>
 
                     {/* 正文 / 脚本大纲展示 */}
-                    <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="rounded-lg border border-slate-200 p-4">
                       <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
                         <span className="font-semibold text-slate-600">正文内容与分段脚本</span>
                         {currentPlatformVariant.platformMetadata?.wordCountTarget && (
@@ -1152,9 +1152,9 @@ export default function ContentDraftDetailPage() {
                     {/* 真实性核对与合规守卫提示 */}
                     {currentPlatformVariant.platformMetadata?.safeNotes &&
                       currentPlatformVariant.platformMetadata.safeNotes.length > 0 && (
-                        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs text-amber-900">
+                        <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4 text-xs text-amber-900">
                           <div className="flex items-center gap-1.5 font-semibold">
-                            <span>⚠️</span>
+                            
                             <span>事实准确性与平台合规审查提示</span>
                           </div>
                           <ul className="mt-2 space-y-1 list-disc list-inside">
@@ -1166,7 +1166,7 @@ export default function ContentDraftDetailPage() {
                       )}
 
                     {/* 智能改写与微调工具箱（11 种模式） */}
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <h4 className="text-xs font-bold text-slate-700">定向改写与语气调优（支持 11 种模式）</h4>
@@ -1215,7 +1215,7 @@ export default function ContentDraftDetailPage() {
                   </div>
                 ) : (
                   /* 当前平台尚未生成版本时的引导卡片 */
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center">
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-2xl">
                       {CN_PLATFORMS.find((p) => p.id === selectedPlatform)?.icon}
                     </div>
@@ -1262,7 +1262,7 @@ export default function ContentDraftDetailPage() {
 
             {/* 板块 2: 事实检查与声明守卫 (Fact Check & Claim Guard) */}
             {activeTab === "fact-check" && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+              <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">事实核查与声明守卫 (Fact Grounding)</h2>
@@ -1282,17 +1282,17 @@ export default function ContentDraftDetailPage() {
 
                 {/* 阻断状态横幅 */}
                 {claimCheckResult?.blocking && (
-                  <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-xs text-red-900 space-y-2">
+                  <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-xs text-red-900 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-bold flex items-center gap-1.5 text-sm">
-                        <span>⚠️</span>
+                        
                         <span>事实核查未通过：检测到未验证的核心事实声明（审批强制拦截中）</span>
                       </span>
                       <button
                         type="button"
                         disabled={safeRewriting}
                         onClick={() => void handleSafeRewrite()}
-                        className="ui-button primary font-medium text-xs bg-red-700 hover:bg-red-800 text-white"
+                        className="ui-button danger font-medium text-xs"
                       >
                         {safeRewriting ? "正在安全净化改写中…" : "一键自动安全改写"}
                       </button>
@@ -1305,9 +1305,9 @@ export default function ContentDraftDetailPage() {
                 )}
 
                 {claimCheckResult && !claimCheckResult.blocking && (
-                  <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-900">
+                  <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-900">
                     <div className="flex items-center gap-2 font-bold text-sm">
-                      <span>✅</span>
+                      
                       <span>事实核查全部通过</span>
                     </div>
                     <p className="mt-1 text-slate-700">
@@ -1318,7 +1318,7 @@ export default function ContentDraftDetailPage() {
 
                 {/* 安全改写成果提示 */}
                 {safeRewriteSummary && (
-                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-xs text-indigo-950 space-y-2">
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 p-4 text-xs text-indigo-950 space-y-2">
                     <div className="font-bold text-sm">安全改写已生效并留存运行快照</div>
                     <p className="text-slate-600">已对以下未验证断言执行中立化脱敏重构：</p>
                     <ul className="space-y-1 list-disc list-inside">
@@ -1369,7 +1369,7 @@ export default function ContentDraftDetailPage() {
                         return (
                           <div
                             key={claimId}
-                            className={`rounded-xl border p-3 text-xs space-y-1.5 transition ${
+                            className={`rounded-lg border p-3 text-xs space-y-1.5 transition ${
                               status === "VERIFIED"
                                 ? "border-emerald-200 bg-emerald-50/40"
                                 : status === "CONFLICTING"
@@ -1424,7 +1424,7 @@ export default function ContentDraftDetailPage() {
                 )}
 
                 {/* 已知事实库维护 (Verified Facts) */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 space-y-4">
                   <div>
                     <h3 className="text-sm font-bold text-slate-800">草稿与项目已知事实库 (Verified Facts)</h3>
                     <p className="mt-0.5 text-xs text-slate-500">
@@ -1505,7 +1505,7 @@ export default function ContentDraftDetailPage() {
 
             {/* 板块 3: 图片生成工坊 (Image Generation & Assets) */}
             {activeTab === "image-gen" && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+              <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">视觉设计与图片生成工坊</h2>
@@ -1531,7 +1531,7 @@ export default function ContentDraftDetailPage() {
                       {currentPlatformBriefs.map((b) => (
                         <div
                           key={b.id}
-                          className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs space-y-2"
+                          className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 text-xs space-y-2"
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-slate-800">{b.title}</span>
@@ -1554,7 +1554,7 @@ export default function ContentDraftDetailPage() {
                 )}
 
                 {/* 图片生成控制面板 */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 space-y-4">
                   <h3 className="text-xs font-bold text-slate-700">图片生成参数与提示词</h3>
 
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1645,7 +1645,7 @@ export default function ContentDraftDetailPage() {
 
                 {/* 生成预览展示与采纳操作 */}
                 {imagePreview && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                       <div className="flex items-center gap-2">
                         <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
@@ -1666,7 +1666,7 @@ export default function ContentDraftDetailPage() {
                     </div>
 
                     {/* 图片预览展示 */}
-                    <div className="flex flex-col items-center justify-center rounded-xl bg-slate-900/5 p-4">
+                    <div className="flex flex-col items-center justify-center rounded-lg bg-slate-900/5 p-4">
                       {imagePreview.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -1694,7 +1694,7 @@ export default function ContentDraftDetailPage() {
 
                 {/* 采纳成功提示 */}
                 {acceptedAsset && (
-                  <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-900">
+                  <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-900">
                     <div className="font-bold flex items-center gap-2 text-sm">
                       <span>🎉</span>
                       <span>资产成功入库！</span>
@@ -1708,7 +1708,7 @@ export default function ContentDraftDetailPage() {
                 )}
 
                 {/* 草稿资产库列表 */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-slate-700">当前草稿关联的图片资产库 ({draftAssets.length})</h3>
                   </div>
@@ -1747,7 +1747,7 @@ export default function ContentDraftDetailPage() {
 
             {/* 板块 4: 生成运行历史追溯 (Generation Runs) */}
             {activeTab === "runs-history" && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-5">
+              <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">不可篡改生成记录 (Generation Runs)</h2>
@@ -1770,7 +1770,7 @@ export default function ContentDraftDetailPage() {
                     {generationRuns.map((run) => (
                       <div
                         key={run.id}
-                        className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 text-xs space-y-2.5 transition hover:border-slate-300"
+                        className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 text-xs space-y-2.5 transition hover:border-slate-300"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -1854,7 +1854,7 @@ export default function ContentDraftDetailPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
+                  <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
                     暂无生成运行记录。发起文本生成、改写或生图后将在此处记录不可篡改的 Run 账本。
                   </div>
                 )}
@@ -1863,7 +1863,7 @@ export default function ContentDraftDetailPage() {
 
             {/* 板块 5: 草稿基础底稿与手工保存 */}
             {activeTab === "draft-editor" && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+              <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">草稿底稿直接编辑</h2>
@@ -1957,7 +1957,7 @@ export default function ContentDraftDetailPage() {
           {/* 右侧：审核流、Revision 历史、发布模拟与渠道连接 */}
           <div className="space-y-6">
             {/* 审核面板 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
               <h2 className="text-base font-semibold text-slate-900">审批与流转</h2>
               <p className="mt-1 text-xs text-slate-500">
                 审核针对当前最新版本；未通过审批的内容受保护，严禁对外发布。
@@ -2029,7 +2029,7 @@ export default function ContentDraftDetailPage() {
             </div>
 
             {/* Revision 历史 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold text-slate-900">版本演进历史</h2>
                 <span className="text-xs text-slate-400">共 {draft.revisions?.length ?? 0} 个版本</span>
@@ -2078,7 +2078,7 @@ export default function ContentDraftDetailPage() {
             </div>
 
             {/* 发布（仅模拟沙箱） */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
               <h2 className="text-base font-semibold text-slate-900">模拟发布沙箱</h2>
               <p className="mt-1 text-xs text-slate-500">
                 严格遵循审批闸门：仅允许已批准版本创建发布任务。当前为全隔离模拟状态。
@@ -2128,7 +2128,7 @@ export default function ContentDraftDetailPage() {
             </div>
 
             {/* 账号连接与渠道能力 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
               <h2 className="text-base font-semibold text-slate-900">账号连接与就绪状态</h2>
               {connections.length ? (
                 <ul className="mt-3 space-y-2">
@@ -2162,7 +2162,7 @@ export default function ContentDraftDetailPage() {
         </section>
 
         {/* 底部：操作审计记录 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-900">内容操作审计记录</h2>
             <span className="text-xs text-slate-400">完整时间轴审计记录</span>
@@ -2278,7 +2278,7 @@ export default function ContentDraftDetailPage() {
                   <div
                     key={idx}
                     onClick={() => setSelectedCandidateTitle(t.title)}
-                    className={`cursor-pointer rounded-xl border p-3 transition ${
+                    className={`cursor-pointer rounded-lg border p-3 transition ${
                       selectedCandidateTitle === t.title
                         ? "border-indigo-600 bg-indigo-50/60 shadow-xs"
                         : "border-slate-200 bg-white hover:border-slate-300"
