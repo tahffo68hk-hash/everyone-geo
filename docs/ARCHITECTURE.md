@@ -50,15 +50,13 @@ AIGC:
 
 | 层 | 位置 | 职责 |
 |---|---|---|
-| apps/web | Next.js | 页面、Dashboard、Evidence Drawer、图表（ECharts/Recharts） |
-| apps/api | NestJS | 业务 API、认证、任务编排入口、OpenAPI 文档 |
-| apps/worker | NestJS/BullMQ | 消费队列、调用 LLM、执行分析、持久化响应 |
-| packages/shared | TS | DTO、枚举、类型共享 |
-| packages/config | TS | 环境配置装载、校验 |
-| packages/llm | TS | LLMProvider 统一接口 + 各 Provider 实现 |
-| packages/geo-core | TS | GEO 指标计算、分析规则、Query 生成逻辑 |
-| packages/database | TS/Prisma | Schema、Prisma Client、migration、seed（M2 已落地）；api/worker 统一经 `@geo/database` 全局单例访问 |
-| packages/ui | React | shadcn/ui 基础组件（供 web 复用） |
+| apps/web | Next.js 15 | 页面、Dashboard、Evidence Drawer、5 阶段 GEO 生命周期工作区 |
+| apps/api | NestJS 11 | 业务 API、认证、AI Gateway、统一契约校验、安全防御 |
+| apps/worker | NestJS 11 / BullMQ | 消费队列、批处理监测、执行分析、持久化不可变证据 |
+| packages/llm | @geo/llm | 统一 AI Provider 运行时、InteractiveRuntime、定价核算、重试与故障转移 |
+| packages/geo-core | @geo/core | GEO 科学度量 V2、重复观测聚合、漂移探测、分析规则 |
+| packages/queue | @geo/queue | 队列类型、连接器接口与多平台分发调度 |
+| packages/database | @geo/database | Prisma Schema、数据库单例、不可变触发器保护、多租户模型 |
 
 ## 4. 核心架构决策摘要
 

@@ -1,829 +1,876 @@
 {
- "schemaVersion": 1,
- "project": "GeoLens",
- "description": "GeoLens — AI Visibility Intelligence（GEO 监测数据平台）。通用 GEO SaaS：任意品牌/产品/软件/服务均可建项目监测其 AI 可见度；产品与品牌无关（product-agnostic）。",
- "currentMilestone": "M8",
- "overallStatus": "IMPLEMENTATION_READY",
- "nextUp": {
-  "id": "REAL_PILOT_SELECTION",
-  "name": "等待用户选定真实 GEO Pilot 品牌（真实存在、有真实网站、确实想做 GEO）并授权后开始。不做 M9。",
-  "status": "AWAITING_USER_BRAND_SELECTION"
- },
- "updatedAt": "2026-09-07T12:20:00.000Z",
- "updatedBy": "agent",
- "updatedNote": "去 ProjectMentor 默认化收尾：ProjectMentor 保留为 development seed/fixture（5 条 manual evidence 作为开发验证数据集保留）；正式产品语义 = 通用 GEO SaaS（product-agnostic）。REAL_PILOT=NOT_SELECTED；REAL_CUSTOMER_VALIDATION=NOT_RUN。",
- "git": {
-  "branch": "master",
-  "head": "4a56409",
-  "headLabel": "feat(ui): add Chinese manual web UI measurement workspace",
-  "baselineBeforeDX1": "1137d23"
- },
- "realRunEvidence": {
-  "note": "Development validation dataset（ProjectMentor fixture）——非生产客户 Pilot 证明；真实市场验证待用户选择品牌后另行执行。",
-  "verified": true,
-  "totalRealRuns": 4,
-  "verifiedAt": "2026-09-05T23:30:00+08:00",
-  "round1": {
-   "runs": 1,
-   "runId": "d27a6256",
-   "model": "deepseek-v4-flash",
-   "sourceType": "official_api",
-   "retrievalMode": "api_plain"
+  "schemaVersion": 1,
+  "project": "GeoLens",
+  "description": "GeoLens — AI Visibility Intelligence（GEO 监测数据平台）。通用 GEO SaaS：任意品牌/产品/软件/服务均可建项目监测其 AI 可见度；产品与品牌无关（product-agnostic）。",
+  "currentMilestone": "SYSTEM_OPTIMIZATION",
+  "overallStatus": "PRODUCTION_OPTIMIZED",
+  "nextUp": {
+    "id": "REAL_PILOT_SELECTION",
+    "name": "等待用户选定真实 GEO Pilot 品牌（真实存在、有真实网站、确实想做 GEO）并授权后开始。不做 M9。",
+    "status": "AWAITING_USER_BRAND_SELECTION"
   },
-  "round2": {
-   "taskId": "f80ade73",
-   "runs": 3,
-   "queries": 3,
-   "engine": "deepseek-api",
-   "result": "Q1/Q2/Q3 均 SUCCEEDED，attempt=1 无 retry"
+  "updatedAt": "2026-10-04T10:56:27.777Z",
+  "updatedBy": "Principal Engineer / AI Platform Architect",
+  "updatedNote": "完成系统级生产优化：统一 AI Provider 运行时（@geo/llm InteractiveRuntime）、深度强类型契约校验与输出自愈（27 项 AI 能力）、多租户安全防护（CSRF/Origin/Sliding Window Rate Limit/Security Headers）、产品信息架构 5 阶段生命周期重构、GEO 科学度量 V2（重复观测/漂移探测/统计诚实性）、AI Gateway 模块化瘦身（AiAuditService + ai-mock-fixtures）与前端强类型 SDK。",
+  "git": {
+    "branch": "master",
+    "head": "4a56409",
+    "headLabel": "feat(ui): add Chinese manual web UI measurement workspace",
+    "baselineBeforeDX1": "1137d23"
   },
-  "sample": {
-   "project": "ProjectMentor",
-   "queries": 3,
-   "brandMentions": 0,
-   "visibility": "0/3 = 0%",
-   "citations": "0（未伪造）",
-   "metricSource": "real",
-   "note": "development fixture sample"
+  "realRunEvidence": {
+    "note": "Development validation dataset（ProjectMentor fixture）——非生产客户 Pilot 证明；真实市场验证待用户选择品牌后另行执行。",
+    "verified": true,
+    "totalRealRuns": 4,
+    "verifiedAt": "2026-09-05T23:30:00+08:00",
+    "round1": {
+      "runs": 1,
+      "runId": "d27a6256",
+      "model": "deepseek-v4-flash",
+      "sourceType": "official_api",
+      "retrievalMode": "api_plain"
+    },
+    "round2": {
+      "taskId": "f80ade73",
+      "runs": 3,
+      "queries": 3,
+      "engine": "deepseek-api",
+      "result": "Q1/Q2/Q3 均 SUCCEEDED，attempt=1 无 retry"
+    },
+    "sample": {
+      "project": "ProjectMentor",
+      "queries": 3,
+      "brandMentions": 0,
+      "visibility": "0/3 = 0%",
+      "citations": "0（未伪造）",
+      "metricSource": "real",
+      "note": "development fixture sample"
+    }
+  },
+  "milestones": [
+    {
+      "id": "M0",
+      "name": "Foundation",
+      "status": "DONE",
+      "completedAt": "2026-09-05T08:49:00+08:00",
+      "commit": "6e600c1",
+      "dataType": "n/a",
+      "demoRoute": null,
+      "summary": [
+        "monorepo 骨架：apps/{web,api,worker}、packages/{ui,shared,config,llm,geo-core,database}",
+        "根配置：package.json、pnpm-workspace.yaml、.npmrc、.gitignore、README",
+        "文档：ARCHITECTURE / PRODUCT_MAP / DECISIONS（D-001~D-008）"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "仓库骨架与配置落盘"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "Node 24.20.0 / pnpm 11.1.0 / git 环境确认"
+        },
+        "demo": {
+          "status": "N/A",
+          "detail": "无独立演示"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "Workspace 骨架",
+          "status": "DONE"
+        },
+        {
+          "name": "根配置与文档",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "环境与结构确认",
+        "lastRunAt": "2026-09-05T08:49:00+08:00",
+        "result": "pass"
+      }
+    },
+    {
+      "id": "M1",
+      "name": "Web + API Foundation",
+      "status": "DONE",
+      "completedAt": "2026-09-05T08:49:00+08:00",
+      "commit": "6e600c1",
+      "dataType": "n/a",
+      "demoRoute": "/",
+      "summary": [
+        "apps/web：Next.js 15.5.25 App Router + Tailwind v4",
+        "apps/api：NestJS 11，GET /health -> { status: ok }（3001）",
+        "首页含 API 连通探测（fetch /health）"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "Web + API 骨架联调代码就绪"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "/health 返回 ok，前后端联通"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "首页显示 API /health 状态（/）"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "Next.js Web",
+          "status": "DONE"
+        },
+        {
+          "name": "NestJS API + /health",
+          "status": "DONE"
+        },
+        {
+          "name": "前后端联调",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "手工起服验证",
+        "command": "web + api 启动后访问 /health",
+        "lastRunAt": "2026-09-05T08:49:00+08:00",
+        "result": "pass"
+      }
+    },
+    {
+      "id": "M2",
+      "name": "PostgreSQL + Prisma",
+      "status": "DONE",
+      "completedAt": "2026-09-05T09:42:00+08:00",
+      "commit": "8993bd9",
+      "dataType": "n/a",
+      "demoRoute": "/",
+      "summary": [
+        "packages/database：Prisma 单一事实来源，8 张表（User/Org/OrgMember/Project/Brand/Competitor/QuerySet/Query）",
+        "多租户 + 复合唯一约束 + FK 策略（Restrict/Cascade/SetNull）",
+        "Docker Compose：postgres:17-alpine + named volume + healthcheck",
+        "prisma migrate + 幂等 seed；/health/db 只读连通检查"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "schema/migrate/seed/verify + API 接入"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "verify.ts 13 项 PASS（关系链/唯一约束/级联）"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "/health/db connected（organizationCount 只读）"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "Prisma schema 8 表",
+          "status": "DONE"
+        },
+        {
+          "name": "migrate + seed 幂等",
+          "status": "DONE"
+        },
+        {
+          "name": "verify.ts 验收",
+          "status": "DONE"
+        },
+        {
+          "name": "/health/db",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "自动化验收脚本",
+        "command": "packages/database/scripts/verify.ts",
+        "lastRunAt": "2026-09-05T09:42:00+08:00",
+        "result": "13 items PASS"
+      }
+    },
+    {
+      "id": "M2.5",
+      "name": "Runtime / Auth / DB Hygiene",
+      "status": "DONE",
+      "completedAt": "2026-09-05T16:25:00+08:00",
+      "commit": "97814ce",
+      "dataType": "n/a",
+      "demoRoute": "/login",
+      "summary": [
+        "正式目录迁移至 D:\\dev\\geo-platform（NTFS），修复 exFAT symlink 问题",
+        "pnpm hoisted layout 正式落地（D-013），修复 Next build 双 React 崩溃",
+        "Node 24.20.0 / pnpm 11.1.0 版本固定",
+        "auth（Argon2 + JWT HttpOnly Cookie）保留并以隔离测试收尾；geo_dev / geo_test 拆分 + 数据卫生"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "运行环境与数据卫生收尾"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "auth 13 项 / 保护 15 项 / verify 通过；pnpm -r build 全绿"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "演示账号可登录 /login -> /app（alice@geolens.local / Password123!）"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "NTFS 迁移",
+          "status": "DONE"
+        },
+        {
+          "name": "hoisted layout（D-013）",
+          "status": "DONE"
+        },
+        {
+          "name": "auth 保留 + 隔离测试",
+          "status": "DONE"
+        },
+        {
+          "name": "geo_dev / geo_test 数据卫生",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "回归矩阵",
+        "command": "auth 13 项 + database guard 15 项 + verify + pnpm -r build",
+        "lastRunAt": "2026-09-05T16:25:00+08:00",
+        "result": "all pass"
+      }
+    },
+    {
+      "id": "M3",
+      "name": "Async Monitoring Engine",
+      "status": "DONE",
+      "completedAt": "2026-09-05T21:13:00+08:00",
+      "commit": "e227dc7",
+      "dataType": "mock",
+      "demoRoute": "/app/monitor",
+      "summary": [
+        "Redis + BullMQ：monitor-runs 队列 + 确定性 job id + 幂等投递",
+        "独立 Worker（apps/worker），5 个 mock engine（alpha/beta/gamma/retry/failure）",
+        "Retry（exponential backoff）/ 永久失败 / PARTIAL 状态机",
+        "Restart Recovery：reconcileRuns + dispatchPendingRuns 补齐；Redis 中断恢复后自动补投",
+        "MonitorTask API：登录、创建 5 Query×3 Engine=15 Runs、状态查询"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "队列 + Worker + 状态机 + 恢复逻辑"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "acceptance 6 场景 PASS；queue 15 / worker 11 / API e2e 19 / guard 15"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "Monitor Demo：登录后 /app/monitor 可创建并查看 15 Runs"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "Redis + BullMQ",
+          "status": "DONE"
+        },
+        {
+          "name": "Worker",
+          "status": "DONE"
+        },
+        {
+          "name": "15 Runs 演示",
+          "status": "DONE"
+        },
+        {
+          "name": "Retry",
+          "status": "DONE"
+        },
+        {
+          "name": "Restart Recovery",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "acceptance（真 DB + 真 Redis + 真实 Worker 子进程）",
+        "command": "pnpm --filter @geolens/worker acceptance",
+        "lastRunAt": "2026-09-05T21:13:00+08:00",
+        "result": "6 scenarios PASS（15-runs/retry/perm-fail/PARTIAL/restart/Redis-outage）"
+      },
+      "tests": [
+        {
+          "name": "queue unit",
+          "command": "pnpm --filter @geo/queue test",
+          "result": "15 PASS",
+          "lastRunAt": "2026-09-05T21:13:00+08:00"
+        },
+        {
+          "name": "worker integration",
+          "command": "pnpm --filter @geolens/worker test",
+          "result": "11 PASS",
+          "lastRunAt": "2026-09-05T21:13:00+08:00"
+        },
+        {
+          "name": "API e2e",
+          "command": "pnpm --filter @geolens/api test:e2e",
+          "result": "19 PASS",
+          "lastRunAt": "2026-09-05T21:13:00+08:00"
+        }
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "GEO Analysis & Evidence Engine",
+      "status": "DONE",
+      "completedAt": "2026-09-05T22:16:00+08:00",
+      "commit": "fc1e909",
+      "dataType": "mock",
+      "demoRoute": "/app/monitor",
+      "summary": [
+        "Raw Evidence（不可变）+ Analysis（版本化）+ Mention / Citation 数据模型，DB trigger 拒 UPDATE",
+        "@geo/core 确定性 Analyzer（m4-rule-v1）：Mention 位置序、Brand Mention、Competitor Detection、Recommendation、Sentiment、Citation",
+        "GEO Metrics：AI Visibility / Share of Voice / Recommendation Rate / avg Position / Citation Share",
+        "Evidence & Metrics 只读 API（租户隔离）；Evidence Drawer UI + 数据源标签",
+        "recoverAnalyses：Worker 重启后补齐缺失 Analysis 且不重写 Evidence"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "证据链 + 分析引擎 + 指标 + API + UI"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "acceptance-m4 5 场景 PASS；geo-core 49 / worker 17 / API e2e 26 / guard 15；M3 acceptance 回归 PASS"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "Evidence Demo：真实链路 15 Runs -> 15 Evidence -> 15 Analysis，/app/monitor 可逐条查看"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "Raw Evidence 不可变模型",
+          "status": "DONE"
+        },
+        {
+          "name": "Brand Mention",
+          "status": "DONE"
+        },
+        {
+          "name": "Competitor Detection",
+          "status": "DONE"
+        },
+        {
+          "name": "Mention Position",
+          "status": "DONE"
+        },
+        {
+          "name": "Recommendation",
+          "status": "DONE"
+        },
+        {
+          "name": "Sentiment",
+          "status": "DONE"
+        },
+        {
+          "name": "Citation",
+          "status": "DONE"
+        },
+        {
+          "name": "Metrics",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "acceptance（真实 Worker 子进程）",
+        "command": "pnpm --filter @geolens/worker acceptance:m4",
+        "lastRunAt": "2026-09-05T22:16:00+08:00",
+        "result": "5 scenarios PASS（A1 证据链 / A2 不可变 / A3 版本化 / A4 指标对账 / A5 restart 恢复）"
+      },
+      "tests": [
+        {
+          "name": "geo-core unit",
+          "command": "pnpm --filter @geo/core test",
+          "result": "49 PASS",
+          "lastRunAt": "2026-09-05T22:16:00+08:00"
+        },
+        {
+          "name": "worker integration",
+          "command": "pnpm --filter @geolens/worker test",
+          "result": "17 PASS",
+          "lastRunAt": "2026-09-05T22:16:00+08:00"
+        },
+        {
+          "name": "API e2e",
+          "command": "pnpm --filter @geolens/api test:e2e",
+          "result": "26 PASS",
+          "lastRunAt": "2026-09-05T22:16:00+08:00"
+        }
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "DeepSeek Real Provider",
+      "status": "DONE",
+      "completedAt": "2026-09-05T23:04:00+08:00",
+      "commit": "1137d23",
+      "dataType": "real",
+      "demoRoute": "/app/monitor",
+      "summary": [
+        "packages/llm（@geo/llm）：LLMProvider 抽象 + MockProvider + DeepSeekProvider（fetch + AbortController，无重型 SDK）",
+        "Official DeepSeek API：Evidence sourceType=official_api / retrievalMode=api_plain，模型/用量如实保存",
+        "Secret Guard：Key 只存 server-side env，不进 DB / Evidence / UI / 日志 / Git；Engine 列表只回 configured 布尔",
+        "Cost Guard：ENABLE_REAL_PROVIDERS 默认 false；REAL_PROVIDER_MAX_RUNS_PER_TASK=3 超限 API 400 拒绝",
+        "Worker 错误分类：429/5xx/timeout/network 重试；401/disabled/not_configured/empty/invalid 单次 FAILED",
+        "Metrics 隔离：metricSource = demo | real | mixed（mixed 只基于真实子集）"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "Provider 抽象 + DeepSeek 接入 + 双引擎（Mock/Real）全链"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "llm 21 / worker 22 / API e2e 32 / guard 15；Fake HTTP 集成 5/5；M3+M4 acceptance 回归 PASS"
+        },
+        "demo": {
+          "status": "PASS",
+          "detail": "Real Monitor Results：4 次真实 Run（HTTP 200），UI 区分 Mock/Demo 与 REAL·Official API"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "Official DeepSeek API",
+          "status": "DONE"
+        },
+        {
+          "name": "Real Evidence",
+          "status": "DONE"
+        },
+        {
+          "name": "Real Metrics",
+          "status": "DONE"
+        },
+        {
+          "name": "Cost Guard",
+          "status": "DONE"
+        },
+        {
+          "name": "Secret Guard",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "真实 Smoke Test（用户批准后执行，两轮共 4 Runs）",
+        "command": "1 Query×1 Run + 3 Query×1 Engine=3 Runs（engine: deepseek-api）",
+        "lastRunAt": "2026-09-05T23:30:00+08:00",
+        "result": "4/4 SUCCEEDED，HTTP 200，attempt=1 无 retry；模型 deepseek-v4-flash；ProjectMentor 3 Query 提及 0/3（Small sample / baseline only，不代表行业结论）"
+      },
+      "tests": [
+        {
+          "name": "llm unit",
+          "command": "pnpm --filter @geo/llm test",
+          "result": "21 PASS",
+          "lastRunAt": "2026-09-05T23:04:00+08:00"
+        },
+        {
+          "name": "worker integration",
+          "command": "pnpm --filter @geolens/worker test",
+          "result": "22 PASS",
+          "lastRunAt": "2026-09-05T23:04:00+08:00"
+        },
+        {
+          "name": "API e2e",
+          "command": "pnpm --filter @geolens/api test:e2e",
+          "result": "32 PASS",
+          "lastRunAt": "2026-09-05T23:04:00+08:00"
+        },
+        {
+          "name": "pnpm -r build",
+          "command": "pnpm -r build",
+          "result": "all PASS",
+          "lastRunAt": "2026-09-05T23:04:00+08:00"
+        }
+      ]
+    },
+    {
+      "id": "M6",
+      "name": "Real GEO Benchmark / Multi-Provider",
+      "status": "DONE",
+      "completedAt": "2026-09-06T21:00:00.000Z",
+      "commit": "31945ee",
+      "dataType": "mixed",
+      "demoRoute": null,
+      "summary": [
+        "M6A Real GEO Benchmark Foundation —— 完成：版本化 BenchmarkSuite/Query/Run 数据模型、ProjectMentor GEO Benchmark v1（24 主 query + 2 branded sanity）、复用 Monitor pipeline 的 Benchmark Run（Evidence 唯一事实源）、overall/category/query 三级 geolens-v1 指标、/app/benchmark UI、demo/real 隔离 + real-run 上限保护、Swagger /docs",
+        "M6B Competitor Discovery —— 完成：REAL-only 确定性竞对发现（lexicon 跨 Evidence 归并、无概率、不硬编码品牌）、Candidate/CandidateEvidence/Set/Entry 版本化模型、人工 Approve(DIRECT/ADJACENT/SUBSTITUTE)/Reject/改名、Set v1 激活冻结 + v2 归档、m6b-competitors-v1 本地重分析（0 次 DeepSeek、Evidence 不可变、m4 保留）、SoV 显式绑定 Competitor Set 版本、/app/competitors 评审 UI、demo/mock/estimated 全排除（24 Demo Evidence = 0 输入）",
+        "M6C Benchmark Reporting + Model Identity —— 完成：requestedModel/responseModel 正式分离（Provider 接口 + Evidence 新列 + legacy 兼容 + 可证明回填）、不可变 GEO 报告快照 BenchmarkReport（analysisVersion/Competitor Set/metricsSnapshot 全部冻结、同 run 多版本不覆盖）、报告对比（可比性 COMPARABLE/PARTIAL/NOT + Δ + 口径警告）、中文报告/对比/回链 UI、/app/benchmark 报告生成入口",
+        "M6D Second Provider + Multi-Provider Comparison —— 实现完成 + 真实 Qwen Smoke #1 PASS（1 Query，HTTP 200，Run/Evidence/Analysis 全链 SUCCEEDED，requested=qwen-plus/response=qwen-plus，secret leakage PASS）；状态 REAL_SMOKE_1Q_PASS —— 3 Query / 24 Query 正式 Benchmark 待用户决定"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "feat(m6) 系列：suites + pipeline + metrics + UI + competitor discovery + reports + 第二 Provider（Qwen）与跨 Provider 对比"
+        },
+        "testing": {
+          "status": "DONE",
+          "detail": "用户验收：真实 Qwen Smoke #1 PASS（1 Query、REAL_SMOKE_1Q_PASS）；geo-core 64 + llm 35 + api e2e 102 + worker 31 + queue 15 全绿"
+        },
+        "demo": {
+          "status": "DONE",
+          "detail": "M6D 真机 Demo：Demo Run → 报告 → 跨 Provider 对比 COMPARABLE；真实 Qwen Smoke #1（授权 1 次调用）"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "M6A Benchmark Foundation",
+          "status": "DONE"
+        },
+        {
+          "name": "M6B Competitor Discovery",
+          "status": "DONE"
+        },
+        {
+          "name": "M6C Benchmark Reporting + Model Identity",
+          "status": "DONE"
+        },
+        {
+          "name": "M6D Second Provider + Multi-Provider Comparison",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "migrate deploy + api e2e + worker integration + tsc + next build",
+        "command": "pnpm --filter @geo/core test && pnpm --filter @geo/llm test && pnpm --filter @geo/queue test && pnpm --filter @geolens/api test:e2e && pnpm --filter @geolens/worker test && tsc -p geo-core/database/llm/web && NEXT_DIST_DIR=.next-m6c next build apps/web && node scripts/check-ui-zh.mjs",
+        "lastRunAt": "2026-09-06T17:30:00.000Z",
+        "result": "PASS"
+      },
+      "tests": [
+        {
+          "name": "geo-core unit",
+          "command": "pnpm --filter @geo/core test",
+          "result": "64 PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
+        },
+        {
+          "name": "llm unit（含 model identity）",
+          "command": "pnpm --filter @geo/llm test",
+          "result": "22 PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
+        },
+        {
+          "name": "API e2e（含 reports 17）",
+          "command": "pnpm --filter @geolens/api test:e2e",
+          "result": "82 PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
+        },
+        {
+          "name": "worker integration",
+          "command": "pnpm --filter @geolens/worker test",
+          "result": "24 PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
+        },
+        {
+          "name": "queue unit",
+          "command": "pnpm --filter @geo/queue test",
+          "result": "15 PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
+        },
+        {
+          "name": "web tsc / build / check-ui-zh",
+          "command": "tsc -p apps/web && NEXT_DIST_DIR=.next-m6c next build apps/web && node scripts/check-ui-zh.mjs",
+          "result": "PASS",
+          "lastRunAt": "2026-09-06T17:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "M7",
+      "name": "GEO Optimization & Action Center",
+      "status": "DONE",
+      "completedAt": "2026-09-07T09:22:00+08:00",
+      "commit": "ae9a32d",
+      "dataType": "mixed",
+      "demoRoute": "/app/experiments",
+      "summary": [
+        "M7A GEO Diagnosis Foundation —— DONE / FROZEN（同前）",
+        "M7B Optimization Recommendations —— DONE / FROZEN（同前）",
+        "M7C Content Opportunities —— DONE / FROZEN（同前）",
+        "M7D Experiment & Re-test —— DONE / ACCEPTED：OptimizationExperiment/Execution/Retest(多轮)/Evaluation(immutable v1) 模型+migration；geo-core 纯函数 evaluation engine（37 单测）；frozen snapshot re-run（startRunFromSnapshot 复用既有 pipeline，杜绝 Query Drift + SHA-256 query fingerprint）；compat/metric(pp·位·count)/query delta(outcome + failed≠absent)/coverage/timing guard；API+e2e(16)；中文 UI /app/experiments(+详情 10 段)+Opportunity 集成；Demo 闭环 0 real calls（M7D acceptance 期间 Real AI Calls = 0）。",
+        "M7 —— DONE / ACCEPTED（用户 2026-09-07 正式验收，验收基线 ae9a32d）。闭环：Benchmark→Evidence→Report→Diagnosis→Recommendation→Content Opportunity→Experiment→Execution→Frozen Re-test→Evaluation。"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "feat(m7)：experiment data model+migration / geo-core evaluation engine(37) / frozen benchmark retest orchestration / experiment api+evidence comparison / 中文 experiment workspace"
+        },
+        "testing": {
+          "status": "DONE",
+          "detail": "geo-core 192（M7D 37）+ api e2e 149（12 suites，M7D 16）+ worker 31 + queue 15 + llm 35 + database 15 + web tsc/build(.next-m7d)+check-ui-zh(25) PASS；M3–M7C 无回归"
+        },
+        "demo": {
+          "status": "DONE",
+          "detail": "M7D Demo 闭环（0 real calls）+ 用户正式验收。REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN（保留独立事实：未在真实业务环境验证 GEO 提升）"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "M7A GEO Diagnosis Foundation",
+          "status": "DONE"
+        },
+        {
+          "name": "M7B Optimization Recommendations",
+          "status": "DONE"
+        },
+        {
+          "name": "M7C Content Opportunities",
+          "status": "DONE"
+        },
+        {
+          "name": "M7D Experiment & Re-test",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "用户正式验收（技术闭环 + Demo/Mock 验证）",
+        "command": "pnpm --filter @geo/core test && pnpm --filter @geo/llm test && pnpm --filter @geo/queue test && pnpm --filter @geolens/api test:e2e && pnpm --filter @geolens/worker test && tsc -p database/web && check-ui-zh",
+        "lastRunAt": "2026-09-07T09:22:00+08:00",
+        "result": "ACCEPTED —— M7 技术闭环完成并验收；真实业务 GEO 提升未经真实 Experiment 验证（REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN）"
+      },
+      "tests": [
+        {
+          "name": "geo-core unit（含 diagnosis 29）",
+          "command": "pnpm --filter @geo/core test",
+          "result": "93 PASS",
+          "lastRunAt": "2026-09-06T13:40:00.000Z"
+        },
+        {
+          "name": "API e2e（含 diagnosis 14）",
+          "command": "pnpm --filter @geolens/api test:e2e",
+          "result": "102 PASS（9 suites）",
+          "lastRunAt": "2026-09-06T13:40:00.000Z"
+        },
+        {
+          "name": "worker / queue / llm",
+          "command": "pnpm --filter @geolens/worker test && pnpm --filter @geo/queue test && pnpm --filter @geo/llm test",
+          "result": "31 / 15 / 35 PASS",
+          "lastRunAt": "2026-09-06T13:40:00.000Z"
+        },
+        {
+          "name": "web tsc + next build（隔离）+ check-ui-zh",
+          "command": "tsc -p web && NEXT_DIST_DIR build && check-ui-zh",
+          "result": "PASS",
+          "lastRunAt": "2026-09-06T13:40:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "M8E Target Entity & Query Workspace",
+      "status": "DONE",
+      "commit": "07f8c2a",
+      "dataType": "mixed",
+      "demoRoute": "/app/queries",
+      "summary": [
+        "架构决定：复用 BenchmarkSuite/BenchmarkQuery 作为 Query Set（不建第二套）；监测对象=项目 primary Brand（不新增 target 主表）；新增 TargetEntityAlias（aliasType/enabled）+ Brand.entityType/productCategory。",
+        "geo-core query-workspace（30 新单测）：contamination detector（NFKC/case/词边界/URL→POSSIBLE）、Discovery Guard、builder templates（cap 100 去重排序）、metrics scope 纯函数。",
+        "M8E e2e 7/7（AcmeFlow 全流程）：Target CRUD → DISCOVERY 拒存 → SANITY 保存 → run/report：eligibleQueryCount=3、excludedSanity=1、scope=DISCOVERY_ONLY、visibility 不被品牌问题抬高；clone v2 不影响 v1。",
+        "回归：geo-core 242 / llm 38（含 prompt neutrality 3）/ queue 15 / worker 31 / database 15 / API e2e 166（14 suites）/ web tsc+build / check-ui-zh 31 —— 全绿。",
+        "0-cost 双 Demo（0 real calls / 0 external writes）：ProjectMentor（国创赛 AI 工具）+ AcmeFlow（CRM SaaS 虚构）同代码全链跑通，DISCOVERY guard 双侧 REJECTED，report scope 一致。"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "Target Profile(Brand+alias) / queryType+contamination+source / contamination guard / builder+import preview(无副作用)+batch / targetSnapshot 冻结 / metrics scope / prompt neutrality"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "见 summary；M3–M8B 无回归"
+        },
+        "demo": {
+          "status": "DONE",
+          "detail": "ProjectMentor + AcmeFlow 双 Demo（0 real AI calls）"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "Gate A 架构审计",
+          "status": "DONE"
+        },
+        {
+          "name": "Gate B Target Profile",
+          "status": "DONE"
+        },
+        {
+          "name": "Gate C Query Type/Guard",
+          "status": "DONE"
+        },
+        {
+          "name": "Gate D Builder",
+          "status": "DONE"
+        },
+        {
+          "name": "Gate E Metrics/Snapshot/Prompt",
+          "status": "DONE"
+        },
+        {
+          "name": "Gate F API+E2E",
+          "status": "DONE"
+        },
+        {
+          "name": "Gate G 中文 UI",
+          "status": "DONE"
+        },
+        {
+          "name": "Gate H/I Demo+Regression",
+          "status": "DONE"
+        },
+        {
+          "name": "Gate J Docs/Status",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "e2e + 双 Demo + regression",
+        "lastRunAt": "2026-09-07T04:05:00.000Z",
+        "result": "PASS —— 0 real calls；M8E DONE（M8 仍 IN_PROGRESS，REAL_PILOT 待用户）"
+      },
+      "id": "M8E"
+    },
+    {
+      "id": "M8",
+      "name": "Real Optimization Pilot & Production Validation",
+      "status": "IN_PROGRESS",
+      "completedAt": null,
+      "commit": "221b299",
+      "dataType": "mixed",
+      "demoRoute": "/app/site-assets",
+      "summary": [
+        "M8A Measurement Validity —— DONE：api_plain 不构成网页优化验证（DeepSeek/Qwen 均为 official_api/api_plain → INVALID_FOR_WEB_CHANGE）；geo-core measurement.ts 纯函数（12 单测，verdict 只依 retrievalMode/sourceType 不按 provider 猜）+ url-safety.ts（SSRF：loopback/私网/metadata/file/ftp/redirect/白名单）；OptimizationExperiment 冻结 measurement* 快照 + WEB_CONTENT target measurement guard（Evaluation 自动降级 INCONCLUSIVE + INVALID_MEASUREMENT warning）；manual_verified 作为严谨 fallback（Evidence 已支持 manual/manual_verified）。",
+        "M8B Site Asset & Change Planning —— DONE：Site/SiteAsset/SiteAssetSnapshot（contentHash+BEFORE/AFTER）/OpportunityAssetMapping（UPDATE_EXISTING/CREATE_NEW/UNKNOWN 人工确认）；GET-only 同源抓取 + DNS 复查 + 大小/超时限制；OptimizationChangePlan/Item（编辑说明，无 finalPublishedText，不自动发布，Evidence 回链）；e2e sites-pilot 10/10。",
+        "M8C/M8D Real Pilot —— IMPLEMENTATION_DONE：PilotReview（reviewVersion immutable、executionValidity CHANGE_VERIFIED/CHANGE_NOT_OBSERVED、observedOutcome 允许 INVALID_MEASUREMENT/CHANGE_NOT_VERIFIED、attributionConfidence LOW/MEDIUM、lessons）；0-cost Demo（geo_dev）全链 Site→Asset→BEFORE→Mapping→ChangePlan(APPROVED)→measurement-validity→AFTER(hash 变化)→PilotReview：INVALID_MEASUREMENT + CHANGE_VERIFIED + attribution LOW —— 诚实不伪装提升。REAL_PILOT_PENDING_USER_APPROVAL / BLOCKED_BY_MEASUREMENT（api_plain）。",
+        "M8E —— DONE：通用监测对象（Brand=Target Profile：entityType/productCategory + TargetEntityAlias 可启停）；Query 语义（queryType DISCOVERY/BRANDED_SANITY/CUSTOM + source + contamination 快照 + Target snapshot 冻结）；Target Contamination Detector + Discovery Guard（DISCOVERY 含品牌拒存）；确定性 Query Builder/Import preview（无副作用）+ 批量保存；metrics scope（DISCOVERY_ONLY denominator，sanity/污染 excluded，report 记 eligible/excluded 元数据）；prompt neutrality 单测；AcmeFlow(CRM SaaS) 通用 Demo + Branded-in-query 防虚高 e2e 7/7 —— 同一 pipeline 无品牌硬编码。",
+        "M8C-R0 —— DONE：manual_verified 从数据模型支持变为可用产品通道（复用全链不建平行体系）：RunStatus 新增 AWAITING_MANUAL_INPUT/SKIPPED 隔离 worker（dispatch 只捞 PENDING/QUEUED）；manual-web-ui engine（provider=manual 不入 registry 双保险）；Manual Benchmark Run（冻结 target/query snapshot）+ Evidence 人工录入（sourceType=manual；confirmed→manual_verified，否则 unknown）+ 本地 analyzeResponse 同规则 + skip→PARTIAL；metricSource：real manual→real、demo manual→demo；中文 UI「人工 Web UI 检测」工作区；e2e 7/7 + worker 隔离测试 + 0-cost Demo 全链（0 calls）。realPilotReadiness=WAITING_FOR_REAL_BASELINE。"
+      ],
+      "gates": {
+        "implementation": {
+          "status": "DONE",
+          "detail": "feat(m8)：measurement validity framework(geo-core 引擎+guard) / site asset inventory+snapshots / opportunity asset mapping / change plans / real pilot workflow(pilot review) / 中文 UI(site-assets+change-plans+experiment M8 区块)"
+        },
+        "testing": {
+          "status": "PASS",
+          "detail": "geo-core 216（M8 measurement 12+pilot 12）+ api e2e 159（13 suites，M8 10）+ llm 35 + queue 15 + worker 31 + database guard 15 + web tsc/build(.next-m8)+check-ui-zh(28 文件) PASS；M3–M7D 无回归"
+        },
+        "demo": {
+          "status": "DONE",
+          "detail": "geo_dev 0-cost Demo（0 real AI calls、0 external writes）：Site→Asset→BEFORE snapshot→Opportunity mapping(UPDATE_EXISTING)→ChangePlan(DRAFT→APPROVED)→Experiment measurement-validity→AFTER snapshot(contentHash 变化)→PilotReview（outcome=INVALID_MEASUREMENT、execution=CHANGE_VERIFIED、attribution=LOW、3 lessons）—— 诚实展示 api_plain/演示测量不能伪装网页优化验证"
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "M8A Measurement Validity",
+          "status": "DONE"
+        },
+        {
+          "name": "M8B Site Asset & Change Planning",
+          "status": "DONE"
+        },
+        {
+          "name": "M8C Real Pilot（授权门控实现）",
+          "status": "IMPLEMENTATION_DONE"
+        },
+        {
+          "name": "M8D Production Validation & Learning",
+          "status": "IMPLEMENTATION_DONE"
+        },
+        {
+          "name": "M8E Target Entity & Query Workspace",
+          "status": "DONE"
+        },
+        {
+          "name": "M8C-R0 Manual Verified Measurement（Readiness Patch）",
+          "status": "DONE"
+        }
+      ],
+      "verification": {
+        "method": "用户验收（真实试点需授权；技术闭环已用 Demo/Mock 验证）",
+        "command": "0-cost Demo + e2e + regression",
+        "lastRunAt": "2026-09-07T02:30:00.000Z",
+        "result": "IMPLEMENTATION_DONE + M8C-R0 DONE —— REAL_BASELINE_PENDING（manual_verified 通道已可用，待用户在官方 AI Web UI 录入真实 Discovery 结果）"
+      }
+    },
+    {
+      "id": "M9",
+      "name": "Content Production & Multi-Platform Publications",
+      "status": "DONE",
+      "completedAt": "2026-09-20T00:00:00.000Z",
+      "summary": [
+        "Content Strategy, Campaign, Draft, Variants, Publication Pipeline",
+        "Platform Connectors (WeChat, Xiaohongshu, Weibo, Douyin, Bilibili, Baidu, Manual)",
+        "PublishedAsset inventory & lineage back to source change plans"
+      ]
+    },
+    {
+      "id": "M10",
+      "name": "Retest & Outcome Attribution",
+      "status": "DONE",
+      "completedAt": "2026-09-25T00:00:00.000Z",
+      "summary": [
+        "Retest execution gating and frozen snapshot comparisons",
+        "OutcomeComparison & OutcomeAttribution modeling",
+        "Attribution factors, confounders, and evidence linking"
+      ]
+    },
+    {
+      "id": "M11",
+      "name": "Learning Signal Foundation",
+      "status": "DONE",
+      "completedAt": "2026-09-30T00:00:00.000Z",
+      "summary": [
+        "Learning signal extraction across outcome attributions",
+        "Pattern identification, scope of applicability, testable hypotheses"
+      ]
+    },
+    {
+      "id": "SYSTEM_OPTIMIZATION",
+      "name": "System-Level Production Optimization",
+      "status": "DONE",
+      "completedAt": "2026-10-04T18:50:00.000Z",
+      "summary": [
+        "Unified AI Provider Runtime with InteractiveRuntime & Centralized Pricing (@geo/llm)",
+        "Zero-Dependency Schema-Driven AI Contracts for 27 capabilities with MAX_STRUCTURED_OUTPUT_REPAIR loop",
+        "Security Boundary Hardening: Origin verification, Security Headers, Sliding Window Rate Limiting",
+        "Simplified Product Information Architecture: 5-Stage GEO Lifecycle (总览 / 监测 / 诊断 / 发布 / 验证)",
+        "GEO Measurement Science V2: Repeated Observations, Provider/Model/Retrieval Drift Detection, Statistical Honesty",
+        "AI Gateway Architectural Decoupling: AiAuditService + Deterministic Mock Fixtures",
+        "Strongly Typed Frontend AI SDK Contracts (apps/web/src/lib/ai-api.ts)"
+      ]
+    }
+  ],
+  "realOptimizationExperiment": {
+    "status": "NOT_RUN",
+    "note": "尚未执行 ProjectMentor 的真实 Optimization Experiment（Before→真实内容修改→Frozen Re-test→真实 After）。技术闭环已用 Demo/Mock 验证并验收；真实业务 GEO 提升未经实验验证。"
+  },
+  "productPositioning": {
+    "declaration": "GeoLens is a product-agnostic GEO SaaS. ProjectMentor was used only as a historical development seed / demo / test fixture (development validation dataset), not as a default project and not as a production customer pilot.",
+    "defaultTargetProject": "NONE",
+    "genericOnboarding": "DONE"
+  },
+  "realPilotStatus": "NOT_SELECTED",
+  "realCustomerValidation": "NOT_RUN",
+  "milestoneSummary": {
+    "M8A_MeasurementValidity": "DONE",
+    "M8B_SiteAssetFramework": "DONE",
+    "M8C_PilotInfrastructure": "DONE",
+    "M8D_ValidationFramework": "DONE",
+    "M8E_GenericTargetQueryWorkspace": "DONE",
+    "ManualVerifiedMeasurement": "DONE",
+    "GeneralProjectOnboarding": "DONE",
+    "realPilot": "NOT_SELECTED",
+    "note": "技术实现高完成度；真实市场验证未完成（Real customer pilot 未选择/未运行）。用户未来选定一个真实存在、有真实网站、确实想做 GEO 的品牌后再开始 REAL Pilot。"
   }
- },
- "milestones": [
-  {
-   "id": "M0",
-   "name": "Foundation",
-   "status": "DONE",
-   "completedAt": "2026-09-05T08:49:00+08:00",
-   "commit": "6e600c1",
-   "dataType": "n/a",
-   "demoRoute": null,
-   "summary": [
-    "monorepo 骨架：apps/{web,api,worker}、packages/{ui,shared,config,llm,geo-core,database}",
-    "根配置：package.json、pnpm-workspace.yaml、.npmrc、.gitignore、README",
-    "文档：ARCHITECTURE / PRODUCT_MAP / DECISIONS（D-001~D-008）"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "仓库骨架与配置落盘"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "Node 24.20.0 / pnpm 11.1.0 / git 环境确认"
-    },
-    "demo": {
-     "status": "N/A",
-     "detail": "无独立演示"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "Workspace 骨架",
-     "status": "DONE"
-    },
-    {
-     "name": "根配置与文档",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "环境与结构确认",
-    "lastRunAt": "2026-09-05T08:49:00+08:00",
-    "result": "pass"
-   }
-  },
-  {
-   "id": "M1",
-   "name": "Web + API Foundation",
-   "status": "DONE",
-   "completedAt": "2026-09-05T08:49:00+08:00",
-   "commit": "6e600c1",
-   "dataType": "n/a",
-   "demoRoute": "/",
-   "summary": [
-    "apps/web：Next.js 15.5.25 App Router + Tailwind v4",
-    "apps/api：NestJS 11，GET /health -> { status: ok }（3001）",
-    "首页含 API 连通探测（fetch /health）"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "Web + API 骨架联调代码就绪"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "/health 返回 ok，前后端联通"
-    },
-    "demo": {
-     "status": "PASS",
-     "detail": "首页显示 API /health 状态（/）"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "Next.js Web",
-     "status": "DONE"
-    },
-    {
-     "name": "NestJS API + /health",
-     "status": "DONE"
-    },
-    {
-     "name": "前后端联调",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "手工起服验证",
-    "command": "web + api 启动后访问 /health",
-    "lastRunAt": "2026-09-05T08:49:00+08:00",
-    "result": "pass"
-   }
-  },
-  {
-   "id": "M2",
-   "name": "PostgreSQL + Prisma",
-   "status": "DONE",
-   "completedAt": "2026-09-05T09:42:00+08:00",
-   "commit": "8993bd9",
-   "dataType": "n/a",
-   "demoRoute": "/",
-   "summary": [
-    "packages/database：Prisma 单一事实来源，8 张表（User/Org/OrgMember/Project/Brand/Competitor/QuerySet/Query）",
-    "多租户 + 复合唯一约束 + FK 策略（Restrict/Cascade/SetNull）",
-    "Docker Compose：postgres:17-alpine + named volume + healthcheck",
-    "prisma migrate + 幂等 seed；/health/db 只读连通检查"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "schema/migrate/seed/verify + API 接入"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "verify.ts 13 项 PASS（关系链/唯一约束/级联）"
-    },
-    "demo": {
-     "status": "PASS",
-     "detail": "/health/db connected（organizationCount 只读）"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "Prisma schema 8 表",
-     "status": "DONE"
-    },
-    {
-     "name": "migrate + seed 幂等",
-     "status": "DONE"
-    },
-    {
-     "name": "verify.ts 验收",
-     "status": "DONE"
-    },
-    {
-     "name": "/health/db",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "自动化验收脚本",
-    "command": "packages/database/scripts/verify.ts",
-    "lastRunAt": "2026-09-05T09:42:00+08:00",
-    "result": "13 items PASS"
-   }
-  },
-  {
-   "id": "M2.5",
-   "name": "Runtime / Auth / DB Hygiene",
-   "status": "DONE",
-   "completedAt": "2026-09-05T16:25:00+08:00",
-   "commit": "97814ce",
-   "dataType": "n/a",
-   "demoRoute": "/login",
-   "summary": [
-    "正式目录迁移至 D:\\dev\\geo-platform（NTFS），修复 exFAT symlink 问题",
-    "pnpm hoisted layout 正式落地（D-013），修复 Next build 双 React 崩溃",
-    "Node 24.20.0 / pnpm 11.1.0 版本固定",
-    "auth（Argon2 + JWT HttpOnly Cookie）保留并以隔离测试收尾；geo_dev / geo_test 拆分 + 数据卫生"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "运行环境与数据卫生收尾"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "auth 13 项 / 保护 15 项 / verify 通过；pnpm -r build 全绿"
-    },
-    "demo": {
-     "status": "PASS",
-     "detail": "演示账号可登录 /login -> /app（alice@geolens.local / Password123!）"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "NTFS 迁移",
-     "status": "DONE"
-    },
-    {
-     "name": "hoisted layout（D-013）",
-     "status": "DONE"
-    },
-    {
-     "name": "auth 保留 + 隔离测试",
-     "status": "DONE"
-    },
-    {
-     "name": "geo_dev / geo_test 数据卫生",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "回归矩阵",
-    "command": "auth 13 项 + database guard 15 项 + verify + pnpm -r build",
-    "lastRunAt": "2026-09-05T16:25:00+08:00",
-    "result": "all pass"
-   }
-  },
-  {
-   "id": "M3",
-   "name": "Async Monitoring Engine",
-   "status": "DONE",
-   "completedAt": "2026-09-05T21:13:00+08:00",
-   "commit": "e227dc7",
-   "dataType": "mock",
-   "demoRoute": "/app/monitor",
-   "summary": [
-    "Redis + BullMQ：monitor-runs 队列 + 确定性 job id + 幂等投递",
-    "独立 Worker（apps/worker），5 个 mock engine（alpha/beta/gamma/retry/failure）",
-    "Retry（exponential backoff）/ 永久失败 / PARTIAL 状态机",
-    "Restart Recovery：reconcileRuns + dispatchPendingRuns 补齐；Redis 中断恢复后自动补投",
-    "MonitorTask API：登录、创建 5 Query×3 Engine=15 Runs、状态查询"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "队列 + Worker + 状态机 + 恢复逻辑"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "acceptance 6 场景 PASS；queue 15 / worker 11 / API e2e 19 / guard 15"
-    },
-    "demo": {
-     "status": "PASS",
-     "detail": "Monitor Demo：登录后 /app/monitor 可创建并查看 15 Runs"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "Redis + BullMQ",
-     "status": "DONE"
-    },
-    {
-     "name": "Worker",
-     "status": "DONE"
-    },
-    {
-     "name": "15 Runs 演示",
-     "status": "DONE"
-    },
-    {
-     "name": "Retry",
-     "status": "DONE"
-    },
-    {
-     "name": "Restart Recovery",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "acceptance（真 DB + 真 Redis + 真实 Worker 子进程）",
-    "command": "pnpm --filter @geolens/worker acceptance",
-    "lastRunAt": "2026-09-05T21:13:00+08:00",
-    "result": "6 scenarios PASS（15-runs/retry/perm-fail/PARTIAL/restart/Redis-outage）"
-   },
-   "tests": [
-    {
-     "name": "queue unit",
-     "command": "pnpm --filter @geo/queue test",
-     "result": "15 PASS",
-     "lastRunAt": "2026-09-05T21:13:00+08:00"
-    },
-    {
-     "name": "worker integration",
-     "command": "pnpm --filter @geolens/worker test",
-     "result": "11 PASS",
-     "lastRunAt": "2026-09-05T21:13:00+08:00"
-    },
-    {
-     "name": "API e2e",
-     "command": "pnpm --filter @geolens/api test:e2e",
-     "result": "19 PASS",
-     "lastRunAt": "2026-09-05T21:13:00+08:00"
-    }
-   ]
-  },
-  {
-   "id": "M4",
-   "name": "GEO Analysis & Evidence Engine",
-   "status": "DONE",
-   "completedAt": "2026-09-05T22:16:00+08:00",
-   "commit": "fc1e909",
-   "dataType": "mock",
-   "demoRoute": "/app/monitor",
-   "summary": [
-    "Raw Evidence（不可变）+ Analysis（版本化）+ Mention / Citation 数据模型，DB trigger 拒 UPDATE",
-    "@geo/core 确定性 Analyzer（m4-rule-v1）：Mention 位置序、Brand Mention、Competitor Detection、Recommendation、Sentiment、Citation",
-    "GEO Metrics：AI Visibility / Share of Voice / Recommendation Rate / avg Position / Citation Share",
-    "Evidence & Metrics 只读 API（租户隔离）；Evidence Drawer UI + 数据源标签",
-    "recoverAnalyses：Worker 重启后补齐缺失 Analysis 且不重写 Evidence"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "证据链 + 分析引擎 + 指标 + API + UI"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "acceptance-m4 5 场景 PASS；geo-core 49 / worker 17 / API e2e 26 / guard 15；M3 acceptance 回归 PASS"
-    },
-    "demo": {
-     "status": "PASS",
-     "detail": "Evidence Demo：真实链路 15 Runs -> 15 Evidence -> 15 Analysis，/app/monitor 可逐条查看"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "Raw Evidence 不可变模型",
-     "status": "DONE"
-    },
-    {
-     "name": "Brand Mention",
-     "status": "DONE"
-    },
-    {
-     "name": "Competitor Detection",
-     "status": "DONE"
-    },
-    {
-     "name": "Mention Position",
-     "status": "DONE"
-    },
-    {
-     "name": "Recommendation",
-     "status": "DONE"
-    },
-    {
-     "name": "Sentiment",
-     "status": "DONE"
-    },
-    {
-     "name": "Citation",
-     "status": "DONE"
-    },
-    {
-     "name": "Metrics",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "acceptance（真实 Worker 子进程）",
-    "command": "pnpm --filter @geolens/worker acceptance:m4",
-    "lastRunAt": "2026-09-05T22:16:00+08:00",
-    "result": "5 scenarios PASS（A1 证据链 / A2 不可变 / A3 版本化 / A4 指标对账 / A5 restart 恢复）"
-   },
-   "tests": [
-    {
-     "name": "geo-core unit",
-     "command": "pnpm --filter @geo/core test",
-     "result": "49 PASS",
-     "lastRunAt": "2026-09-05T22:16:00+08:00"
-    },
-    {
-     "name": "worker integration",
-     "command": "pnpm --filter @geolens/worker test",
-     "result": "17 PASS",
-     "lastRunAt": "2026-09-05T22:16:00+08:00"
-    },
-    {
-     "name": "API e2e",
-     "command": "pnpm --filter @geolens/api test:e2e",
-     "result": "26 PASS",
-     "lastRunAt": "2026-09-05T22:16:00+08:00"
-    }
-   ]
-  },
-  {
-   "id": "M5",
-   "name": "DeepSeek Real Provider",
-   "status": "DONE",
-   "completedAt": "2026-09-05T23:04:00+08:00",
-   "commit": "1137d23",
-   "dataType": "real",
-   "demoRoute": "/app/monitor",
-   "summary": [
-    "packages/llm（@geo/llm）：LLMProvider 抽象 + MockProvider + DeepSeekProvider（fetch + AbortController，无重型 SDK）",
-    "Official DeepSeek API：Evidence sourceType=official_api / retrievalMode=api_plain，模型/用量如实保存",
-    "Secret Guard：Key 只存 server-side env，不进 DB / Evidence / UI / 日志 / Git；Engine 列表只回 configured 布尔",
-    "Cost Guard：ENABLE_REAL_PROVIDERS 默认 false；REAL_PROVIDER_MAX_RUNS_PER_TASK=3 超限 API 400 拒绝",
-    "Worker 错误分类：429/5xx/timeout/network 重试；401/disabled/not_configured/empty/invalid 单次 FAILED",
-    "Metrics 隔离：metricSource = demo | real | mixed（mixed 只基于真实子集）"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "Provider 抽象 + DeepSeek 接入 + 双引擎（Mock/Real）全链"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "llm 21 / worker 22 / API e2e 32 / guard 15；Fake HTTP 集成 5/5；M3+M4 acceptance 回归 PASS"
-    },
-    "demo": {
-     "status": "PASS",
-     "detail": "Real Monitor Results：4 次真实 Run（HTTP 200），UI 区分 Mock/Demo 与 REAL·Official API"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "Official DeepSeek API",
-     "status": "DONE"
-    },
-    {
-     "name": "Real Evidence",
-     "status": "DONE"
-    },
-    {
-     "name": "Real Metrics",
-     "status": "DONE"
-    },
-    {
-     "name": "Cost Guard",
-     "status": "DONE"
-    },
-    {
-     "name": "Secret Guard",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "真实 Smoke Test（用户批准后执行，两轮共 4 Runs）",
-    "command": "1 Query×1 Run + 3 Query×1 Engine=3 Runs（engine: deepseek-api）",
-    "lastRunAt": "2026-09-05T23:30:00+08:00",
-    "result": "4/4 SUCCEEDED，HTTP 200，attempt=1 无 retry；模型 deepseek-v4-flash；ProjectMentor 3 Query 提及 0/3（Small sample / baseline only，不代表行业结论）"
-   },
-   "tests": [
-    {
-     "name": "llm unit",
-     "command": "pnpm --filter @geo/llm test",
-     "result": "21 PASS",
-     "lastRunAt": "2026-09-05T23:04:00+08:00"
-    },
-    {
-     "name": "worker integration",
-     "command": "pnpm --filter @geolens/worker test",
-     "result": "22 PASS",
-     "lastRunAt": "2026-09-05T23:04:00+08:00"
-    },
-    {
-     "name": "API e2e",
-     "command": "pnpm --filter @geolens/api test:e2e",
-     "result": "32 PASS",
-     "lastRunAt": "2026-09-05T23:04:00+08:00"
-    },
-    {
-     "name": "pnpm -r build",
-     "command": "pnpm -r build",
-     "result": "all PASS",
-     "lastRunAt": "2026-09-05T23:04:00+08:00"
-    }
-   ]
-  },
-  {
-   "id": "M6",
-   "name": "Real GEO Benchmark / Multi-Provider",
-   "status": "DONE",
-   "completedAt": "2026-09-06T21:00:00.000Z",
-   "commit": "31945ee",
-   "dataType": "mixed",
-   "demoRoute": null,
-   "summary": [
-    "M6A Real GEO Benchmark Foundation —— 完成：版本化 BenchmarkSuite/Query/Run 数据模型、ProjectMentor GEO Benchmark v1（24 主 query + 2 branded sanity）、复用 Monitor pipeline 的 Benchmark Run（Evidence 唯一事实源）、overall/category/query 三级 geolens-v1 指标、/app/benchmark UI、demo/real 隔离 + real-run 上限保护、Swagger /docs",
-    "M6B Competitor Discovery —— 完成：REAL-only 确定性竞对发现（lexicon 跨 Evidence 归并、无概率、不硬编码品牌）、Candidate/CandidateEvidence/Set/Entry 版本化模型、人工 Approve(DIRECT/ADJACENT/SUBSTITUTE)/Reject/改名、Set v1 激活冻结 + v2 归档、m6b-competitors-v1 本地重分析（0 次 DeepSeek、Evidence 不可变、m4 保留）、SoV 显式绑定 Competitor Set 版本、/app/competitors 评审 UI、demo/mock/estimated 全排除（24 Demo Evidence = 0 输入）",
-    "M6C Benchmark Reporting + Model Identity —— 完成：requestedModel/responseModel 正式分离（Provider 接口 + Evidence 新列 + legacy 兼容 + 可证明回填）、不可变 GEO 报告快照 BenchmarkReport（analysisVersion/Competitor Set/metricsSnapshot 全部冻结、同 run 多版本不覆盖）、报告对比（可比性 COMPARABLE/PARTIAL/NOT + Δ + 口径警告）、中文报告/对比/回链 UI、/app/benchmark 报告生成入口",
-    "M6D Second Provider + Multi-Provider Comparison —— 实现完成 + 真实 Qwen Smoke #1 PASS（1 Query，HTTP 200，Run/Evidence/Analysis 全链 SUCCEEDED，requested=qwen-plus/response=qwen-plus，secret leakage PASS）；状态 REAL_SMOKE_1Q_PASS —— 3 Query / 24 Query 正式 Benchmark 待用户决定"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "feat(m6) 系列：suites + pipeline + metrics + UI + competitor discovery + reports + 第二 Provider（Qwen）与跨 Provider 对比"
-    },
-    "testing": {
-     "status": "DONE",
-     "detail": "用户验收：真实 Qwen Smoke #1 PASS（1 Query、REAL_SMOKE_1Q_PASS）；geo-core 64 + llm 35 + api e2e 102 + worker 31 + queue 15 全绿"
-    },
-    "demo": {
-     "status": "DONE",
-     "detail": "M6D 真机 Demo：Demo Run → 报告 → 跨 Provider 对比 COMPARABLE；真实 Qwen Smoke #1（授权 1 次调用）"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "M6A Benchmark Foundation",
-     "status": "DONE"
-    },
-    {
-     "name": "M6B Competitor Discovery",
-     "status": "DONE"
-    },
-    {
-     "name": "M6C Benchmark Reporting + Model Identity",
-     "status": "DONE"
-    },
-    {
-     "name": "M6D Second Provider + Multi-Provider Comparison",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "migrate deploy + api e2e + worker integration + tsc + next build",
-    "command": "pnpm --filter @geo/core test && pnpm --filter @geo/llm test && pnpm --filter @geo/queue test && pnpm --filter @geolens/api test:e2e && pnpm --filter @geolens/worker test && tsc -p geo-core/database/llm/web && NEXT_DIST_DIR=.next-m6c next build apps/web && node scripts/check-ui-zh.mjs",
-    "lastRunAt": "2026-09-06T17:30:00.000Z",
-    "result": "PASS"
-   },
-   "tests": [
-    {
-     "name": "geo-core unit",
-     "command": "pnpm --filter @geo/core test",
-     "result": "64 PASS",
-     "lastRunAt": "2026-09-06T17:30:00.000Z"
-    },
-    {
-     "name": "llm unit（含 model identity）",
-     "command": "pnpm --filter @geo/llm test",
-     "result": "22 PASS",
-     "lastRunAt": "2026-09-06T17:30:00.000Z"
-    },
-    {
-     "name": "API e2e（含 reports 17）",
-     "command": "pnpm --filter @geolens/api test:e2e",
-     "result": "82 PASS",
-     "lastRunAt": "2026-09-06T17:30:00.000Z"
-    },
-    {
-     "name": "worker integration",
-     "command": "pnpm --filter @geolens/worker test",
-     "result": "24 PASS",
-     "lastRunAt": "2026-09-06T17:30:00.000Z"
-    },
-    {
-     "name": "queue unit",
-     "command": "pnpm --filter @geo/queue test",
-     "result": "15 PASS",
-     "lastRunAt": "2026-09-06T17:30:00.000Z"
-    },
-    {
-     "name": "web tsc / build / check-ui-zh",
-     "command": "tsc -p apps/web && NEXT_DIST_DIR=.next-m6c next build apps/web && node scripts/check-ui-zh.mjs",
-     "result": "PASS",
-     "lastRunAt": "2026-09-06T17:30:00.000Z"
-    }
-   ]
-  },
-  {
-   "id": "M7",
-   "name": "GEO Optimization & Action Center",
-   "status": "DONE",
-   "completedAt": "2026-09-07T09:22:00+08:00",
-   "commit": "ae9a32d",
-   "dataType": "mixed",
-   "demoRoute": "/app/experiments",
-   "summary": [
-    "M7A GEO Diagnosis Foundation —— DONE / FROZEN（同前）",
-    "M7B Optimization Recommendations —— DONE / FROZEN（同前）",
-    "M7C Content Opportunities —— DONE / FROZEN（同前）",
-    "M7D Experiment & Re-test —— DONE / ACCEPTED：OptimizationExperiment/Execution/Retest(多轮)/Evaluation(immutable v1) 模型+migration；geo-core 纯函数 evaluation engine（37 单测）；frozen snapshot re-run（startRunFromSnapshot 复用既有 pipeline，杜绝 Query Drift + SHA-256 query fingerprint）；compat/metric(pp·位·count)/query delta(outcome + failed≠absent)/coverage/timing guard；API+e2e(16)；中文 UI /app/experiments(+详情 10 段)+Opportunity 集成；Demo 闭环 0 real calls（M7D acceptance 期间 Real AI Calls = 0）。",
-    "M7 —— DONE / ACCEPTED（用户 2026-09-07 正式验收，验收基线 ae9a32d）。闭环：Benchmark→Evidence→Report→Diagnosis→Recommendation→Content Opportunity→Experiment→Execution→Frozen Re-test→Evaluation。"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "feat(m7)：experiment data model+migration / geo-core evaluation engine(37) / frozen benchmark retest orchestration / experiment api+evidence comparison / 中文 experiment workspace"
-    },
-    "testing": {
-     "status": "DONE",
-     "detail": "geo-core 192（M7D 37）+ api e2e 149（12 suites，M7D 16）+ worker 31 + queue 15 + llm 35 + database 15 + web tsc/build(.next-m7d)+check-ui-zh(25) PASS；M3–M7C 无回归"
-    },
-    "demo": {
-     "status": "DONE",
-     "detail": "M7D Demo 闭环（0 real calls）+ 用户正式验收。REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN（保留独立事实：未在真实业务环境验证 GEO 提升）"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "M7A GEO Diagnosis Foundation",
-     "status": "DONE"
-    },
-    {
-     "name": "M7B Optimization Recommendations",
-     "status": "DONE"
-    },
-    {
-     "name": "M7C Content Opportunities",
-     "status": "DONE"
-    },
-    {
-     "name": "M7D Experiment & Re-test",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "用户正式验收（技术闭环 + Demo/Mock 验证）",
-    "command": "pnpm --filter @geo/core test && pnpm --filter @geo/llm test && pnpm --filter @geo/queue test && pnpm --filter @geolens/api test:e2e && pnpm --filter @geolens/worker test && tsc -p database/web && check-ui-zh",
-    "lastRunAt": "2026-09-07T09:22:00+08:00",
-    "result": "ACCEPTED —— M7 技术闭环完成并验收；真实业务 GEO 提升未经真实 Experiment 验证（REAL_OPTIMIZATION_EXPERIMENT=NOT_RUN）"
-   },
-   "tests": [
-    {
-     "name": "geo-core unit（含 diagnosis 29）",
-     "command": "pnpm --filter @geo/core test",
-     "result": "93 PASS",
-     "lastRunAt": "2026-09-06T13:40:00.000Z"
-    },
-    {
-     "name": "API e2e（含 diagnosis 14）",
-     "command": "pnpm --filter @geolens/api test:e2e",
-     "result": "102 PASS（9 suites）",
-     "lastRunAt": "2026-09-06T13:40:00.000Z"
-    },
-    {
-     "name": "worker / queue / llm",
-     "command": "pnpm --filter @geolens/worker test && pnpm --filter @geo/queue test && pnpm --filter @geo/llm test",
-     "result": "31 / 15 / 35 PASS",
-     "lastRunAt": "2026-09-06T13:40:00.000Z"
-    },
-    {
-     "name": "web tsc + next build（隔离）+ check-ui-zh",
-     "command": "tsc -p web && NEXT_DIST_DIR build && check-ui-zh",
-     "result": "PASS",
-     "lastRunAt": "2026-09-06T13:40:00.000Z"
-    }
-   ]
-  },
-  {
-   "name": "M8E Target Entity & Query Workspace",
-   "status": "DONE",
-   "commit": "07f8c2a",
-   "dataType": "mixed",
-   "demoRoute": "/app/queries",
-   "summary": [
-    "架构决定：复用 BenchmarkSuite/BenchmarkQuery 作为 Query Set（不建第二套）；监测对象=项目 primary Brand（不新增 target 主表）；新增 TargetEntityAlias（aliasType/enabled）+ Brand.entityType/productCategory。",
-    "geo-core query-workspace（30 新单测）：contamination detector（NFKC/case/词边界/URL→POSSIBLE）、Discovery Guard、builder templates（cap 100 去重排序）、metrics scope 纯函数。",
-    "M8E e2e 7/7（AcmeFlow 全流程）：Target CRUD → DISCOVERY 拒存 → SANITY 保存 → run/report：eligibleQueryCount=3、excludedSanity=1、scope=DISCOVERY_ONLY、visibility 不被品牌问题抬高；clone v2 不影响 v1。",
-    "回归：geo-core 242 / llm 38（含 prompt neutrality 3）/ queue 15 / worker 31 / database 15 / API e2e 166（14 suites）/ web tsc+build / check-ui-zh 31 —— 全绿。",
-    "0-cost 双 Demo（0 real calls / 0 external writes）：ProjectMentor（国创赛 AI 工具）+ AcmeFlow（CRM SaaS 虚构）同代码全链跑通，DISCOVERY guard 双侧 REJECTED，report scope 一致。"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "Target Profile(Brand+alias) / queryType+contamination+source / contamination guard / builder+import preview(无副作用)+batch / targetSnapshot 冻结 / metrics scope / prompt neutrality"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "见 summary；M3–M8B 无回归"
-    },
-    "demo": {
-     "status": "DONE",
-     "detail": "ProjectMentor + AcmeFlow 双 Demo（0 real AI calls）"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "Gate A 架构审计",
-     "status": "DONE"
-    },
-    {
-     "name": "Gate B Target Profile",
-     "status": "DONE"
-    },
-    {
-     "name": "Gate C Query Type/Guard",
-     "status": "DONE"
-    },
-    {
-     "name": "Gate D Builder",
-     "status": "DONE"
-    },
-    {
-     "name": "Gate E Metrics/Snapshot/Prompt",
-     "status": "DONE"
-    },
-    {
-     "name": "Gate F API+E2E",
-     "status": "DONE"
-    },
-    {
-     "name": "Gate G 中文 UI",
-     "status": "DONE"
-    },
-    {
-     "name": "Gate H/I Demo+Regression",
-     "status": "DONE"
-    },
-    {
-     "name": "Gate J Docs/Status",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "e2e + 双 Demo + regression",
-    "lastRunAt": "2026-09-07T04:05:00.000Z",
-    "result": "PASS —— 0 real calls；M8E DONE（M8 仍 IN_PROGRESS，REAL_PILOT 待用户）"
-   },
-   "id": "M8E"
-  },
-  {
-   "id": "M8",
-   "name": "Real Optimization Pilot & Production Validation",
-   "status": "IN_PROGRESS",
-   "completedAt": null,
-   "commit": "221b299",
-   "dataType": "mixed",
-   "demoRoute": "/app/site-assets",
-   "summary": [
-    "M8A Measurement Validity —— DONE：api_plain 不构成网页优化验证（DeepSeek/Qwen 均为 official_api/api_plain → INVALID_FOR_WEB_CHANGE）；geo-core measurement.ts 纯函数（12 单测，verdict 只依 retrievalMode/sourceType 不按 provider 猜）+ url-safety.ts（SSRF：loopback/私网/metadata/file/ftp/redirect/白名单）；OptimizationExperiment 冻结 measurement* 快照 + WEB_CONTENT target measurement guard（Evaluation 自动降级 INCONCLUSIVE + INVALID_MEASUREMENT warning）；manual_verified 作为严谨 fallback（Evidence 已支持 manual/manual_verified）。",
-    "M8B Site Asset & Change Planning —— DONE：Site/SiteAsset/SiteAssetSnapshot（contentHash+BEFORE/AFTER）/OpportunityAssetMapping（UPDATE_EXISTING/CREATE_NEW/UNKNOWN 人工确认）；GET-only 同源抓取 + DNS 复查 + 大小/超时限制；OptimizationChangePlan/Item（编辑说明，无 finalPublishedText，不自动发布，Evidence 回链）；e2e sites-pilot 10/10。",
-    "M8C/M8D Real Pilot —— IMPLEMENTATION_DONE：PilotReview（reviewVersion immutable、executionValidity CHANGE_VERIFIED/CHANGE_NOT_OBSERVED、observedOutcome 允许 INVALID_MEASUREMENT/CHANGE_NOT_VERIFIED、attributionConfidence LOW/MEDIUM、lessons）；0-cost Demo（geo_dev）全链 Site→Asset→BEFORE→Mapping→ChangePlan(APPROVED)→measurement-validity→AFTER(hash 变化)→PilotReview：INVALID_MEASUREMENT + CHANGE_VERIFIED + attribution LOW —— 诚实不伪装提升。REAL_PILOT_PENDING_USER_APPROVAL / BLOCKED_BY_MEASUREMENT（api_plain）。",
-    "M8E —— DONE：通用监测对象（Brand=Target Profile：entityType/productCategory + TargetEntityAlias 可启停）；Query 语义（queryType DISCOVERY/BRANDED_SANITY/CUSTOM + source + contamination 快照 + Target snapshot 冻结）；Target Contamination Detector + Discovery Guard（DISCOVERY 含品牌拒存）；确定性 Query Builder/Import preview（无副作用）+ 批量保存；metrics scope（DISCOVERY_ONLY denominator，sanity/污染 excluded，report 记 eligible/excluded 元数据）；prompt neutrality 单测；AcmeFlow(CRM SaaS) 通用 Demo + Branded-in-query 防虚高 e2e 7/7 —— 同一 pipeline 无品牌硬编码。",
-    "M8C-R0 —— DONE：manual_verified 从数据模型支持变为可用产品通道（复用全链不建平行体系）：RunStatus 新增 AWAITING_MANUAL_INPUT/SKIPPED 隔离 worker（dispatch 只捞 PENDING/QUEUED）；manual-web-ui engine（provider=manual 不入 registry 双保险）；Manual Benchmark Run（冻结 target/query snapshot）+ Evidence 人工录入（sourceType=manual；confirmed→manual_verified，否则 unknown）+ 本地 analyzeResponse 同规则 + skip→PARTIAL；metricSource：real manual→real、demo manual→demo；中文 UI「人工 Web UI 检测」工作区；e2e 7/7 + worker 隔离测试 + 0-cost Demo 全链（0 calls）。realPilotReadiness=WAITING_FOR_REAL_BASELINE。"
-   ],
-   "gates": {
-    "implementation": {
-     "status": "DONE",
-     "detail": "feat(m8)：measurement validity framework(geo-core 引擎+guard) / site asset inventory+snapshots / opportunity asset mapping / change plans / real pilot workflow(pilot review) / 中文 UI(site-assets+change-plans+experiment M8 区块)"
-    },
-    "testing": {
-     "status": "PASS",
-     "detail": "geo-core 216（M8 measurement 12+pilot 12）+ api e2e 159（13 suites，M8 10）+ llm 35 + queue 15 + worker 31 + database guard 15 + web tsc/build(.next-m8)+check-ui-zh(28 文件) PASS；M3–M7D 无回归"
-    },
-    "demo": {
-     "status": "DONE",
-     "detail": "geo_dev 0-cost Demo（0 real AI calls、0 external writes）：Site→Asset→BEFORE snapshot→Opportunity mapping(UPDATE_EXISTING)→ChangePlan(DRAFT→APPROVED)→Experiment measurement-validity→AFTER snapshot(contentHash 变化)→PilotReview（outcome=INVALID_MEASUREMENT、execution=CHANGE_VERIFIED、attribution=LOW、3 lessons）—— 诚实展示 api_plain/演示测量不能伪装网页优化验证"
-    }
-   },
-   "checkpoints": [
-    {
-     "name": "M8A Measurement Validity",
-     "status": "DONE"
-    },
-    {
-     "name": "M8B Site Asset & Change Planning",
-     "status": "DONE"
-    },
-    {
-     "name": "M8C Real Pilot（授权门控实现）",
-     "status": "IMPLEMENTATION_DONE"
-    },
-    {
-     "name": "M8D Production Validation & Learning",
-     "status": "IMPLEMENTATION_DONE"
-    },
-    {
-     "name": "M8E Target Entity & Query Workspace",
-     "status": "DONE"
-    },
-    {
-     "name": "M8C-R0 Manual Verified Measurement（Readiness Patch）",
-     "status": "DONE"
-    }
-   ],
-   "verification": {
-    "method": "用户验收（真实试点需授权；技术闭环已用 Demo/Mock 验证）",
-    "command": "0-cost Demo + e2e + regression",
-    "lastRunAt": "2026-09-07T02:30:00.000Z",
-    "result": "IMPLEMENTATION_DONE + M8C-R0 DONE —— REAL_BASELINE_PENDING（manual_verified 通道已可用，待用户在官方 AI Web UI 录入真实 Discovery 结果）"
-   }
-  }
- ],
- "realOptimizationExperiment": {
-  "status": "NOT_RUN",
-  "note": "尚未执行 ProjectMentor 的真实 Optimization Experiment（Before→真实内容修改→Frozen Re-test→真实 After）。技术闭环已用 Demo/Mock 验证并验收；真实业务 GEO 提升未经实验验证。"
- },
- "productPositioning": {
-  "declaration": "GeoLens is a product-agnostic GEO SaaS. ProjectMentor was used only as a historical development seed / demo / test fixture (development validation dataset), not as a default project and not as a production customer pilot.",
-  "defaultTargetProject": "NONE",
-  "genericOnboarding": "DONE"
- },
- "realPilotStatus": "NOT_SELECTED",
- "realCustomerValidation": "NOT_RUN",
- "milestoneSummary": {
-  "M8A_MeasurementValidity": "DONE",
-  "M8B_SiteAssetFramework": "DONE",
-  "M8C_PilotInfrastructure": "DONE",
-  "M8D_ValidationFramework": "DONE",
-  "M8E_GenericTargetQueryWorkspace": "DONE",
-  "ManualVerifiedMeasurement": "DONE",
-  "GeneralProjectOnboarding": "DONE",
-  "realPilot": "NOT_SELECTED",
-  "note": "技术实现高完成度；真实市场验证未完成（Real customer pilot 未选择/未运行）。用户未来选定一个真实存在、有真实网站、确实想做 GEO 的品牌后再开始 REAL Pilot。"
- }
 }
