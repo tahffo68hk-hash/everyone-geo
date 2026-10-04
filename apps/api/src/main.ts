@@ -5,6 +5,11 @@ import cookieParser from "cookie-parser";
 import * as path from "path";
 import * as dotenv from "dotenv";
 import { AppModule } from "./app.module";
+import {
+  securityHeadersMiddleware,
+  createOriginProtectionMiddleware,
+  createRateLimiterMiddleware,
+} from "./common/security.middleware";
 
 // 显式加载仓库根 .env（见 config/env.ts），确保本地 dev/test 环境一致。
 dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
@@ -12,6 +17,9 @@ dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableShutdownHooks();
+
+  // 1. 安全响应头 (X-Content-Type-Options, X-Frame-Options, HSTS 等)
+  app.use(securityHeadersMiddleware);
 
   app.use(cookieParser());
 
@@ -21,6 +29,12 @@ async function bootstrap() {
       .map((s) => s.trim())
       .filter(Boolean);
   app.enableCors({ origin: webOrigins, credentials: true });
+
+  // 2. CSRF / Origin 跨站请求保护
+  app.use(createOriginProtectionMiddleware(webOrigins));
+
+  // 3. 滑动窗口内存限流 (防刷 / AI 额度滥用防护)
+  app.use(createRateLimiterMiddleware());
 
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
