@@ -8,30 +8,41 @@ import { EmptyState, ErrorState, LoadingSkeleton } from "./ui";
 import { api } from "@/lib/api";
 
 const sections = [
-  { label: "工作台", path: "/app", members: [] },
-  { label: "监测", path: "/app/benchmark", members: ["benchmark", "monitor", "competitors", "manual-runs"] },
-  { label: "问题集", path: "/app/queries", members: ["queries"] },
-  { label: "任务中心", path: "/app/activity", members: ["activity"] },
-  { label: "报告", path: "/app/reports", members: ["reports"] },
-  { label: "优化", path: "/app/diagnosis", members: ["diagnosis", "recommendations", "opportunities", "content", "experiments", "site-assets", "change-plans"] },
-  { label: "设置", path: "/app/target", members: ["target", "projects"] },
+  { label: "总览", path: "/app", members: [] },
+  { label: "监测", path: "/app/benchmark", members: ["benchmark", "queries", "monitor", "competitors", "manual-runs"] },
+  { label: "诊断", path: "/app/diagnosis", members: ["diagnosis", "recommendations", "opportunities", "reports"] },
+  { label: "发布", path: "/app/content", members: ["content", "site-assets", "change-plans"] },
+  { label: "验证", path: "/app/content/verification", members: ["experiments"] },
+  { label: "设置", path: "/app/target", members: ["target", "projects", "activity"] },
 ];
 
-const optimization = [
-  ["洞察", "diagnosis"],
-  ["建议", "recommendations"],
-  ["优化机会", "opportunities"],
-  ["内容运营", "content"],
-  ["效果验证", "content/verification"],
-  ["实验与复测", "experiments"],
-  ["站点资产", "site-assets"],
-];
-
-const monitoring = [
-  ["问题集检测", "benchmark"],
-  ["持续监测", "monitor"],
-  ["竞品", "competitors"],
-];
+const moduleSubnavs: Record<string, [string, string][]> = {
+  "监测": [
+    ["基准检测", "benchmark"],
+    ["问题集", "queries"],
+    ["持续监测", "monitor"],
+    ["竞品态势", "competitors"],
+  ],
+  "诊断": [
+    ["GEO诊断", "diagnosis"],
+    ["优化建议", "recommendations"],
+    ["内容机会", "opportunities"],
+    ["分析报告", "reports"],
+  ],
+  "发布": [
+    ["内容工作台", "content"],
+    ["新建内容", "content/new"],
+    ["站点资产", "site-assets"],
+  ],
+  "验证": [
+    ["效果与归因", "content/verification"],
+    ["复测实验", "experiments"],
+  ],
+  "设置": [
+    ["监测对象", "target"],
+    ["任务中心", "activity"],
+  ],
+};
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -43,11 +54,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const subSegment = segments[2] ?? "";
   const fullSubpath = segments.slice(1).join("/");
 
-  const current = sections.find((s) => s.members.includes(mainModule)) ?? sections[0];
+  const isVerification = fullSubpath.startsWith("content/verification") || mainModule === "experiments";
+  const current = isVerification
+    ? sections.find((s) => s.label === "验证")!
+    : sections.find((s) => s.members.includes(mainModule)) ?? sections[0];
   const href = (path: string) =>
     context.projectId ? `${path}?project=${encodeURIComponent(context.projectId)}` : path;
 
-  const subnav = current.label === "优化" ? optimization : current.label === "监测" ? monitoring : [];
+  const subnav = moduleSubnavs[current.label] ?? [];
 
   const isDetail =
     segments.length >= 3 &&
@@ -66,6 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (targetPath === fullSubpath) return true;
     if (targetPath === "content" && fullSubpath === "content") return true;
     if (targetPath === "content/verification" && fullSubpath.startsWith("content/verification")) return true;
+    if (targetPath === "content/new" && fullSubpath === "content/new") return true;
     return mainModule === targetPath;
   }
 
