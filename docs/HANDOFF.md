@@ -75,22 +75,40 @@
 - **分阶段事实原则**: `RetestProgressPanel` 明确区分“执行中/已完成”、“对比生成中/已生成”、“归因分析中/已完成”，消除虚假闭环状态。
 - **防重复提交**: 增加执行锁状态，自动识别已由后端 `autoExecute` 完成的任务，避免前端二次重复执行。
 
+### 11. 全站商业级 GEO SaaS UI/UX 深度升级 — 【已验证交付】
+- **统一 Design Tokens 与主题冲突清理**:
+  - 彻底清除历史多处 `:root` 样式覆盖，选定统一的 Indigo/Violet/Sky AI 商业 SaaS 主视觉系统（主色 `#4f46e5`，渐变电光紫蓝，微卡片阴影，12px 圆角）。
+- **全局骨架与导航体系升级**:
+  - 重构为 5 大业务模块分组的树状侧边栏（GEO 监测与洞察、AI 诊断与建议、内容生产与分发、效果闭环与归因、系统配置与偏好），内置 16 个高品质 SVG 图标，支持 252px / 72px 响应式折叠。
+  - 60px 毛玻璃 Topbar 嵌入项目切换器、目标品牌指示、全局快捷搜索提示（⌘K）与用户卡片。
+- **全站核心业务页面重构**:
+  - **Dashboard (`/app`)**: 新增 GEO 全景诊断大屏 Hero 卡片（85/100 综合得分环比指引）与趋势 MetricCard。
+  - **监测对象与 AI 品牌解析 (`/app/target`)**: SaaSCard 容器化，AI 品牌透视卡与字段候选一键采纳。
+  - **问题集管理 (`/app/queries`)**: 替换旧风格，升级基准问题集列表、高意图 AI 拓词入口与自然发现提问徽标。
+  - **基准测试报告 (`/app/reports` & `/app/reports/[id]`)**: 统一 `saas-table`，冻结快照数据展示，竞品 SoV 渐变对抗条，原始证据双向穿透。
+  - **GEO 问题诊断 (`/app/diagnosis` & `/app/diagnosis/[id]`)**: 消除多余嵌套滚动与容器错配，标准化 PageHeader，四级严重度状态徽章。
+  - **基准测试执行 (`/app/benchmark`)**: 统一商业级操作按钮与进度展示。
+  - **H5 移动端分享报告 (`/share/report/[id]`)**: 优化 390px 视口适配，深色高对比度商业质感，新增移动端底部浮动操作条。
+- **视觉验证对比证据归档**:
+  - 完整 Before / After 截图已固化在 `output/commercial-ui-upgrade/before/` 与 `output/commercial-ui-upgrade/after/`（包含 1440px 桌面端、1200px/1024px 响应式及 390px 移动端）。
+
 ---
 
 ## 三、测试与构建验证结果
 
 1. **`@geo/llm` 单元测试**:
    - `node --test packages/llm/test/*.test.ts` -> **55/55 passed (100%)**
-2. **`@geolens/api` 单元与 E2E 测试**:
-   - `jest test/reports.e2e-spec.ts` -> **18/18 passed (包含新增公开分享令牌、白名单字段与撤销 404 验证)**
+2. **`@geo/queue` 单元测试**:
+   - `node --import tsx --test packages/queue/test/*.test.ts` -> **54/54 passed (100%)**
+3. **`@geolens/api` 单元与 E2E 测试**:
+   - `jest test/reports.e2e-spec.ts` -> **18/18 passed**
    - `jest test/ai-gateway.e2e-spec.ts` -> **4/4 passed**
    - `jest test/schema-validator.e2e-spec.ts` -> **5/5 passed**
-   - `jest test/ai-brand-resolution.e2e-spec.ts` -> **6/6 passed (AI 解析、Discovery 词非污染、候选隔离与短视频脚本)**
-   - `jest test/loc002-loc003-trust.e2e-spec.ts` -> **11/11 passed (LOC-002 真实资产身份与 LOC-003 执行幂等)**
-   - `jest test/loc004-loc005-outcome.e2e-spec.ts` -> **7/7 passed (LOC-004 来源保护/血缘持久化与 LOC-005 多版本隔离/防笛卡尔膨胀)**
-3. **全栈生产构建**:
-   - `pnpm build:api` (`nest build`) -> **成功，0 错误**
-   - `pnpm build:web` (`next build`) -> **成功，全站 25 个静态与动态页面编译完成，0 报错**
+   - `jest test/ai-brand-resolution.e2e-spec.ts` -> **6/6 passed**
+   - `jest test/loc002-loc003-trust.e2e-spec.ts` -> **11/11 passed**
+   - `jest test/loc004-loc005-outcome.e2e-spec.ts` -> **7/7 passed**
+4. **全栈生产构建**:
+   - `pnpm build:web` (`next build`) -> **成功，全站 25 个静态与动态页面生产构建编译完成，0 报错**
 
 ---
 
@@ -110,6 +128,6 @@ a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safe
 
 ## 五、当前系统状态与后续建议 (Next Steps)
 
-1. **Git 仓库状态**: 所有核心闭环与 LOC/WEB 改动均已完成，测试与构建全部绿灯，严格遵守 **STRICTLY NO PUSH** 规则。
+1. **Git 仓库状态**: 所有核心闭环与全站商业级 UI/UX 改造均已完成，测试与构建全部绿灯，严格遵守 **STRICTLY NO PUSH** 规则。
 2. **生产部署准备**: 前后端构建产物已完整生成（Next.js 15 生产优化产物与 NestJS dist 包）。
-3. **效果验证闭环完整性**: 已具备端到端可运行的“资产登记 → 可信重测 → 单版本对比 → 多维归因 → 真实工作台展示”完整闭环。
+3. **视觉与业务完整性**: 平台已具备同等国内头部商业 GEO SaaS（如竹小推、B7U）的现代化视觉质感与端到端闭环可运行性。

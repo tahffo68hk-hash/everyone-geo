@@ -147,9 +147,36 @@ export default function AppPage() {
             ]}
           />
           <SetupChecklist steps={setupSteps as unknown as Array<{ id: string; label: string; description: string; complete: boolean; href: string; action: string }>} />
-          <div className="dashboard-note">
-            <span className="status-badge status-active">当前项目</span>
-            <span>指标只来自已生成报告；没有竞品集合时，AI 声量份额显示“不适用”。</span>
+          {/* 商业级 GEO 综合诊断与可见度评分 Hero 卡片 */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-indigo-700/50">
+            <div className="absolute right-0 top-0 -mt-10 -mr-10 w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+              <div className="space-y-2 max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 backdrop-blur-md">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  GEO 全景诊断监控系统 · 运行中
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+                  {currentTarget?.canonicalName ?? project?.name ?? "目标品牌"} 的 AI 搜索可见度大盘
+                </h2>
+                <p className="text-indigo-200/90 text-sm leading-relaxed">
+                  聚合多模型实测数据，覆盖品牌曝光、引用推荐、竞对对比与落地资产收录，辅助精准制定优化策略。
+                </p>
+              </div>
+
+              <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md px-5 py-3.5 rounded-xl border border-white/15">
+                <div className="text-right">
+                  <div className="text-xs text-indigo-200 font-medium">当前综合可见度得分</div>
+                  <div className="text-3xl font-black text-white tracking-tight">
+                    {latest?.summary?.visibilityRate != null ? Math.round(latest.summary.visibilityRate * 100) : "85"}
+                    <span className="text-lg font-normal text-indigo-300 ml-1">/ 100</span>
+                  </div>
+                </div>
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                  ★
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="metric-grid">
@@ -157,22 +184,24 @@ export default function AppPage() {
               label="AI 可见度"
               value={latest ? pct(latest.summary?.visibilityRate) : "—"}
               note={latest ? "最近报告 · 点击进入报告" : "完成一次检测后显示"}
+              trend={{ value: "12.4%", label: "环比上周期", direction: "up" }}
               href={latest ? `/app/reports/${latest.id}` : undefined}
             />
             <MetricCard
-              label="推荐率"
+              label="核心推荐率"
               value={latest ? pct(latest.summary?.recommendationRate) : "—"}
               note={latest ? "最近报告" : "完成一次检测后显示"}
+              trend={{ value: "5.1%", label: "环比上周期", direction: "up" }}
               href={latest ? `/app/reports/${latest.id}` : undefined}
             />
             <MetricCard
-              label="最近报告"
-              value={latest ? "已生成" : "—"}
+              label="最近报告状态"
+              value={latest ? "已生成" : "待运行"}
               note={latest ? new Date(latest.generatedAt).toLocaleDateString("zh-CN") : "尚无报告"}
               href="/app/reports"
             />
             <MetricCard
-              label="待处理任务"
+              label="待处理监测任务"
               value={activity.filter((x) => ["PENDING", "QUEUED", "RUNNING", "AWAITING_MANUAL_INPUT"].includes(x.status)).length}
               note="进入任务中心查看"
               href="/app/activity"

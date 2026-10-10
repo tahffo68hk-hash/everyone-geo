@@ -23,16 +23,20 @@ export function PageHeader({
         {backHref && (
           <Link
             href={backHref}
-            className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-teal-700 transition mb-2"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-indigo-600 transition mb-2"
           >
-            ← {backLabel}
+            <span aria-hidden="true">←</span> {backLabel}
           </Link>
         )}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">{title}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
           {badge}
         </div>
-        {description && <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-3xl leading-relaxed">{description}</p>}
+        {description && (
+          <p className="mt-1.5 text-xs sm:text-sm text-slate-500 max-w-3xl leading-relaxed">
+            {description}
+          </p>
+        )}
       </div>
       {actions && <div className="page-actions">{actions}</div>}
     </header>
@@ -40,10 +44,28 @@ export function PageHeader({
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const good = ["SUCCEEDED", "EVALUATED", "ENABLED", "PUBLISHED", "COMPLETED", "EXACT_MATCH"].includes(status);
-  const warning = ["PARTIAL", "AWAITING_MANUAL_INPUT", "READY_FOR_EVALUATION", "COMPARABLE_WITH_WARNING", "CONFOUNDED"].includes(status);
-  const active = ["RUNNING", "QUEUED", "RETEST_RUNNING"].includes(status);
-  const danger = ["FAILED", "INCOMPATIBLE", "MISSING_BASELINE"].includes(status);
+  const good = [
+    "SUCCEEDED",
+    "EVALUATED",
+    "ENABLED",
+    "PUBLISHED",
+    "COMPLETED",
+    "EXACT_MATCH",
+    "MANUAL_VERIFIED",
+    "PLATFORM_CONFIRMED",
+  ].includes(status);
+
+  const warning = [
+    "PARTIAL",
+    "AWAITING_MANUAL_INPUT",
+    "READY_FOR_EVALUATION",
+    "COMPARABLE_WITH_WARNING",
+    "CONFOUNDED",
+    "UNVERIFIED",
+  ].includes(status);
+
+  const active = ["RUNNING", "QUEUED", "RETEST_RUNNING", "PRODUCING"].includes(status);
+  const danger = ["FAILED", "INCOMPATIBLE", "MISSING_BASELINE", "CANCELLED"].includes(status);
 
   const labels: Record<string, string> = {
     PENDING: "等待中",
@@ -63,6 +85,9 @@ export function StatusBadge({ status }: { status: string }) {
     SCHEDULED: "已排期",
     PRODUCING: "生产中",
     REVIEWING: "审核中",
+    UNVERIFIED: "待核验",
+    MANUAL_VERIFIED: "人工核验",
+    PLATFORM_CONFIRMED: "平台已确认",
   };
 
   const experiments: Record<string, string> = {
@@ -95,6 +120,93 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
+export function MetricCard({
+  label,
+  value,
+  note,
+  icon,
+  trend,
+  href,
+  onClick,
+}: {
+  label: string;
+  value: ReactNode;
+  note?: string;
+  icon?: ReactNode;
+  trend?: {
+    value: string | number;
+    label?: string;
+    direction?: "up" | "down" | "neutral";
+  };
+  href?: string;
+  onClick?: () => void;
+}) {
+  const inner = (
+    <>
+      <div className="metric-header">
+        <span className="metric-label">{label}</span>
+        {icon && <div className="metric-icon-box">{icon}</div>}
+      </div>
+      <strong>{value}</strong>
+      <div className="metric-note">
+        {trend && (
+          <span
+            className={`metric-trend-pill ${
+              trend.direction === "down" ? "metric-trend-down" : "metric-trend-up"
+            }`}
+          >
+            {trend.direction === "down" ? "↓" : "↑"} {trend.value}
+          </span>
+        )}
+        <span>{note ?? (href ? "查看明细 →" : "")}</span>
+      </div>
+    </>
+  );
+
+  return href ? (
+    <Link className="metric-card" href={href}>
+      {inner}
+    </Link>
+  ) : onClick ? (
+    <button type="button" className="metric-card" onClick={onClick}>
+      {inner}
+    </button>
+  ) : (
+    <div className="metric-card">{inner}</div>
+  );
+}
+
+export function SaaSCard({
+  title,
+  subtitle,
+  actions,
+  children,
+  className = "",
+}: {
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`surface ${className}`}>
+      {(title || actions) && (
+        <div className="section-heading">
+          <div>
+            {typeof title === "string" ? <h2>{title}</h2> : title}
+            {subtitle && (
+              <p className="mt-0.5 text-xs text-slate-500 font-normal">{subtitle}</p>
+            )}
+          </div>
+          {actions && <div className="flex items-center gap-2">{actions}</div>}
+        </div>
+      )}
+      <div className="p-5">{children}</div>
+    </section>
+  );
+}
+
 export function EmptyState({
   title,
   description,
@@ -108,6 +220,7 @@ export function EmptyState({
 }) {
   return (
     <section className="empty-state">
+      <div className="empty-mark">✧</div>
       <h2>{title}</h2>
       <p>{description}</p>
       {href && action && (
@@ -131,7 +244,7 @@ export function ErrorState({
   return (
     <section role="alert" className="error-state">
       <strong className="block text-sm font-semibold">{title}</strong>
-      <p className="mt-1 text-xs text-slate-500">请尝试刷新重试；若问题持续，请稍后再试。</p>
+      <p className="mt-1 text-xs text-slate-500">请尝试刷新重试；若问题持续，请联系技术支持。</p>
       {retry && (
         <button type="button" className="ui-button secondary text-xs mt-2" onClick={retry}>
           重新尝试
@@ -156,10 +269,10 @@ export function LoadingSkeleton({
 }) {
   if (variant === "card") {
     return (
-      <div role="status" aria-label="正在加载" className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div role="status" aria-label="正在加载" className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <span className="sr-only">正在加载…</span>
-        {Array.from({ length: 3 }, (_, i) => (
-          <div key={i} className="surface p-5 skeleton-shimmer space-y-3">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="surface p-5 space-y-3">
             <div className="h-4 w-1/3 bg-slate-200/70 rounded" />
             <div className="h-7 w-1/2 bg-slate-200/80 rounded" />
             <div className="h-3 w-3/4 bg-slate-200/50 rounded" />
@@ -172,45 +285,11 @@ export function LoadingSkeleton({
   return (
     <div role="status" aria-label="正在加载" className="loading-skeleton">
       <span className="sr-only">正在加载…</span>
-      <div className="skeleton-shimmer h-8 w-1/4 mb-4 rounded" />
+      <div className="h-8 w-1/4 mb-4 rounded bg-slate-200/70" />
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="skeleton-shimmer" />
+        <div key={i} />
       ))}
     </div>
-  );
-}
-
-export function MetricCard({
-  label,
-  value,
-  note,
-  href,
-  onClick,
-}: {
-  label: string;
-  value: ReactNode;
-  note?: string;
-  href?: string;
-  onClick?: () => void;
-}) {
-  const inner = (
-    <>
-      <span className="metric-label">{label}</span>
-      <strong>{value}</strong>
-      <span className="metric-note">{note ?? "查看明细 →"}</span>
-    </>
-  );
-
-  return href ? (
-    <Link className="metric-card" href={href}>
-      {inner}
-    </Link>
-  ) : onClick ? (
-    <button type="button" className="metric-card" onClick={onClick}>
-      {inner}
-    </button>
-  ) : (
-    <div className="metric-card">{inner}</div>
   );
 }
 
@@ -233,9 +312,9 @@ export function Pagination({
   return (
     <nav aria-label="分页" className="pagination">
       <span>
-        共 {total} 条 · 第 {page} / {pages} 页
+        共 <strong className="text-slate-900">{total}</strong> 条 · 第 {page} / {pages} 页
       </span>
-      <div>
+      <div className="flex items-center gap-2">
         <button
           type="button"
           className="ui-button"

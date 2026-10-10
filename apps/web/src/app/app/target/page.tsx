@@ -172,70 +172,109 @@ function TargetInner() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-slate-800">{TARGET_NAV.title}</h1>
-          <p className="mt-1 text-xs text-slate-500">{TARGET_NAV.historyNote}</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">{TARGET_NAV.title}</h1>
+          <p className="mt-1 text-xs sm:text-sm text-slate-500">{TARGET_NAV.historyNote}</p>
         </div>
-        <select value={projectId} onChange={e => setProjectId(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" aria-label="选择项目">
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        <div className="project-switch-box">
+          <select value={projectId} onChange={e => setProjectId(e.target.value)} aria-label="选择项目">
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
       </div>
-      {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-      {saved && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{saved}</p>}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+      {error && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+      {saved && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{saved}</div>}
+
+      <section className="surface p-6 space-y-5">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">核心监测实体信息</h2>
+            <p className="text-xs text-slate-400 mt-0.5">配置您的主品牌或产品名称，所有后续 GEO 监测与诊断将基于此基准展开</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void resolveBrand()}
+            disabled={resolving || busy || !form.canonicalName.trim()}
+            className="ui-button primary text-xs"
+            title="利用大模型逆向解析企业全称、竞品与行业分类"
+          >
+            {resolving ? "✨ AI 智能解析中..." : "✨ AI 品牌全景解析"}
+          </button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-600">{TARGET_NAV.canonicalName}</span>
-              <button
-                type="button"
-                onClick={() => void resolveBrand()}
-                disabled={resolving || busy || !form.canonicalName.trim()}
-                className="flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
-                title="利用大模型逆向解析企业全称、竞品与行业分类"
-              >
-                {resolving ? "✨ 解析中..." : "✨ AI 智能解析"}
-              </button>
-            </div>
-            <input value={form.canonicalName} onChange={e => setForm({ ...form, canonicalName: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="如：AcmeFlow / CleanBot（虚构示例）" aria-label={TARGET_NAV.canonicalName} />
+            <span className="text-xs font-semibold text-slate-700">{TARGET_NAV.canonicalName}</span>
+            <input
+              value={form.canonicalName}
+              onChange={e => setForm({ ...form, canonicalName: e.target.value })}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition outline-none"
+              placeholder="如：AcmeFlow / CleanBot"
+              aria-label={TARGET_NAV.canonicalName}
+            />
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-slate-600">{TARGET_NAV.entityType}</span>
-            <select value={form.entityType} onChange={e => setForm({ ...form, entityType: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" aria-label={TARGET_NAV.entityType}>
+            <span className="text-xs font-semibold text-slate-700">{TARGET_NAV.entityType}</span>
+            <select
+              value={form.entityType}
+              onChange={e => setForm({ ...form, entityType: e.target.value })}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition outline-none bg-white"
+              aria-label={TARGET_NAV.entityType}
+            >
               {Object.entries({ BRAND: "品牌", PRODUCT: "产品", SERVICE: "服务", ORGANIZATION: "组织", OTHER: "其他" }).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
           <label className="block sm:col-span-2">
-            <span className="text-xs font-medium text-slate-600">{TARGET_NAV.productCategory}</span>
-            <input value={form.productCategory} onChange={e => setForm({ ...form, productCategory: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="如：大学生创新创业 AI 工具 / CRM SaaS" aria-label={TARGET_NAV.productCategory} />
-            <span className="text-[11px] text-slate-400">{TARGET_NAV.productCategoryHint}</span>
+            <span className="text-xs font-semibold text-slate-700">{TARGET_NAV.productCategory}</span>
+            <input
+              value={form.productCategory}
+              onChange={e => setForm({ ...form, productCategory: e.target.value })}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition outline-none"
+              placeholder="如：大学生创新创业 AI 工具 / 企业级 CRM SaaS"
+              aria-label={TARGET_NAV.productCategory}
+            />
+            <span className="text-[11px] text-slate-400 mt-1 block">{TARGET_NAV.productCategoryHint}</span>
           </label>
           <label className="block sm:col-span-2">
-            <span className="text-xs font-medium text-slate-600">{TARGET_NAV.website}</span>
-            <input value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://…" aria-label={TARGET_NAV.website} />
+            <span className="text-xs font-semibold text-slate-700">{TARGET_NAV.website}</span>
+            <input
+              value={form.website}
+              onChange={e => setForm({ ...form, website: e.target.value })}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition outline-none"
+              placeholder="https://example.com"
+              aria-label={TARGET_NAV.website}
+            />
           </label>
         </div>
-        <button type="button" onClick={() => void save()} disabled={busy || !form.canonicalName.trim()} className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40">
-          {TARGET_NAV.save}
-        </button>
+
+        <div className="pt-2 flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={busy || !form.canonicalName.trim()}
+            className="ui-button primary"
+          >
+            {busy ? "保存中..." : TARGET_NAV.save}
+          </button>
+        </div>
       </section>
 
       {resolvedInfo && (
-        <section className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-indigo-900 flex items-center gap-1.5">
-              <span>✨</span>
-              <span>AI 品牌与竞品画像透视</span>
+        <section className="rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/70 to-purple-50/50 p-5 shadow-sm">
+          <div className="flex items-center justify-between pb-2 border-b border-indigo-100">
+            <h2 className="text-sm font-bold text-indigo-950 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs">✨</span>
+              <span>AI 品牌与竞品全景透视建议</span>
             </h2>
             <button
               type="button"
               onClick={() => setResolvedInfo(null)}
-              className="text-xs text-indigo-600 hover:text-indigo-800"
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
             >
-              收起
+              收起建议
             </button>
           </div>
           <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">

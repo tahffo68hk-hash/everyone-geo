@@ -341,7 +341,7 @@ export default function BenchmarkPage() {
                 </select>
               </div>
               <div className="flex items-end">
-                <button type="button" disabled={!canStart} onClick={() => void startRun()} className="w-full rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" disabled={!canStart} onClick={() => void startRun()} className="ui-button primary w-full text-xs font-semibold">
                   {starting ? "正在创建…" : runType === "demo" ? "开始演示测试" : "开始真实测试"}
                 </button>
               </div>
@@ -521,10 +521,10 @@ function ReportBuilder({ benchmarkRunId, runType }: { benchmarkRunId: string; ru
           </select>
         </label>
         <button type="button" disabled={busy} onClick={() => void generate()}
-          className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50">
+          className="ui-button primary compact text-xs">
           {busy ? "生成中…" : "生成报告"}
         </button>
-        <Link href="/app/reports" className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
+        <Link href="/app/reports" className="ui-button secondary compact text-xs">
           查看报告列表
         </Link>
       </div>

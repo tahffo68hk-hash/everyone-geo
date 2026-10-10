@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
+import { StatusBadge } from "@/components/ui";
 import {
   formatCategory, formatMetricSource, formatRunType, formatStatus, formatVersion, friendlyError,
 } from "@/lib/labels";
@@ -135,179 +136,332 @@ export default function ReportDetailPage() {
   const selectedRows = rows.filter(row => selection.queries === null || selection.queries.includes(row.queryText));
 
   return (
-    <main className="text-slate-900">
-      <div className="mx-auto max-w-none space-y-6">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <Link href="/app/reports" className="text-sm text-blue-700 hover:underline">← 返回报告列表</Link>
-            <h1 className="mt-3 text-2xl font-semibold">检测报告</h1>
-            {report.completion.partial && (
-              <p className="mt-2 inline-block rounded bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
-                部分完成 —— 本报告不代表完整测试集（成功 {report.completion.succeededRuns} / 总计划 {snap.plannedRuns ?? report.completion.completedRuns + report.completion.failedRuns} 条）
-              </p>
-            )}
+    <div className="space-y-6">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <Link href="/app/reports" className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-indigo-600 transition mb-1.5">
+            ← 返回报告列表
+          </Link>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+              {report.suiteName} <span className="text-slate-400 font-mono text-base font-normal">v{report.suiteVersion}</span>
+            </h1>
+            <span className={badge(report.metricSource === "demo" ? "bg-amber-100 text-amber-800" : report.metricSource === "real" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800")}>
+              {formatMetricSource(report.metricSource)}
+            </span>
+            <span className={badge(report.runType === "DEMO" ? "bg-slate-100 text-slate-600" : "bg-indigo-100 text-indigo-800")}>
+              {formatRunType(report.runType)}
+            </span>
           </div>
-          <div className="flex items-center gap-2 pt-2">
-            <button
-              type="button"
-              disabled={sharingBusy}
-              onClick={copyShareLink}
-              className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition shadow-sm disabled:opacity-50"
-              title="生成或复制客户免登安全分享链接，支持微信与移动端 H5 快速查阅"
-            >
-              <span>{copiedShare ? "✓ 已复制安全链接" : "🔗 复制移动端 H5 分享链接"}</span>
-            </button>
-            {shareToken && (
-              <>
-                <Link
-                  href={`/share/report/${shareToken}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition shadow-sm"
-                  title="在新标签页预览移动端公开诊断报告"
-                >
-                  <span>📱 预览 H5</span>
-                </Link>
-                <button
-                  type="button"
-                  disabled={sharingBusy}
-                  onClick={revokeShare}
-                  className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs font-medium text-rose-700 hover:bg-rose-100 transition shadow-sm disabled:opacity-50"
-                  title="撤销公开分享，使外部链接立刻失效"
-                >
-                  撤销分享
-                </button>
-              </>
-            )}
-          </div>
-        </header>
-
-        {/* 报告头 */}
-        <section className="rounded-lg border border-slate-200 bg-white p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-lg font-semibold">{report.suiteName} {formatVersion(report.suiteVersion)}</span>
-            <span className={badge(report.metricSource === "demo" ? "bg-amber-100 text-amber-800" : report.metricSource === "real" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800")}>{formatMetricSource(report.metricSource)}</span>
-            <span className={badge(report.runType === "DEMO" ? "bg-slate-100 text-slate-600" : "bg-blue-100 text-blue-800")}>{formatRunType(report.runType)}</span>
-          </div>
-          <p className="mt-3 text-sm text-slate-600">{new Date(report.generatedAt).toLocaleString("zh-CN", { hour12: false })} · 已分析 {report.completion.analyzedRuns} 条 · 成功 {report.completion.succeededRuns} 条 · 失败 {report.completion.failedRuns} 条</p>
-          <p className="mt-2 text-sm text-slate-600">以下结果来自生成报告时的冻结快照。点击指标查看对应问题的检测记录，再打开原始回答核对。</p>
-        </section>
-
-        {/* 核心指标 */}
-        <section className="rounded-lg border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-semibold">核心指标</h2>
-          {snap.metricQueryScope && (
-            <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              核心指标样本：{snap.metricQueryScope}（{snap.metricScopeQueryCount ?? "—"} 个可用问题
-              {snap.excludedSanityCount ? ` · 排除品牌认知测试 ${snap.excludedSanityCount} 个` : ""}
-              {snap.excludedContaminatedCount ? ` · 排除含品牌自定义问题 ${snap.excludedContaminatedCount} 个` : ""}）。
-              品牌认知测试不混入核心可见度指标。
+          {report.completion.partial && (
+            <p className="mt-2 inline-block rounded-md bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-800">
+              部分完成 —— 本报告不代表完整测试集（成功 {report.completion.succeededRuns} / 总计划 {snap.plannedRuns ?? report.completion.completedRuns + report.completion.failedRuns} 条）
             </p>
           )}
-          <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <p className="mt-1 text-xs text-slate-500">
+            生成时间：{new Date(report.generatedAt).toLocaleString("zh-CN", { hour12: false })} · 已分析 {report.completion.analyzedRuns} 条 · 成功 {report.completion.succeededRuns} 条 · 失败 {report.completion.failedRuns} 条
+          </p>
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            disabled={sharingBusy}
+            onClick={copyShareLink}
+            className="ui-button primary compact"
+            title="生成或复制客户免登安全分享链接，支持微信与移动端 H5 快速查阅"
+          >
+            <span>{copiedShare ? "✓ 已复制安全链接" : "🔗 复制移动端 H5 分享链接"}</span>
+          </button>
+          {shareToken && (
+            <>
+              <Link
+                href={`/share/report/${shareToken}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ui-button secondary compact"
+                title="在新标签页预览移动端公开诊断报告"
+              >
+                <span>📱 预览 H5</span>
+              </Link>
+              <button
+                type="button"
+                disabled={sharingBusy}
+                onClick={revokeShare}
+                className="ui-button danger compact"
+                title="撤销公开分享，使外部链接立刻失效"
+              >
+                撤销分享
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+
+      {/* 核心指标 */}
+      <div className="surface overflow-hidden">
+        <div className="section-heading">
+          <h2>
+            <span>核心量化指标</span>
+            <span className="text-xs font-normal text-slate-400">（点击指标卡片可下钻定位对应检测记录）</span>
+          </h2>
+          {snap.metricQueryScope && (
+            <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+              样本范围：{snap.metricQueryScope}（{snap.metricScopeQueryCount ?? "—"} 个可用问题）
+            </span>
+          )}
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="metric-grid">
             {[
               { label: "品牌可见度", value: percent(snap.overall.visibilityRate), queries: snap.byQuery.filter(q => q.analyzed && q.brandMentioned).map(q => q.queryText), note: "查看提及品牌的问题" },
               { label: "推荐率", value: percent(snap.overall.recommendationRate), queries: snap.byQuery.filter(q => q.analyzed && q.recommended).map(q => q.queryText), note: "查看推荐品牌的问题" },
-              { label: "引用次数", value: snap.overall.citationCount, queries: snap.byQuery.filter(q => q.analyzed && (q.citationCount ?? 0) > 0).map(q => q.queryText), note: `${snap.overall.citationDomainCount} 个引用域名` },
-              { label: "AI 声量份额（SOV）", value: !report.competitorSet ? "不适用" : competitor?.status !== "ready" ? "暂不可用" : percent(snap.overall.shareOfVoice), queries: snap.byQuery.filter(q => q.analyzed).map(q => q.queryText), note: !report.competitorSet ? "未绑定竞品集合" : "查看分析样本中的品牌与竞品提及" },
-            ].map(metric => <button key={metric.label} type="button" onClick={() => selectEvidence(metric.label, metric.queries)} className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-left hover:border-teal-600 focus-visible:outline-teal-700"><span className="block text-sm text-slate-600">{metric.label}</span><strong className="mt-2 block text-2xl">{metric.value}</strong><span className="mt-2 block text-xs text-slate-500">{metric.note} →</span></button>)}
-          </div>
-          <p className="mt-3 text-sm text-slate-600">平均首次提及位次：{snap.overall.averageMentionPosition == null ? "—" : snap.overall.averageMentionPosition.toFixed(2)} · 引用域名数：{snap.overall.citationDomainCount}</p>
-          <p className="mt-3 text-xs text-slate-500">情感分布：正面 {snap.overall.sentimentDistribution.positive} / 中性 {snap.overall.sentimentDistribution.neutral} / 负面 {snap.overall.sentimentDistribution.negative} / 未知 {snap.overall.sentimentDistribution.unknown}</p>
-        </section>
-
-        {/* 场景表现 */}
-        <section className="rounded-lg border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-semibold">按场景表现</h2>
-          {snap.byCategory.length === 0 ? <p className="mt-3 text-sm text-slate-500">暂无按场景统计（无成功样本或该分析版本无结果）。</p> : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-200 text-slate-500">
-                  <tr><th className="p-2">场景分类</th><th className="p-2">成功样本</th><th className="p-2">提及问题数</th><th className="p-2">品牌可见率</th><th className="p-2">推荐率</th></tr>
-                </thead>
-                <tbody>
-                  {snap.byCategory.map(row => (
-                    <tr key={row.category} className="border-b border-slate-100">
-                      <td className="p-2">{formatCategory(row.category)}</td>
-                      <td className="p-2">{row.queryEligibleCount}</td>
-                      <td className="p-2">{row.queryMentionedCount}</td>
-                      <td className="p-2">{percent(row.metrics.visibilityRate)}</td>
-                      <td className="p-2">{percent(row.metrics.recommendationRate)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {/* 竞品表现 */}
-        {competitor?.status === "ready" && (
-          <section className="rounded-lg border border-slate-200 bg-white p-6">
-            <h2 className="text-lg font-semibold">竞品表现（AI 声量份额 · Share of Voice）</h2>
-            <p className="mt-1 text-xs text-slate-500">竞品集合：{competitor.competitorSet.name} {formatVersion(competitor.competitorSet.version)}</p>
-            <div className="mt-3 space-y-2">
-              {competitor.competitors.map(item => (
-                <div key={item.canonicalName} className="flex items-center gap-3 text-sm">
-                  <span className="w-40 shrink-0 font-medium">{item.canonicalName}</span>
-                  <span className="w-20 shrink-0 text-xs text-slate-400">{item.competitorType}</span>
-                  <div className="h-4 flex-1 overflow-hidden rounded bg-slate-100">
-                    <div className="h-full rounded bg-blue-600" style={{ width: `${totalShare ? Math.round(((item.shareOfVoice ?? 0) / Math.max(totalShare, 1e-9)) * 100) : 0}%` }} />
-                  </div>
-                  <span className="w-28 shrink-0 text-right text-xs text-slate-500">{item.mentionCount} 次 · {share(item.shareOfVoice)}</span>
+              { label: "引用次数", value: `${snap.overall.citationCount} 次`, queries: snap.byQuery.filter(q => q.analyzed && (q.citationCount ?? 0) > 0).map(q => q.queryText), note: `${snap.overall.citationDomainCount} 个权威独立域名` },
+              { label: "AI 声量份额（SOV）", value: !report.competitorSet ? "不适用" : competitor?.status !== "ready" ? "暂不可用" : percent(snap.overall.shareOfVoice), queries: snap.byQuery.filter(q => q.analyzed).map(q => q.queryText), note: !report.competitorSet ? "未绑定竞品集合" : "查看品牌与竞品对抗" },
+            ].map(metric => (
+              <button
+                key={metric.label}
+                type="button"
+                onClick={() => selectEvidence(metric.label, metric.queries)}
+                className="metric-card"
+              >
+                <div className="metric-header">
+                  <span className="metric-label">{metric.label}</span>
                 </div>
-              ))}
-            </div>
-            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{competitor.note}</p>
-          </section>
-        )}
+                <strong>{metric.value}</strong>
+                <div className="metric-note">
+                  <span>{metric.note} →</span>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+            <span>平均首次提及位次：<strong>{snap.overall.averageMentionPosition == null ? "—" : `第 ${snap.overall.averageMentionPosition.toFixed(2)} 位`}</strong> · 引用独立域名数：<strong>{snap.overall.citationDomainCount}</strong></span>
+            <span>情感倾向分布：正面 {snap.overall.sentimentDistribution.positive} / 中性 {snap.overall.sentimentDistribution.neutral} / 负面 {snap.overall.sentimentDistribution.negative}</span>
+          </div>
+        </div>
+      </div>
 
-        {competitor?.status !== "ready" && (
-          <section className="rounded-lg border border-slate-200 bg-white p-6">
-            <h2 className="text-lg font-semibold">竞品表现（AI 声量份额 · Share of Voice）</h2>
-            <p className="mt-2 text-sm text-slate-500">
-              {competitor === null
-                ? "该报告生成时未绑定竞品集合，SOV（AI 声量份额）不适用，核心指标中 AI 声量份额显示“不适用”。为项目绑定竞品集合后重新生成报告，即可查看竞品 SOV。"
-                : `该报告竞品分析尚未就绪（状态：${competitor.status}），SOV 暂不可用。`}
-            </p>
-          </section>
-        )}
-
-        {/* 问题级结果 */}
-        <section className="rounded-lg border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-semibold">问题级结果</h2><p className="mt-2 text-sm text-slate-500">检测引擎：{report.engineName} · 点击检测记录查看原始证据。</p>
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-slate-500">
-                <tr><th className="p-2">检测问题</th><th className="p-2">场景分类</th><th className="p-2">是否提及品牌</th><th className="p-2">是否被推荐</th><th className="p-2" title="品牌在模型回答中的首次提及顺序，不代表推荐排名">首次提及位次</th><th className="p-2">引用数</th><th className="p-2">状态</th><th className="p-2">原始证据</th></tr>
+      {/* 场景表现 */}
+      <div className="surface overflow-hidden">
+        <div className="section-heading">
+          <h2>
+            <span>按场景细分表现</span>
+            <span className="text-xs font-normal text-slate-400">（按不同业务/行业提问类别统计可见度与推荐率）</span>
+          </h2>
+        </div>
+        {snap.byCategory.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-500">
+            暂无按场景统计（无成功样本或该分析版本无结果）。
+          </div>
+        ) : (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>场景分类</th>
+                  <th>成功样本</th>
+                  <th>提及问题数</th>
+                  <th>品牌可见率</th>
+                  <th>强推荐率</th>
+                </tr>
               </thead>
               <tbody>
-                {snap.byQuery.map(row => (
-                  <tr key={row.queryText} className="border-b border-slate-100 align-top">
-                    <td className="min-w-56 break-words p-2">{row.queryText}</td>
-                    <td className="p-2 whitespace-nowrap text-slate-600">{row.category ? formatCategory(row.category) : "—"}</td>
-                    <td className="p-2">{row.analyzed ? (row.brandMentioned ? "是" : "否") : "—"}</td>
-                    <td className="p-2">{row.analyzed ? (row.recommended ? "是" : "否") : "—"}</td>
-                    <td className="p-2">{row.analyzed ? (row.mentionPosition == null ? "—" : `第 ${row.mentionPosition} 位`) : "—"}</td>
-                    <td className="p-2">{row.analyzed ? row.citationCount ?? "—" : "—"}</td>
-                    <td className="p-2 whitespace-nowrap">{formatStatus(row.status)}</td>
-                    <td className="p-2">
-                      <button type="button" className="whitespace-nowrap text-teal-700 underline" onClick={() => selectEvidence(row.queryText, [row.queryText])}>查看检测记录</button>
-                    </td>
+                {snap.byCategory.map(row => (
+                  <tr key={row.category}>
+                    <td className="font-medium text-slate-800">{formatCategory(row.category)}</td>
+                    <td className="tabular-nums">{row.queryEligibleCount}</td>
+                    <td className="tabular-nums">{row.queryMentionedCount}</td>
+                    <td className="font-semibold tabular-nums text-slate-900">{percent(row.metrics.visibilityRate)}</td>
+                    <td className="font-semibold tabular-nums text-indigo-600">{percent(row.metrics.recommendationRate)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </section>
+        )}
+      </div>
 
-        <section id="report-evidence" className="scroll-mt-24 rounded-lg border border-slate-200 bg-white p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">证据清单</h2><button type="button" className="text-sm text-teal-700 underline" onClick={() => setSelection({ label: "全部检测记录", queries: null })}>查看全部</button></div>
-          <p className="mt-2 break-words text-sm text-slate-500">当前范围：{selection.label} · {selectedRows.length} 条检测记录。分析仅使用报告冻结版本；缺失版本会明确标注。</p>
-          {evidenceLoading ? <p role="status" className="mt-4">正在加载证据清单…</p> : evidenceError ? <p role="alert" className="mt-4 text-red-700">证据清单加载失败：{evidenceError}</p> : selectedRows.length === 0 ? <p className="mt-4 text-sm text-slate-500">当前范围没有可展示的检测记录。</p> : <ul className="mt-4 divide-y divide-slate-100">{selectedRows.map(row => <li key={row.runId} className="flex items-start justify-between gap-4 py-4"><div><p className="text-sm">{row.queryText}</p><p className="mt-1 text-xs text-slate-500">{formatStatus(row.status)} · {row.hasSnapshotAnalysis ? "具有报告冻结分析" : "缺少报告冻结分析"}{row.sanity ? " · 品牌认知测试" : ""}</p></div><button type="button" onClick={() => setEvidenceRunId(row.runId)} className="shrink-0 text-sm text-teal-700 underline">{row.evidenceId ? "查看原始回答" : "查看运行状态"}</button></li>)}</ul>}
-        </section>
-        <details className="rounded-lg border border-slate-200 bg-white p-6"><summary className="cursor-pointer font-semibold">报告技术详情</summary>
-          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      {/* 竞品表现 */}
+      {competitor?.status === "ready" && (
+        <div className="surface overflow-hidden">
+          <div className="section-heading">
+            <h2>
+              <span>竞品声量份额对抗（Share of Voice · SoV）</span>
+              <span className="text-xs font-normal text-slate-400">
+                竞品集合：{competitor.competitorSet.name} {formatVersion(competitor.competitorSet.version)}
+              </span>
+            </h2>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="space-y-3">
+              {competitor.competitors.map(item => (
+                <div key={item.canonicalName} className="flex items-center gap-3 text-xs">
+                  <span className="w-36 shrink-0 font-medium text-slate-800 truncate">{item.canonicalName}</span>
+                  <span className="w-16 shrink-0 text-[11px] text-slate-400">{item.competitorType}</span>
+                  <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 border border-slate-200">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500"
+                      style={{ width: `${totalShare ? Math.round(((item.shareOfVoice ?? 0) / Math.max(totalShare, 1e-9)) * 100) : 0}%` }}
+                    />
+                  </div>
+                  <span className="w-32 shrink-0 text-right text-slate-600 tabular-nums">
+                    {item.mentionCount} 次提及 · <strong>{share(item.shareOfVoice)}</strong>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="rounded-lg bg-amber-50 border border-amber-200/60 px-3 py-2 text-xs text-amber-900 leading-relaxed">
+              {competitor.note}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {competitor?.status !== "ready" && (
+        <div className="surface overflow-hidden">
+          <div className="section-heading">
+            <h2>
+              <span>竞品声量份额（SOV）</span>
+            </h2>
+          </div>
+          <div className="p-5 text-xs text-slate-500 leading-relaxed">
+            {competitor === null
+              ? "该报告生成时未绑定竞品集合，SOV（AI 声量份额）不适用。为项目绑定竞品集合后重新生成报告，即可查看竞品 SOV 对抗图谱。"
+              : `该报告竞品分析尚未就绪（状态：${competitor.status}），SOV 暂不可用。`}
+          </div>
+        </div>
+      )}
+
+      {/* 问题级结果 */}
+      <div className="surface overflow-hidden">
+        <div className="section-heading">
+          <h2>
+            <span>检测问题明细与命中判定</span>
+            <span className="text-xs font-normal text-slate-400">（评估引擎：{report.engineName}）</span>
+          </h2>
+        </div>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>检测问题</th>
+                <th>场景分类</th>
+                <th>品牌提及</th>
+                <th>强推荐</th>
+                <th>首次提及位次</th>
+                <th>引用数</th>
+                <th>状态</th>
+                <th className="text-right">原始证据</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snap.byQuery.map(row => (
+                <tr key={row.queryText}>
+                  <td className="min-w-64 break-words font-medium text-slate-900">{row.queryText}</td>
+                  <td className="whitespace-nowrap text-slate-600 text-xs">{row.category ? formatCategory(row.category) : "—"}</td>
+                  <td>
+                    {row.analyzed ? (
+                      row.brandMentioned ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold text-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> 是
+                        </span>
+                      ) : <span className="text-slate-400 text-xs">否</span>
+                    ) : "—"}
+                  </td>
+                  <td>
+                    {row.analyzed ? (
+                      row.recommended ? (
+                        <span className="inline-flex items-center gap-1 text-indigo-700 font-semibold text-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> 首选
+                        </span>
+                      ) : <span className="text-slate-400 text-xs">否</span>
+                    ) : "—"}
+                  </td>
+                  <td className="tabular-nums">
+                    {row.analyzed ? (row.mentionPosition == null ? "—" : `第 ${row.mentionPosition} 位`) : "—"}
+                  </td>
+                  <td className="tabular-nums">
+                    {row.analyzed ? row.citationCount ?? "0" : "—"}
+                  </td>
+                  <td className="whitespace-nowrap">
+                    <StatusBadge status={row.status} />
+                  </td>
+                  <td className="text-right">
+                    <button
+                      type="button"
+                      className="ui-button secondary compact text-xs"
+                      onClick={() => selectEvidence(row.queryText, [row.queryText])}
+                    >
+                      检测记录 →
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 证据清单 */}
+      <div id="report-evidence" className="scroll-mt-24 surface overflow-hidden">
+        <div className="section-heading">
+          <h2>
+            <span>原始证据链追溯（Evidence）</span>
+            <span className="text-xs font-normal text-slate-400">
+              当前范围：{selection.label} · {selectedRows.length} 条记录
+            </span>
+          </h2>
+          <button
+            type="button"
+            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+            onClick={() => setSelection({ label: "全部检测记录", queries: null })}
+          >
+            查看全部记录
+          </button>
+        </div>
+        <div className="p-5">
+          {evidenceLoading ? (
+            <p role="status" className="text-xs text-slate-500">正在加载证据清单…</p>
+          ) : evidenceError ? (
+            <p role="alert" className="text-xs text-rose-700">证据清单加载失败：{evidenceError}</p>
+          ) : selectedRows.length === 0 ? (
+            <p className="text-xs text-slate-500">当前范围没有可展示的检测记录。</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {selectedRows.map(row => (
+                <li key={row.runId} className="flex items-start justify-between gap-4 py-3">
+                  <div>
+                    <p className="text-xs font-medium text-slate-800">{row.queryText}</p>
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
+                      <StatusBadge status={row.status} />
+                      <span>{row.hasSnapshotAnalysis ? "具有冻结分析" : "缺少冻结分析"}</span>
+                      {row.sanity && <span className="text-amber-600 font-medium">· 品牌认知测试</span>}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEvidenceRunId(row.runId)}
+                    className="ui-button secondary compact text-xs shrink-0"
+                  >
+                    {row.evidenceId ? "查看原始回答" : "查看运行状态"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* 报告技术详情 */}
+      <details className="surface overflow-hidden">
+        <summary className="section-heading cursor-pointer select-none">
+          <h2>
+            <span>报告技术快照详情与不可变冻结参数</span>
+            <span className="text-xs font-normal text-slate-400">（点击展开）</span>
+          </h2>
+        </summary>
+        <div className="p-5">
+          <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
             {[
               ["测试集", `${report.suiteName} v${report.suiteVersion}`],
               ["模型服务（provider）", report.provider === "mock" ? "演示（Mock）" : `${report.engineName ?? report.provider}`],
@@ -319,20 +473,45 @@ export default function ReportDetailPage() {
               ["报告生成时间", new Date(report.generatedAt).toLocaleString("zh-CN", { hour12: false })],
               ["指标版本", snap.metricVersion],
             ].map(([label, value]) => (
-              <div key={String(label)}><dt className="text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words">{value}</dd></div>
+              <div key={String(label)} className="p-3 bg-slate-50/70 rounded-lg border border-slate-100">
+                <dt className="text-slate-400 font-medium mb-0.5">{label}</dt>
+                <dd className="whitespace-pre-wrap break-words font-semibold text-slate-800">{value}</dd>
+              </div>
             ))}
           </dl>
-        </details>
-        <section className="rounded-lg border border-slate-200 bg-white p-6"><h2 className="font-semibold">下一步</h2><p className="mt-2 text-sm text-slate-600">结合原始回答确认遗漏与引用来源，再查看项目洞察制定优化动作。</p><Link href="/app/diagnosis" className="mt-3 inline-block text-sm text-teal-700 underline">查看洞察与优化 →</Link></section>
-        {/* 证据说明 */}
-        <section className="rounded-lg border border-slate-200 bg-white p-6">
-          <h2 className="text-sm font-semibold text-slate-700">证据说明</h2>
-          <p className="mt-2 text-xs text-slate-500">
-            本报告所有指标均可追溯到模型原始回答（Evidence）：报告 → 基准测试 Run → 检测问题 → 检测记录 → 原始证据 → 分析结果。报告为生成时冻结快照，后续编辑测试集 / 竞品集合 / 新增分析版本不会改变本报告。
+        </div>
+      </details>
+
+      {/* 下一步与证据说明 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="surface p-5 space-y-2">
+          <h2 className="text-sm font-bold text-slate-800">下一步行动建议</h2>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            结合原始回答确认品牌遗漏原因与高频被引第三方域名，随后进入 GEO 问题诊断制定定向优化策略。
           </p>
-        </section>
+          <div className="pt-1">
+            <Link href="/app/diagnosis" className="ui-button primary compact text-xs">
+              进入 GEO 问题诊断 →
+            </Link>
+          </div>
+        </div>
+
+        <div className="surface p-5 space-y-2">
+          <h2 className="text-sm font-bold text-slate-800">科学量化说明</h2>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            本报告所有指标均可追溯到大模型原始回答（Evidence），报告为生成时冻结快照，后续编辑测试集或新增分析版本不会改变本报告历史数据。
+          </p>
+        </div>
       </div>
-      {evidenceRunId && <EvidenceDialog key={evidenceRunId} runId={evidenceRunId} analysisVersion={report.analysisVersion} onClose={() => setEvidenceRunId(null)} />}
-    </main>
+
+      {evidenceRunId && (
+        <EvidenceDialog
+          key={evidenceRunId}
+          runId={evidenceRunId}
+          analysisVersion={report.analysisVersion}
+          onClose={() => setEvidenceRunId(null)}
+        />
+      )}
+    </div>
   );
 }

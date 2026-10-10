@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useProjectContext } from "@/components/project-context";
-import { PageHeader, LoadingSkeleton, EmptyState } from "@/components/ui";
+import { PageHeader, LoadingSkeleton, EmptyState, StatusBadge } from "@/components/ui";
 import { formatMetricSource, formatRunType, formatVersion, friendlyError } from "@/lib/labels";
 import { AiActionButton } from "@/components/ai/ai-action-button";
 import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
@@ -134,7 +134,7 @@ export default function ReportsPage() {
             )}
             <Link
               href="/app/benchmark"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50"
+              className="ui-button secondary compact"
             >
               + 运行基准测试
             </Link>
@@ -160,70 +160,91 @@ export default function ReportsPage() {
           action="前往基准测试"
         />
       ) : (
-        <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-xs">
-          <table className="w-full text-left text-xs">
-            <caption className="sr-only">基准测试报告列表</caption>
-            <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-semibold">
-              <tr>
-                <th className="p-3">测试集</th>
-                <th className="p-3">报告时间</th>
-                <th className="p-3">数据类型</th>
-                <th className="p-3">模型服务</th>
-                <th className="p-3">请求模型</th>
-                <th className="p-3">响应模型</th>
-                <th className="p-3">分析版本</th>
-                <th className="p-3">品牌可见率</th>
-                <th className="p-3">状态</th>
-                <th className="p-3 text-right">问题诊断</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {reports.map(report => (
-                <tr key={report.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="p-3">
-                    <Link href={`/app/reports/${report.id}`} className="font-semibold text-teal-700 hover:text-teal-800 hover:underline">
-                      {report.suiteName} {formatVersion(report.suiteVersion)}
-                    </Link>
-                    {report.competitorSet && <div className="text-[11px] text-slate-400 mt-0.5">竞品集合 {formatVersion(report.competitorSet.version)}</div>}
-                  </td>
-                  <td className="p-3 whitespace-nowrap text-slate-600">{new Date(report.generatedAt).toLocaleString("zh-CN", { hour12: false })}</td>
-                  <td className="p-3 whitespace-nowrap text-slate-700">{formatRunType(report.runType)} · {formatMetricSource(report.metricSource)}</td>
-                  <td className="p-3 whitespace-nowrap text-slate-700">{report.provider === "mock" ? "演示（Mock）" : `${report.engineName ?? "DeepSeek"}`}</td>
-                  <td className="p-3 text-slate-600 font-mono text-[11px]">{report.requestedModel ?? "历史记录未保存"}</td>
-                  <td className="p-3 text-slate-600 font-mono text-[11px]">{report.responseModel ?? "未知"}</td>
-                  <td className="p-3 font-mono text-[11px] text-slate-600">{report.analysisVersion}</td>
-                  <td className="p-3 font-bold text-slate-900 tabular-nums">{percent(report.summary?.visibilityRate)}</td>
-                  <td className="p-3 whitespace-nowrap">
-                    {report.completion.partial
-                      ? <span className="inline-flex rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-800">部分完成</span>
-                      : <span className="inline-flex rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">已完成</span>}
-                    <div className="mt-0.5 text-[10px] text-slate-400">成功 {report.completion.succeededRuns}/{report.completion.completedRuns}</div>
-                  </td>
-                  <td className="p-3 whitespace-nowrap text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {report.completion.succeededRuns > 0 ? (
-                        <button
-                          type="button"
-                          disabled={busyId !== ""}
-                          onClick={() => void generateDiagnosis(report.id)}
-                          className="rounded-lg bg-teal-50 border border-teal-200 px-2.5 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:opacity-50"
-                        >
-                          {busyId === report.id ? "生成中…" : "生成 GEO 问题诊断"}
-                        </button>
-                      ) : <span className="text-slate-300">—</span>}
-
-                      <AiActionButton
-                        size="sm"
-                        label="AI 总结"
-                        onClick={() => handleAiSummarizeReport(report)}
-                      />
-                    </div>
-                  </td>
+        <div className="surface overflow-hidden">
+          <div className="section-heading">
+            <h2>
+              <span>基准测试快照记录</span>
+              <span className="text-xs font-normal text-slate-400">（共 {reports.length} 份冻结报告）</span>
+            </h2>
+          </div>
+          <div className="table-scroll">
+            <table className="data-table">
+              <caption className="sr-only">基准测试报告列表</caption>
+              <thead>
+                <tr>
+                  <th>测试集</th>
+                  <th>报告时间</th>
+                  <th>数据类型</th>
+                  <th>模型服务</th>
+                  <th>请求模型</th>
+                  <th>响应模型</th>
+                  <th>分析版本</th>
+                  <th>品牌可见率</th>
+                  <th>状态</th>
+                  <th className="text-right">问题诊断与解读</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {reports.map(report => (
+                  <tr key={report.id}>
+                    <td>
+                      <Link href={`/app/reports/${report.id}`} className="font-semibold text-slate-900 hover:text-indigo-600 transition">
+                        {report.suiteName} {formatVersion(report.suiteVersion)}
+                      </Link>
+                      {report.competitorSet && <small>竞品集合 {formatVersion(report.competitorSet.version)}</small>}
+                    </td>
+                    <td className="whitespace-nowrap text-slate-600 text-xs">{new Date(report.generatedAt).toLocaleString("zh-CN", { hour12: false })}</td>
+                    <td className="whitespace-nowrap text-xs text-slate-700">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 font-medium text-slate-700 border border-slate-200">
+                        {formatRunType(report.runType)}
+                      </span>
+                      <span className="ml-1 text-slate-400">· {formatMetricSource(report.metricSource)}</span>
+                    </td>
+                    <td className="whitespace-nowrap text-xs font-medium text-slate-800">{report.provider === "mock" ? "演示（Mock）" : `${report.engineName ?? "DeepSeek"}`}</td>
+                    <td className="text-slate-600 font-mono text-[11px]">{report.requestedModel ?? "历史记录未保存"}</td>
+                    <td className="text-slate-600 font-mono text-[11px]">{report.responseModel ?? "未知"}</td>
+                    <td>
+                      <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
+                        {report.analysisVersion}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`font-bold tabular-nums text-sm ${
+                        (report.summary?.visibilityRate ?? 0) >= 0.6 ? "text-emerald-600" : (report.summary?.visibilityRate ?? 0) >= 0.3 ? "text-amber-600" : "text-rose-600"
+                      }`}>
+                        {percent(report.summary?.visibilityRate)}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <StatusBadge status={report.completion.partial ? "PARTIAL" : "COMPLETED"} />
+                      <div className="mt-0.5 text-[10px] text-slate-400">成功 {report.completion.succeededRuns}/{report.completion.completedRuns}</div>
+                    </td>
+                    <td className="whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {report.completion.succeededRuns > 0 ? (
+                          <button
+                            type="button"
+                            disabled={busyId !== ""}
+                            onClick={() => void generateDiagnosis(report.id)}
+                            className="ui-button secondary compact text-xs"
+                          >
+                            {busyId === report.id ? "生成中…" : "生成 GEO 诊断"}
+                          </button>
+                        ) : <span className="text-slate-300">—</span>}
+
+                        <AiActionButton
+                          size="sm"
+                          label="AI 总结"
+                          onClick={() => handleAiSummarizeReport(report)}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* AI 报告总结弹窗 */}

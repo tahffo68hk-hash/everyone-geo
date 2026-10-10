@@ -172,7 +172,7 @@ export default function PublicShareReportPage() {
       {/* 顶部微渐变装饰背景 */}
       <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-950 to-slate-950" />
 
-      <main className="relative max-w-xl mx-auto px-4 py-6 sm:py-10 space-y-6">
+      <main className="relative max-w-xl mx-auto px-4 py-6 pb-20 sm:pb-10 space-y-6">
         {/* 顶部导航与品牌标识 */}
         <header className="flex items-center justify-between pb-3 border-b border-slate-800/80">
           <div className="flex items-center space-x-2">
@@ -467,6 +467,22 @@ export default function PublicShareReportPage() {
           </p>
         </footer>
       </main>
+
+      {/* 移动端底部轻量浮动操作条 (仅在手机端视口显示) */}
+      <div className="sm:hidden fixed bottom-0 inset-x-0 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 p-3 flex items-center gap-2 z-50">
+        <button
+          onClick={copyShareLink}
+          className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition active:scale-98"
+        >
+          {copied ? "✓ 已复制公开链接" : "复制分享链接"}
+        </button>
+        <Link
+          href="/login"
+          className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-semibold text-center shadow-lg shadow-indigo-500/20 transition active:scale-98"
+        >
+          进入运营工作台
+        </Link>
+      </div>
     </div>
   );
 }
