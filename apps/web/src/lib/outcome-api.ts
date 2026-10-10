@@ -6,7 +6,7 @@ export type AttributionStatusType =
   | "CONFOUNDED"
   | "NO_OBSERVED_CHANGE";
 
-export type ObservedChangeDirection = "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "NO_CHANGE";
+export type ObservedChangeDirection = "POSITIVE" | "NEGATIVE" | "MIXED" | "NEUTRAL" | "NO_CHANGE";
 
 export type BaselineCompatibilityType =
   | "EXACT_MATCH"
@@ -329,10 +329,14 @@ export function formatVerificationStatus(status?: string): {
         badgeClass: "bg-blue-50 text-blue-800 border-blue-300",
       };
     case "UNVERIFIED":
-    default:
       return {
         label: "未核验",
         badgeClass: "bg-slate-100 text-slate-600 border-slate-300",
+      };
+    default:
+      return {
+        label: "未知状态",
+        badgeClass: "bg-slate-50 text-slate-500 border-slate-200",
       };
   }
 }
@@ -352,22 +356,45 @@ export function formatObservedChangeType(type?: string): {
         label: "负向变化",
         badgeClass: "bg-rose-50 text-rose-800 border-rose-300",
       };
+    case "MIXED":
+      return {
+        label: "变化方向不一致",
+        badgeClass: "bg-amber-50 text-amber-800 border-amber-300",
+      };
     case "NEUTRAL":
       return {
         label: "中性变化",
         badgeClass: "bg-slate-100 text-slate-700 border-slate-300",
       };
     case "NO_CHANGE":
-    default:
       return {
         label: "无明显变化",
         badgeClass: "bg-slate-50 text-slate-600 border-slate-200",
+      };
+    default:
+      return {
+        label: "未知变化",
+        badgeClass: "bg-slate-50 text-slate-500 border-slate-200",
       };
   }
 }
 
 export function formatReasonCode(code: string): string {
   const map: Record<string, string> = {
+    MISSING_BASELINE: "缺少发布前的有效基线证据，无法进行前后比较",
+    MISSING_RETEST_EVIDENCE: "缺少有效复测证据，无法进行归因评估",
+    INCOMPATIBLE_BASELINE: "基线与复测的关键测试条件不兼容，不能直接比较",
+    UNVERIFIED_ASSET: "落地资产尚未完成平台或人工核验",
+    NO_OBSERVED_CHANGE: "本次复测未观察到明显指标变化",
+    INVALID_TEMPORAL_ORDER: "基线、发布与复测的时间先后顺序不符合要求",
+    VERIFIED_PUBLICATION: "发布落地资产已完成核验（不代表已被检索）",
+    QUERY_EXPLICITLY_TARGETED: "该问题被明确列为本次内容发布的目标问题",
+    QUERY_STRATEGY_TARGETED: "该问题被内容策略列为目标问题",
+    QUERY_NOT_TARGETED: "该问题未被列为本次发布或策略的目标问题",
+    QUERY_TARGETED: "该问题未被明确标记为非目标问题（目标关系可能未知）",
+    MODEL_CHANGED: "基线与复测使用的模型发生变化",
+    RETRIEVAL_MODE_CHANGED: "基线与复测的检索模式发生变化（不代表实际检索）",
+    NO_DIRECT_ASSET_CITATION: "回答中未检测到对本次发布资产的直接引用",
     EXACT_BASELINE: "Before / After 测试条件完全一致",
     DIRECT_ASSET_CITATION: "发布后回答直接引用了本次发布资产",
     SAME_DOMAIN_OTHER_PAGE: "发布后回答引用了同域名其他页面（非本落地资产）",
@@ -396,9 +423,15 @@ export function formatRetestStatus(status?: string): { label: string; badgeClass
       return { label: "进行中", badgeClass: "bg-teal-50 text-teal-800 border-teal-300" };
     case "FAILED":
       return { label: "执行失败", badgeClass: "bg-rose-50 text-rose-800 border-rose-300" };
+    case "PARTIAL":
+      return { label: "部分完成", badgeClass: "bg-amber-50 text-amber-800 border-amber-300" };
+    case "CANCELLED":
+      return { label: "已取消", badgeClass: "bg-slate-100 text-slate-600 border-slate-300" };
     case "PENDING":
-    default:
+    case "QUEUED":
       return { label: "排队中", badgeClass: "bg-slate-100 text-slate-700 border-slate-300" };
+    default:
+      return { label: "未知状态", badgeClass: "bg-slate-50 text-slate-500 border-slate-200" };
   }
 }
 
@@ -408,6 +441,9 @@ export function formatConfounderCode(code: string): string {
     MULTIPLE_INTERVENTIONS: "同一观察窗口内有多篇针对该问题的发布内容同时生效",
     MODEL_CHANGED: "前后两次测试所用模型不一致",
     RETRIEVAL_MODE_CHANGED: "前后两次测试的检索模式不一致",
+    PROVIDER_CHANGED: "基线与复测使用的模型服务提供方发生变化",
+    SOURCE_TYPE_CHANGED: "基线与复测的证据来源类型发生变化",
+    BASELINE_WARNING: "基线与复测存在可比性提示，解读结果需谨慎",
     UNVERIFIED_ASSET: "该落地资产尚未完成平台或人工核验",
   };
   return map[normalized] ?? map[code] ?? code;
