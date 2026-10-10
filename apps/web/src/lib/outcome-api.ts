@@ -187,6 +187,10 @@ export interface AssetOutcomeWorkspace {
       negativeObservedChangeCount: number;
       directAssetCitationCount: number;
     };
+    activeComparisonVersion?: string;
+    activeAttributionVersion?: string;
+    availableComparisonVersions?: string[];
+    availableAttributionVersions?: string[];
     queryRows: QueryOutcomeRow[];
   } | null;
 }
@@ -196,17 +200,26 @@ const encode = (id: string) => encodeURIComponent(id);
 export const listVerificationAssets = (projectId: string) =>
   api<VerificationAssetsResponse>(`/projects/${encode(projectId)}/verification-assets`);
 
-export const getAssetOutcomeWorkspace = (assetId: string, retestRunId?: string) =>
-  api<AssetOutcomeWorkspace>(
-    `/published-assets/${encode(assetId)}/outcome-workspace${
-      retestRunId ? `?retestRunId=${encode(retestRunId)}` : ""
-    }`
+export const getAssetOutcomeWorkspace = (
+  assetId: string,
+  retestRunId?: string,
+  comparisonVersion?: string,
+  attributionVersion?: string
+) => {
+  const params = new URLSearchParams();
+  if (retestRunId) params.set("retestRunId", retestRunId);
+  if (comparisonVersion) params.set("comparisonVersion", comparisonVersion);
+  if (attributionVersion) params.set("attributionVersion", attributionVersion);
+  const qs = params.toString();
+  return api<AssetOutcomeWorkspace>(
+    `/published-assets/${encode(assetId)}/outcome-workspace${qs ? `?${qs}` : ""}`
   );
+};
 
-export const createRetestRun = (assetId: string, forceNew = false) =>
-  api<{ id: string }>(`/published-assets/${encode(assetId)}/retests`, {
+export const createRetestRun = (assetId: string, forceNew = false, autoExecute = true) =>
+  api<{ id: string; status?: string }>(`/published-assets/${encode(assetId)}/retests`, {
     method: "POST",
-    body: JSON.stringify({ forceNew }),
+    body: JSON.stringify({ forceNew, autoExecute }),
   });
 
 export const processRetestRun = (retestRunId: string) =>

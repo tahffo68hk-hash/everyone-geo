@@ -132,13 +132,13 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                   <td>
                     {isComparable ? (
                       <span className="font-mono text-xs">
-                        {before.brandMention ? "提及" : "未提"} →{" "}
-                        <span className={after.brandMention ? "text-emerald-700 font-bold" : "text-slate-500"}>
-                          {after.brandMention ? "提及" : "未提"}
+                        {before.brandMention === true ? "提及" : before.brandMention === false ? "未提" : "—"} →{" "}
+                        <span className={after.brandMention === true ? "text-emerald-700 font-bold" : after.brandMention === false ? "text-slate-500" : "text-slate-400"}>
+                          {after.brandMention === true ? "提及" : after.brandMention === false ? "未提" : "—"}
                         </span>
                       </span>
                     ) : (
-                      <span className="text-slate-400 text-xs">差值隐藏</span>
+                      <span className="text-slate-400 text-xs" title={outcome?.comparabilityWarning || "测试条件不一致，隐藏直接差值"}>不可比</span>
                     )}
                   </td>
 
@@ -146,9 +146,9 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                   <td>
                     {isComparable ? (
                       <span className="font-mono text-xs">
-                        {before.citationCount ?? 0} →{" "}
-                        <span className={after.citationCount > 0 ? "text-emerald-700 font-bold" : ""}>
-                          {after.citationCount ?? 0}
+                        {typeof before.citationCount === "number" ? before.citationCount : "—"} →{" "}
+                        <span className={typeof after.citationCount === "number" && (before.citationCount === undefined || after.citationCount > before.citationCount) ? "text-emerald-700 font-bold" : ""}>
+                          {typeof after.citationCount === "number" ? after.citationCount : "—"}
                         </span>
                       </span>
                     ) : (
@@ -160,9 +160,16 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                   <td>
                     {isComparable ? (
                       <span className="font-mono text-xs">
-                        {before.position ? `#${before.position}` : "无"} →{" "}
-                        <span className={after.position && (!before.position || after.position < before.position) ? "text-emerald-700 font-bold" : ""}>
-                          {after.position ? `#${after.position}` : "无"}
+                        {typeof before.position === "number" && before.position > 0 ? `#${before.position}` : before.position === null || before.position === 0 ? "未上榜" : "—"} →{" "}
+                        <span className={
+                          typeof after.position === "number" && after.position > 0 &&
+                          (!before.position || before.position === 0 || after.position < before.position)
+                            ? "text-emerald-700 font-bold"
+                            : typeof after.position === "number" && typeof before.position === "number" && before.position > 0 && after.position > before.position
+                            ? "text-amber-700"
+                            : ""
+                        }>
+                          {typeof after.position === "number" && after.position > 0 ? `#${after.position}` : after.position === null || after.position === 0 ? "未上榜" : "—"}
                         </span>
                       </span>
                     ) : (
@@ -174,9 +181,9 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                   <td>
                     {isComparable ? (
                       <span className="text-xs">
-                        {before.recommendation ? "推荐" : "未推荐"} →{" "}
-                        <span className={after.recommendation ? "text-emerald-700 font-semibold" : "text-slate-500"}>
-                          {after.recommendation ? "推荐" : "未推荐"}
+                        {before.recommendation === true ? "推荐" : before.recommendation === false ? "未推荐" : "—"} →{" "}
+                        <span className={after.recommendation === true ? "text-emerald-700 font-semibold" : after.recommendation === false ? "text-slate-500" : "text-slate-400"}>
+                          {after.recommendation === true ? "推荐" : after.recommendation === false ? "未推荐" : "—"}
                         </span>
                       </span>
                     ) : (

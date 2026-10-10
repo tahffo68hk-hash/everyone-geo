@@ -14,10 +14,13 @@ import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
 import { explainAiAttribution, type AiResponseMeta } from "@/lib/ai-api";
 import { QueryOutcomeTable } from "./query-outcome-table";
 import { QueryOutcomeDrawer } from "./query-outcome-drawer";
+import { RetestRunSelector } from "./retest-run-selector";
+import { RetestProgressPanel } from "./retest-progress-panel";
 
 interface AssetOutcomeOverviewProps {
   workspace: AssetOutcomeWorkspace;
   onBack: () => void;
+  onSelectRun?: (runId: string) => void;
   onRerunRetest?: () => void;
   isRerunning?: boolean;
 }
@@ -32,6 +35,7 @@ interface AttributionData {
 export function AssetOutcomeOverview({
   workspace,
   onBack,
+  onSelectRun,
   onRerunRetest,
   isRerunning,
 }: AssetOutcomeOverviewProps) {
@@ -190,6 +194,18 @@ export function AssetOutcomeOverview({
               </span>
             )}
           </div>
+
+          {workspace.retestRuns.length > 1 && (
+            <div className="pt-1 pb-1">
+              <RetestRunSelector
+                runs={workspace.retestRuns}
+                selectedRunId={activeRun?.id || null}
+                onChange={(id) => id && onSelectRun?.(id)}
+                disabled={isRerunning}
+              />
+            </div>
+          )}
+
           {activeRun ? (
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
               <div>
@@ -230,6 +246,34 @@ export function AssetOutcomeOverview({
           )}
         </section>
       </div>
+
+      {/* 复测分阶段进度面板 (WEB-011) */}
+      <RetestProgressPanel
+        input={{
+          status: activeRun?.status ?? null,
+          totalItems: activeRun?.totalItems ?? null,
+          completedItems: activeRun?.completedItems ?? null,
+          outcomeCount: compSummary?.totalItems ?? (activeRun?.queryRows?.filter((r) => r.outcome)?.length ?? null),
+          attributionCount: attrSummary?.totalOutcomes ?? (activeRun?.queryRows?.filter((r) => r.attribution)?.length ?? null),
+        }}
+      />
+
+      {/* 算法快照版本标识 (LOC-005) */}
+      {(activeRun?.activeComparisonVersion || activeRun?.activeAttributionVersion) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span className="font-medium text-slate-700">算法快照版本:</span>
+          {activeRun.activeComparisonVersion && (
+            <span className="status-badge text-[11px] bg-slate-100 text-slate-700">
+              对比引擎: {activeRun.activeComparisonVersion}
+            </span>
+          )}
+          {activeRun.activeAttributionVersion && (
+            <span className="status-badge text-[11px] bg-slate-100 text-slate-700">
+              归因模型: {activeRun.activeAttributionVersion}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* 核心指标卡片：4张精炼 Executive Cards */}
       {activeRun && (

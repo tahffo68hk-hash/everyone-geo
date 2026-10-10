@@ -55,6 +55,26 @@
 - **成功 Evidence 保护与增量重试**: 当重测任务部分失败并重新触发时，严格保留已有成功的 `evidenceId` 和 `runId`，绝不覆写历史有效证据；仅对尚未成功的条目进行增量调度。
 - **Web 端协同**: Outcome Workspace 中 `retest-progress-panel` 与 `retest-run-selector` 完整呈现执行进度、部分失败提示及历史运行切换。
 
+### 7. LOC-004: 可信 Retest Evidence 来源防护与真实血缘 (Provenance) — 【已验证交付】
+- **F1-009 拦截身份漂白**: 严格禁止 Mock Provider 携带 `official_api` 或 `browser` 来源伪造真实平台调用；反之，真实引擎提供商禁止使用 mock 来源类型。
+- **F1-010 检索模式边界保护**: 严格禁止普通纯模型 API (`api_plain`) 冒充消费者网页检索或真实浏览器端收录 (`browser`)。
+- **真实血缘追溯 (Provenance)**: 在生成的 Evidence 元数据中持久化 `publishedAssetId`, `retestRunId`, `retestItemId`, `verifiedSource`, `retrievalProvenance` 与 `provenance`（区分 `MOCK_SYNTHETIC` 与 `AUTHENTIC_RECORD`），引用结构体携带 `isSynthetic: true` 合成标识。
+
+### 8. LOC-005: Outcome / Attribution 历史版本正确性与单版本隔离 — 【已验证交付】
+- **F2-009 单版本严格隔离与防重复统计**: 重构 Outcome 与 Attribution 读取/聚合逻辑，查询与 Workspace 投影严格锁定单一 `comparisonVersion` 与 `attributionVersion`，彻底杜绝多版本混叠、首条版本污染以及多版本叠加导致的指标笛卡尔积膨胀。
+- **F2-010 基线缺失与不可比保护**: 当 RetestItem 缺少 Baseline 时，Comparison 判定为 `MISSING_BASELINE`，归因严格锁定为 `INSUFFICIENT_EVIDENCE` 与 `NO_CHANGE`，严禁将其推断为正向改善。
+- **MIXED 观察变化统计**: 修复并支持 `mixedObservedChangeCount` 统计维度。
+
+### 9. WEB-009: 真实 Before / After 表格与证据抽屉 — 【已验证交付】
+- **精准区分零值与缺失**: 修复 `query-outcome-table.tsx` 与抽屉组件，严格区分 `0 / false / null`：提及/未提/未测、入榜位次（0 或 null 显示未上榜，未测显示横杠）、推荐（推荐/未推荐/未测）、引用数（0 正常显示为 0）。
+- **不可比明确标识与风险提示**: 对 `MISSING_BASELINE` 与 `INCOMPATIBLE` 的指标明确展示“不可比”与警告悬浮提示，不产生虚假改善推断。
+- **证据链下钻保留**: 保持原始 Evidence、模型 Prompt/Response 及 Citation 证据下钻。
+
+### 10. WEB-011: 可信复测工作流与分阶段进度 — 【已验证交付】
+- **批次选择器接入**: `asset-outcome-overview.tsx` 中嵌入 `RetestRunSelector`，支持多批次重测下拉切换与历史快照回溯。
+- **分阶段事实原则**: `RetestProgressPanel` 明确区分“执行中/已完成”、“对比生成中/已生成”、“归因分析中/已完成”，消除虚假闭环状态。
+- **防重复提交**: 增加执行锁状态，自动识别已由后端 `autoExecute` 完成的任务，避免前端二次重复执行。
+
 ---
 
 ## 三、测试与构建验证结果
@@ -67,6 +87,7 @@
    - `jest test/schema-validator.e2e-spec.ts` -> **5/5 passed**
    - `jest test/ai-brand-resolution.e2e-spec.ts` -> **6/6 passed (AI 解析、Discovery 词非污染、候选隔离与短视频脚本)**
    - `jest test/loc002-loc003-trust.e2e-spec.ts` -> **11/11 passed (LOC-002 真实资产身份与 LOC-003 执行幂等)**
+   - `jest test/loc004-loc005-outcome.e2e-spec.ts` -> **7/7 passed (LOC-004 来源保护/血缘持久化与 LOC-005 多版本隔离/防笛卡尔膨胀)**
 3. **全栈生产构建**:
    - `pnpm build:api` (`nest build`) -> **成功，0 错误**
    - `pnpm build:web` (`next build`) -> **成功，全站 25 个静态与动态页面编译完成，0 报错**
@@ -89,6 +110,6 @@ a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safe
 
 ## 五、当前系统状态与后续建议 (Next Steps)
 
-1. **Git 仓库状态**: 所有新功能与 LOC-002/003 均已完成本地 Commit，工作区干净，严格遵守 **NO PUSH** 规则。
+1. **Git 仓库状态**: 所有核心闭环与 LOC/WEB 改动均已完成，测试与构建全部绿灯，严格遵守 **STRICTLY NO PUSH** 规则。
 2. **生产部署准备**: 前后端构建产物已完整生成（Next.js 15 生产优化产物与 NestJS dist 包）。
-3. **真实模型密钥上线 (可选)**: 如需将 `doubao` 或 `kimi` 升级为 A 级已测状态，在生产/预发环境变量中配置对应 API Key 即可，代码适配与兜底均已就绪。
+3. **效果验证闭环完整性**: 已具备端到端可运行的“资产登记 → 可信重测 → 单版本对比 → 多维归因 → 真实工作台展示”完整闭环。

@@ -102,7 +102,15 @@ export class OutcomeAttributionController {
     @CurrentUser() u: JwtUserPayload,
     @Param("id", ParseUUIDPipe) id: string,
     @Query("retestRunId") retestRunId?: string,
+    @Query("comparisonVersion") comparisonVersion?: string,
+    @Query("attributionVersion") attributionVersion?: string,
   ) {
-    return this.attribution.getAssetOutcomeWorkspace(u.sub, id, retestRunId);
+    return this.attribution.getAssetOutcomeWorkspace(
+      u.sub,
+      id,
+      retestRunId,
+      comparisonVersion,
+      attributionVersion,
+    );
   }
 }

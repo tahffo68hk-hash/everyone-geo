@@ -500,7 +500,7 @@ export class OutcomeComparisonService {
   /**
    * 查询指定 RetestRun 的所有 Outcome 对比记录与聚合摘要
    */
-  async getRetestRunOutcomes(userId: string, retestRunId: string) {
+  async getRetestRunOutcomes(userId: string, retestRunId: string, version?: string) {
     const retestRun = await this.db.client.retestRun.findUnique({
       where: { id: retestRunId },
       include: { publishedAsset: true },
@@ -511,14 +511,25 @@ export class OutcomeComparisonService {
 
     await this.tenant.assertUserInProject(userId, retestRun.projectId);
 
+    // 确定查询版本：若指定则用指定版本，未指定则选择该 Run 最新生成的一版，默认 DEFAULT_OUTCOME_VERSION
+    let activeVersion = version?.trim();
+    if (!activeVersion) {
+      const latest = await this.db.client.outcomeComparison.findFirst({
+        where: { retestRunId },
+        orderBy: { createdAt: "desc" },
+        select: { comparisonVersion: true },
+      });
+      activeVersion = latest?.comparisonVersion || DEFAULT_OUTCOME_VERSION;
+    }
+
     let outcomes = await this.db.client.outcomeComparison.findMany({
-      where: { retestRunId },
+      where: { retestRunId, comparisonVersion: activeVersion },
       orderBy: { createdAt: "asc" },
     });
 
     // 若尚未生成，自动触发首次生成
     if (outcomes.length === 0) {
-      const generated = await this.generateRetestOutcomes(userId, retestRunId);
+      const generated = await this.generateRetestOutcomes(userId, retestRunId, { comparisonVersion: activeVersion });
       return generated;
     }
 
@@ -526,7 +537,7 @@ export class OutcomeComparisonService {
     return {
       retestRunId: retestRun.id,
       publishedAssetId: retestRun.publishedAssetId,
-      comparisonVersion: outcomes[0]?.comparisonVersion || DEFAULT_OUTCOME_VERSION,
+      comparisonVersion: activeVersion,
       summary,
       items: outcomes,
     };
@@ -535,7 +546,7 @@ export class OutcomeComparisonService {
   /**
    * 查询指定 RetestItem 的 Outcome 结果
    */
-  async getRetestItemOutcome(userId: string, retestItemId: string) {
+  async getRetestItemOutcome(userId: string, retestItemId: string, version?: string) {
     const item = await this.db.client.retestItem.findUnique({
       where: { id: retestItemId },
       include: { retestRun: true },
@@ -547,13 +558,18 @@ export class OutcomeComparisonService {
     await this.tenant.assertUserInProject(userId, item.retestRun.projectId);
 
     let outcome = await this.db.client.outcomeComparison.findFirst({
-      where: { retestItemId },
+      where: {
+        retestItemId,
+        ...(version?.trim() ? { comparisonVersion: version.trim() } : {}),
+      },
       orderBy: { createdAt: "desc" },
     });
 
     if (!outcome) {
       // 触发该 Run 的生成
-      const gen = await this.generateRetestOutcomes(userId, item.retestRunId);
+      const gen = await this.generateRetestOutcomes(userId, item.retestRunId, {
+        comparisonVersion: version?.trim() || DEFAULT_OUTCOME_VERSION,
+      });
       outcome = gen.items.find((it: any) => it.retestItemId === retestItemId) || null;
     }
 

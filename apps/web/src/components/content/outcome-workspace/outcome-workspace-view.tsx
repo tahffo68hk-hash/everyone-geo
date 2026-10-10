@@ -48,11 +48,11 @@ export function OutcomeWorkspaceView({
     }
   }
 
-  async function loadWorkspace(assetId: string) {
+  async function loadWorkspace(assetId: string, retestRunId?: string) {
     try {
       setLoadingWorkspace(true);
       setError(null);
-      const res = await getAssetOutcomeWorkspace(assetId);
+      const res = await getAssetOutcomeWorkspace(assetId, retestRunId);
       setWorkspaceData(res);
       setSelectedAssetId(assetId);
     } catch (err: any) {
@@ -77,18 +77,21 @@ export function OutcomeWorkspaceView({
   }
 
   async function handleTriggerRetest(assetId: string) {
+    if (rerunningRetest) return; // 防重复提交
     try {
       setRerunningRetest(true);
       setFeedback("正在发起 GEO 复测任务…");
-      const retest = await createRetestRun(assetId, true);
-      setFeedback("复测任务已创建，正在执行模拟评测…");
-      await processRetestRun(retest.id);
-      setFeedback("GEO 复测执行完成，正在刷新数据…");
+      const retest = await createRetestRun(assetId, true, true);
+      if (retest.status !== "COMPLETED") {
+        setFeedback("复测任务已排队，正在执行模拟评测…");
+        await processRetestRun(retest.id);
+      }
+      setFeedback("GEO 复测已执行完成，正在刷新数据…");
       await loadAssetsList();
       if (selectedAssetId === assetId) {
-        await loadWorkspace(assetId);
+        await loadWorkspace(assetId, retest.id);
       }
-      setFeedback("GEO 复测已完成并更新归因分析。");
+      setFeedback("GEO 复测已完成，最新对比与归因数据已就绪。");
       setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
       setError(err?.message || "触发 GEO 复测失败");
@@ -159,6 +162,7 @@ export function OutcomeWorkspaceView({
               setWorkspaceData(null);
               void loadAssetsList();
             }}
+            onSelectRun={(runId) => void loadWorkspace(selectedAssetId, runId)}
             onRerunRetest={() => void handleTriggerRetest(selectedAssetId)}
             isRerunning={rerunningRetest}
           />

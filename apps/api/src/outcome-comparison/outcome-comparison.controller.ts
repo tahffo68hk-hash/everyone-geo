@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { AuthGuard, JwtUserPayload } from "../common/auth.guard";
@@ -40,8 +41,9 @@ export class OutcomeComparisonController {
   getRetestRunOutcomes(
     @CurrentUser() u: JwtUserPayload,
     @Param("id", ParseUUIDPipe) id: string,
+    @Query("version") version?: string,
   ) {
-    return this.outcome.getRetestRunOutcomes(u.sub, id);
+    return this.outcome.getRetestRunOutcomes(u.sub, id, version);
   }
 
   /**

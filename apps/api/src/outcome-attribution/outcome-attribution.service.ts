@@ -19,6 +19,7 @@ import {
 } from "./dto/outcome-attribution.dto";
 
 export const DEFAULT_ATTRIBUTION_VERSION = "m10d-attribution-v1";
+import { DEFAULT_OUTCOME_VERSION } from "../outcome-comparison/outcome-comparison.service";
 
 /**
  * 规范化 URL：小写协议与域名、移除常见跟踪参数、去除多余结尾斜杠
@@ -829,8 +830,15 @@ export class OutcomeAttributionService {
 
   /**
    * M10E Workspace Level 2 & Level 3: 获取某落地资产完整 Workspace 投影 (GET /published-assets/:id/outcome-workspace)
+   * 严格单版本隔离：不将不同算法版本（ComparisonVersion / AttributionVersion）混合展示或重复汇总
    */
-  async getAssetOutcomeWorkspace(userId: string, assetId: string, retestRunId?: string) {
+  async getAssetOutcomeWorkspace(
+    userId: string,
+    assetId: string,
+    retestRunId?: string,
+    comparisonVersion?: string,
+    attributionVersion?: string,
+  ) {
     const asset = await this.db.client.publishedAsset.findUnique({
       where: { id: assetId },
       include: {
@@ -881,13 +889,44 @@ export class OutcomeAttributionService {
       orderBy: { createdAt: "asc" },
     });
 
-    let outcomes = await this.db.client.outcomeComparison.findMany({
+    // 1. 查找此 Run 下所有可选的 comparisonVersion
+    const distinctComparisonVersions = await this.db.client.outcomeComparison.findMany({
       where: { retestRunId: targetRun.id },
+      distinct: ["comparisonVersion"],
+      select: { comparisonVersion: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+    const availableComparisonVersions = distinctComparisonVersions.map((v) => v.comparisonVersion);
+    const activeComparisonVersion =
+      comparisonVersion?.trim() || availableComparisonVersions[0] || DEFAULT_OUTCOME_VERSION;
+
+    // 2. 严格按活跃版本筛选对比结果，绝不跨版本混叠
+    const outcomes = await this.db.client.outcomeComparison.findMany({
+      where: {
+        retestRunId: targetRun.id,
+        comparisonVersion: activeComparisonVersion,
+      },
       orderBy: { createdAt: "asc" },
     });
 
-    let attributions = await this.db.client.outcomeAttribution.findMany({
-      where: { retestRunId: targetRun.id },
+    // 3. 查找这些 outcome 关联的所有可选 attributionVersion
+    const outcomeIds = outcomes.map((o) => o.id);
+    const distinctAttributionVersions = await this.db.client.outcomeAttribution.findMany({
+      where: { outcomeComparisonId: { in: outcomeIds } },
+      distinct: ["attributionVersion"],
+      select: { attributionVersion: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+    const availableAttributionVersions = distinctAttributionVersions.map((v) => v.attributionVersion);
+    const activeAttributionVersion =
+      attributionVersion?.trim() || availableAttributionVersions[0] || DEFAULT_ATTRIBUTION_VERSION;
+
+    // 4. 严格按活跃版本筛选归因结果
+    const attributions = await this.db.client.outcomeAttribution.findMany({
+      where: {
+        outcomeComparisonId: { in: outcomeIds },
+        attributionVersion: activeAttributionVersion,
+      },
       orderBy: { createdAt: "asc" },
     });
 
@@ -929,7 +968,10 @@ export class OutcomeAttributionService {
 
     const queryRows = retestItems.map((item) => {
       const outcome = outcomes.find((o) => o.retestItemId === item.id) || null;
-      const attribution = attributions.find((a) => a.retestItemId === item.id) || null;
+      // 严格通过 outcomeComparisonId 关联当前版本的归因记录
+      const attribution = outcome
+        ? attributions.find((a) => a.outcomeComparisonId === outcome.id) || null
+        : null;
       const beforeEvidence = item.baselineEvidenceId ? evidenceMap[item.baselineEvidenceId] || null : null;
       const afterEvidence = item.evidenceId ? evidenceMap[item.evidenceId] || null : null;
 
@@ -950,7 +992,7 @@ export class OutcomeAttributionService {
       };
     });
 
-    // 计算汇总
+    // 计算当前单版本的指标汇总
     let comparableItems = 0;
     let warningItems = 0;
     let incompatibleItems = 0;
@@ -976,9 +1018,16 @@ export class OutcomeAttributionService {
         if (delta.brandMention?.change === "ABSENT_TO_PRESENT") mentionAbsentToPresent++;
         if (delta.brandMention?.change === "PRESENT_TO_ABSENT") mentionPresentToAbsent++;
         if (typeof delta.citation?.countDelta === "number") citationCountDeltaTotal += delta.citation.countDelta;
-        if (delta.recommendation?.change === "ABSENT_TO_PRESENT") recommendationPositiveChanges++;
+        if (
+          delta.recommendation?.change === "ABSENT_TO_PRESENT" ||
+          delta.recommendation?.change === "NOT_RECOMMENDED_TO_RECOMMENDED"
+        ) {
+          recommendationPositiveChanges++;
+        }
         if (delta.position?.direction === "IMPROVED") positionImproved++;
-        if (delta.position?.direction === "WORSENED") positionWorsened++;
+        if (delta.position?.direction === "WORSENED" || delta.position?.direction === "DECLINED") {
+          positionWorsened++;
+        }
       }
     }
 
@@ -988,6 +1037,8 @@ export class OutcomeAttributionService {
     let noObservedChangeCount = 0;
     let positiveObservedChangeCount = 0;
     let negativeObservedChangeCount = 0;
+    let mixedObservedChangeCount = 0;
+    let neutralObservedChangeCount = 0;
     let directAssetCitationCount = 0;
 
     for (const a of attributions) {
@@ -998,6 +1049,8 @@ export class OutcomeAttributionService {
 
       if (a.observedChangeType === "POSITIVE") positiveObservedChangeCount++;
       else if (a.observedChangeType === "NEGATIVE") negativeObservedChangeCount++;
+      else if (a.observedChangeType === "MIXED") mixedObservedChangeCount++;
+      else if (a.observedChangeType === "NEUTRAL") neutralObservedChangeCount++;
 
       const signals = a.signalsSnapshot as any;
       if (signals?.citationMatch?.status === "DIRECT_ASSET_CITATION") {
@@ -1049,6 +1102,10 @@ export class OutcomeAttributionService {
         completedAt: targetRun.completedAt,
         totalItems: targetRun.totalItems,
         completedItems: targetRun.completedItems,
+        activeComparisonVersion,
+        activeAttributionVersion,
+        availableComparisonVersions,
+        availableAttributionVersions,
         comparabilitySummary: {
           totalItems: outcomes.length,
           comparableItems,
@@ -1073,6 +1130,8 @@ export class OutcomeAttributionService {
           noObservedChangeCount,
           positiveObservedChangeCount,
           negativeObservedChangeCount,
+          mixedObservedChangeCount,
+          neutralObservedChangeCount,
           directAssetCitationCount,
         },
         queryRows,

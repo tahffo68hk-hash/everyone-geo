@@ -264,6 +264,23 @@ export class RetestOrchestrationService {
       throw new BadRequestException("真实 Provider 未启用，当前仅允许 mock 评测");
     }
 
+    // F1-009: mock Provider 携带 official_api 的身份漂白拦截
+    if (provider === "mock" && dto.sourceType && dto.sourceType !== SourceType.mock) {
+      throw new BadRequestException("Mock Provider 仅允许 mock 来源类型，禁止伪造真实平台或 API 来源（F1-009）");
+    }
+    if (provider !== "mock" && dto.sourceType === SourceType.mock) {
+      throw new BadRequestException("真实 Provider 不能指定 mock 来源类型");
+    }
+
+    // F1-010: 普通模型 API 文本输出不能冒充消费者搜索或真实网页收录
+    const effectiveRetrievalMode = dto.retrievalMode || RetrievalMode.api_plain;
+    if (
+      effectiveRetrievalMode === RetrievalMode.api_plain &&
+      dto.sourceType === SourceType.browser
+    ) {
+      throw new BadRequestException("普通模型 API (api_plain) 文本输出不能冒充真实网页浏览器或消费者搜索端来源 (F1-010)");
+    }
+
     const engineKey = dto.engineKey || (provider === "mock" ? "mock-default" : provider);
     const engineName = provider === "mock" ? "Mock Engine" : `${provider} Engine`;
     const retrievalMode = dto.retrievalMode || RetrievalMode.api_plain;
@@ -584,8 +601,20 @@ export class RetestOrchestrationService {
           metadata: {
             durationMs: 120,
             structuredCitations: retestRun.publishedAsset.canonicalUrl
-              ? [{ url: retestRun.publishedAsset.canonicalUrl, title: retestRun.publishedAsset.title }]
+              ? [
+                  {
+                    url: retestRun.publishedAsset.canonicalUrl,
+                    title: retestRun.publishedAsset.title,
+                    isSynthetic: retestRun.provider === "mock",
+                  },
+                ]
               : [],
+            publishedAssetId: retestRun.publishedAssetId,
+            retestRunId: retestRun.id,
+            retestItemId: item.id,
+            verifiedSource: retestRun.sourceType,
+            retrievalProvenance: retestRun.retrievalMode,
+            provenance: retestRun.provider === "mock" ? "MOCK_SYNTHETIC" : "AUTHENTIC_RECORD",
           },
           entitySnapshot: entities as unknown as Prisma.InputJsonValue,
           createdAt:
