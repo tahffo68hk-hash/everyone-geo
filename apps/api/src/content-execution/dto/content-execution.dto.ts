@@ -438,6 +438,15 @@ export class ConfirmPublishedAssetDto {
 
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  actualPublishedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 128)
+  idempotencyKey?: string;
 }
 
 export class CreatePublishedAssetDto {
@@ -500,6 +509,15 @@ export class CreatePublishedAssetDto {
 
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  actualPublishedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 128)
+  idempotencyKey?: string;
 }
 
 export class ListPublishedAssetsDto {

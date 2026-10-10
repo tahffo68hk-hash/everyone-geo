@@ -9,8 +9,19 @@ export const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com';
 export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-chat';
 export const QWEN_DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 export const QWEN_DEFAULT_MODEL = 'qwen-plus';
+export const DOUBAO_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
+export const DOUBAO_DEFAULT_MODEL = 'doubao-pro-32k';
+export const KIMI_DEFAULT_BASE_URL = 'https://api.moonshot.cn/v1';
+export const KIMI_DEFAULT_MODEL = 'moonshot-v1-8k';
+export const ZHIPU_DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
+export const ZHIPU_DEFAULT_MODEL = 'glm-4-flash';
+export const YUANBAO_DEFAULT_BASE_URL = 'https://api.hunyuan.cloud.tencent.com/v1';
+export const YUANBAO_DEFAULT_MODEL = 'hunyuan-standard';
+export const BAIDU_DEFAULT_BASE_URL = 'https://qianfan.baidubce.com/v2';
+export const BAIDU_DEFAULT_MODEL = 'ernie-4.0-turbo-8k';
 export const DEFAULT_REAL_PROVIDER_TIMEOUT_MS = 60_000;
 export const DEFAULT_REAL_PROVIDER_MAX_RUNS_PER_TASK = 3;
+
 
 export interface RealProviderEnv {
   apiKey: string | null;
@@ -102,5 +113,31 @@ export function enginePresentation(provider: string, engineConfig: unknown, env:
     const model = typeof config.model === 'string' && config.model.trim() !== '' ? config.model.trim() : cfg.model;
     return { provider, sourceType: 'official_api', model, configured: qwenConfigured(env) };
   }
+  if (provider === 'doubao') {
+    const config = engineConfig !== null && typeof engineConfig === 'object' && !Array.isArray(engineConfig) ? engineConfig as Record<string, unknown> : {};
+    const model = typeof config.model === 'string' && config.model.trim() !== '' ? config.model.trim() : DOUBAO_DEFAULT_MODEL;
+    return { provider, sourceType: 'official_api', model, configured: !!(env.DOUBAO_API_KEY || env.ARK_API_KEY) };
+  }
+  if (provider === 'kimi') {
+    const config = engineConfig !== null && typeof engineConfig === 'object' && !Array.isArray(engineConfig) ? engineConfig as Record<string, unknown> : {};
+    const model = typeof config.model === 'string' && config.model.trim() !== '' ? config.model.trim() : KIMI_DEFAULT_MODEL;
+    return { provider, sourceType: 'official_api', model, configured: !!(env.KIMI_API_KEY || env.MOONSHOT_API_KEY) };
+  }
+  if (provider === 'zhipu') {
+    const config = engineConfig !== null && typeof engineConfig === 'object' && !Array.isArray(engineConfig) ? engineConfig as Record<string, unknown> : {};
+    const model = typeof config.model === 'string' && config.model.trim() !== '' ? config.model.trim() : ZHIPU_DEFAULT_MODEL;
+    return { provider, sourceType: 'official_api', model, configured: !!(env.ZHIPU_API_KEY || env.GLM_API_KEY) };
+  }
+  if (provider === 'yuanbao') {
+    const config = engineConfig !== null && typeof engineConfig === 'object' && !Array.isArray(engineConfig) ? engineConfig as Record<string, unknown> : {};
+    const model = typeof config.model === 'string' && config.model.trim() !== '' ? config.model.trim() : YUANBAO_DEFAULT_MODEL;
+    return { provider, sourceType: 'official_api', model, configured: !!(env.HUNYUAN_API_KEY || env.YUANBAO_API_KEY) };
+  }
+  if (provider === 'baidu') {
+    const config = engineConfig !== null && typeof engineConfig === 'object' && !Array.isArray(engineConfig) ? engineConfig as Record<string, unknown> : {};
+    const model = typeof config.model === 'string' && config.model.trim() !== '' ? config.model.trim() : BAIDU_DEFAULT_MODEL;
+    return { provider, sourceType: 'official_api', model, configured: !!(env.QIANFAN_API_KEY || env.BAIDU_API_KEY) };
+  }
   return { provider, sourceType: null, model: null, configured: false };
 }
+

@@ -1851,6 +1851,8 @@ export class ContentExecutionService implements OnModuleDestroy {
         lower.startsWith("fake://") ||
         lower.includes("localhost") ||
         lower.includes("127.0.0.1") ||
+        lower.includes("[::1]") ||
+        lower.includes("0.0.0.0") ||
         lower.includes("example.com/mock") ||
         lower.startsWith("mock_") ||
         lower === "mock" ||
@@ -1860,7 +1862,14 @@ export class ContentExecutionService implements OnModuleDestroy {
 
     const isMockId = (id: string) => {
       const lower = id.toLowerCase().trim();
-      return lower.startsWith("mock_") || lower.startsWith("mock-") || lower.startsWith("fake_") || lower === "mock" || lower === "fake";
+      return (
+        lower.startsWith("mock_") ||
+        lower.startsWith("mock-") ||
+        lower.startsWith("fake_") ||
+        lower.startsWith("fake-") ||
+        lower === "mock" ||
+        lower === "fake"
+      );
     };
 
     if (canonicalUrl && isMockUrl(canonicalUrl)) {
@@ -1891,6 +1900,37 @@ export class ContentExecutionService implements OnModuleDestroy {
   }
 
   /**
+   * 解析并严格校验对外真实发布时间 (actualPublishedAt)
+   * 必须是有明确时区的有效 ISO 字符串，日历有效，且不得晚于服务器当前时间
+   */
+  private validateAndParseActualPublishedAt(
+    rawTime?: string | null,
+    serverNow: Date = new Date(),
+  ): { actualPublishedAt: Date | null; publicationTimeSource: string } {
+    if (!rawTime || typeof rawTime !== "string" || !rawTime.trim()) {
+      return { actualPublishedAt: null, publicationTimeSource: "UNKNOWN" };
+    }
+    const val = rawTime.trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/i.exec(val);
+    if (!match) {
+      throw new BadRequestException("实际发布时间必须是包含明确时区的有效 ISO 时间（如 2026-10-10T12:00:00Z）");
+    }
+    const [, yStr, moStr, dStr, hStr, miStr, sStr = "00"] = match;
+    const y = Number(yStr), mo = Number(moStr), d = Number(dStr), h = Number(hStr), mi = Number(miStr), s = Number(sStr);
+    if (y < 2000 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) {
+      throw new BadRequestException("实际发布时间超出有效日历范围");
+    }
+    const timestamp = Date.parse(val);
+    if (!Number.isFinite(timestamp)) {
+      throw new BadRequestException("实际发布时间不是合法的日历时刻");
+    }
+    if (timestamp > serverNow.getTime()) {
+      throw new BadRequestException("实际发布时间不能晚于当前时间");
+    }
+    return { actualPublishedAt: new Date(timestamp), publicationTimeSource: "MANUAL_EVIDENCED" };
+  }
+
+  /**
    * 将发布记录核验确认为落地资产 (PublishedAsset)
    * 支持 PLATFORM_CONFIRMED、MANUAL_VERIFIED 或 UNVERIFIED。
    * 当确认为有效资产时，自动推进排期项 (ContentScheduleItem) 状态至 DONE。
@@ -1905,7 +1945,16 @@ export class ContentExecutionService implements OnModuleDestroy {
       },
     });
     if (!pub) throw new NotFoundException("发布记录不存在");
-    await this.tenant.assertUserInOrganization(userId, pub.organizationId);
+    // 严格校验用户在目标项目的权限
+    await this.tenant.assertUserInProject(userId, pub.projectId);
+
+    // 校验关联实体归属一致性
+    if (pub.draft.projectId !== pub.projectId) {
+      throw new BadRequestException("发布记录草稿不属于当前项目");
+    }
+    if (pub.revision.draftId !== pub.draftId) {
+      throw new BadRequestException("发布记录版本与草稿不匹配");
+    }
 
     // 校验外部真实证据
     this.validateAuthenticExternalEvidence(
@@ -1915,12 +1964,56 @@ export class ContentExecutionService implements OnModuleDestroy {
       dto.verificationNote,
     );
 
+    // 平台确认防伪造：若声明 PLATFORM_CONFIRMED，必须有成功发布的 Attempt 或状态
+    if (dto.verificationStatus === "PLATFORM_CONFIRMED") {
+      const hasSuccessAttempt = pub.attempts.some((a) => a.status === "PUBLISHED");
+      if (!hasSuccessAttempt && pub.status !== "PUBLISHED") {
+        throw new BadRequestException("缺少有效的发布成功执行状态，无法标记为 PLATFORM_CONFIRMED");
+      }
+    }
+
+    // 幂等防护：同 idempotencyKey 或完全相同的 (publicationId, canonicalUrl / externalAssetId)
+    if (dto.idempotencyKey) {
+      const existing = await this.db.client.publishedAsset.findFirst({
+        where: {
+          projectId: pub.projectId,
+          publicationId: pub.id,
+          idempotencyKey: dto.idempotencyKey,
+        },
+      });
+      if (existing) {
+        return existing;
+      }
+    } else if (dto.canonicalUrl || dto.externalAssetId) {
+      const existing = await this.db.client.publishedAsset.findFirst({
+        where: {
+          projectId: pub.projectId,
+          publicationId: pub.id,
+          ...(dto.canonicalUrl ? { canonicalUrl: dto.canonicalUrl } : {}),
+          ...(dto.externalAssetId ? { externalAssetId: dto.externalAssetId } : {}),
+        },
+      });
+      if (existing) {
+        return existing;
+      }
+    }
+
     let campaignId = pub.campaignId ?? null;
     let scheduleItemId = pub.scheduleItemId ?? null;
     let planItemId = pub.planItemId ?? null;
 
     if (!planItemId && pub.draft.sourcePlanItemId) {
       planItemId = pub.draft.sourcePlanItemId;
+    }
+
+    // 严格过滤跨项目 planItem
+    if (planItemId) {
+      const validPlan = await this.db.client.contentPlanItem.findFirst({
+        where: { id: planItemId, projectId: pub.projectId },
+      });
+      if (!validPlan) {
+        planItemId = null;
+      }
     }
 
     if (!scheduleItemId && planItemId) {
@@ -1935,8 +2028,15 @@ export class ContentExecutionService implements OnModuleDestroy {
     }
 
     const latestAttempt = pub.attempts[0] ?? null;
-
     const isVerified = dto.verificationStatus === "PLATFORM_CONFIRMED" || dto.verificationStatus === "MANUAL_VERIFIED";
+
+    // 处理实际发布时间
+    const timeInfo = this.validateAndParseActualPublishedAt(dto.actualPublishedAt);
+    let finalActualPublishedAt = timeInfo.actualPublishedAt;
+    let publicationTimeSource = timeInfo.publicationTimeSource;
+    if (dto.verificationStatus === "PLATFORM_CONFIRMED") {
+      publicationTimeSource = "PLATFORM_RECEIPT";
+    }
 
     // 创建持久化的落地资产 PublishedAsset（历史版本不可变记录，追加式）
     const publishedAsset = await this.db.client.publishedAsset.create({
@@ -1958,6 +2058,9 @@ export class ContentExecutionService implements OnModuleDestroy {
         sourceType: dto.sourceType || (dto.verificationStatus === "MANUAL_VERIFIED" ? "MANUAL_VERIFIED" : "PLATFORM_PUBLISH"),
         verificationNote: dto.verificationNote ?? null,
         metadata: (dto.metadata as any) ?? {},
+        actualPublishedAt: finalActualPublishedAt,
+        publicationTimeSource,
+        idempotencyKey: dto.idempotencyKey ?? null,
         verifiedAt: isVerified ? new Date() : null,
         verifiedById: isVerified ? userId : null,
       },
@@ -2022,33 +2125,42 @@ export class ContentExecutionService implements OnModuleDestroy {
         })
       : await this.latestRevision(draft.id);
     if (!rev) throw new BadRequestException("草稿无版本内容");
+    if (dto.revisionId && rev.draftId !== draft.id) {
+      throw new BadRequestException("草稿版本与草稿不匹配");
+    }
 
     if (dto.publicationId) {
       const pub = await this.db.client.publication.findFirst({
         where: { id: dto.publicationId, projectId },
       });
       if (!pub) throw new NotFoundException("发布记录不存在");
+      if (pub.draftId !== draft.id) {
+        throw new BadRequestException("发布记录与草稿不一致");
+      }
+      if (dto.revisionId && pub.revisionId !== rev.id) {
+        throw new BadRequestException("发布记录与版本不一致");
+      }
     }
 
     if (dto.campaignId) {
       const camp = await this.db.client.contentCampaign.findFirst({
         where: { id: dto.campaignId, projectId },
       });
-      if (!camp) throw new NotFoundException("营销战役不存在");
+      if (!camp) throw new NotFoundException("营销战役不存在于该项目");
     }
 
     if (dto.scheduleItemId) {
       const sItem = await this.db.client.contentScheduleItem.findFirst({
         where: { id: dto.scheduleItemId, projectId },
       });
-      if (!sItem) throw new NotFoundException("排期项不存在");
+      if (!sItem) throw new NotFoundException("排期项不存在于该项目");
     }
 
     if (dto.planItemId) {
       const pItem = await this.db.client.contentPlanItem.findFirst({
-        where: { id: dto.planItemId, organizationId: project.organizationId },
+        where: { id: dto.planItemId, projectId },
       });
-      if (!pItem) throw new NotFoundException("内容规划项不存在");
+      if (!pItem) throw new NotFoundException("内容规划项不存在于该项目");
     }
 
     this.validateAuthenticExternalEvidence(
@@ -2057,6 +2169,53 @@ export class ContentExecutionService implements OnModuleDestroy {
       dto.externalAssetId,
       dto.verificationNote,
     );
+
+    // 手工录入禁止伪造 PLATFORM_CONFIRMED
+    if (dto.verificationStatus === "PLATFORM_CONFIRMED") {
+      if (!dto.publicationId) {
+        throw new BadRequestException("手工录入资产尚未对接外部平台真实回执，不能直接标记为 PLATFORM_CONFIRMED");
+      }
+      const pub = await this.db.client.publication.findUnique({
+        where: { id: dto.publicationId },
+        include: { attempts: true },
+      });
+      const successfulAttempt = pub?.attempts.find((a) => a.status === "PUBLISHED");
+      if (!successfulAttempt || successfulAttempt.publisher === "mock") {
+        throw new BadRequestException("缺少有效的平台发布回执（Mock 无法作为真实平台回执），无法标记为 PLATFORM_CONFIRMED");
+      }
+      const attemptExtId = (successfulAttempt.externalId ?? "").toLowerCase();
+      const attemptExtUrl = (successfulAttempt.externalUrl ?? "").toLowerCase();
+      if (
+        attemptExtId.includes("mock") ||
+        attemptExtId.includes("fake") ||
+        attemptExtUrl.includes("mock") ||
+        attemptExtUrl.includes("fake") ||
+        attemptExtUrl.includes("localhost")
+      ) {
+        throw new BadRequestException("平台发布回执为 Mock/Fake 测试数据，无法标记为 PLATFORM_CONFIRMED");
+      }
+    }
+
+    // 幂等防护
+    if (dto.idempotencyKey) {
+      const existing = await this.db.client.publishedAsset.findFirst({
+        where: { projectId, idempotencyKey: dto.idempotencyKey },
+      });
+      if (existing) return existing;
+    }
+
+    if (dto.canonicalUrl || dto.externalAssetId) {
+      const duplicate = await this.db.client.publishedAsset.findFirst({
+        where: {
+          projectId,
+          revisionId: rev.id,
+          platform: dto.platform,
+          ...(dto.canonicalUrl ? { canonicalUrl: dto.canonicalUrl } : {}),
+          ...(dto.externalAssetId ? { externalAssetId: dto.externalAssetId } : {}),
+        },
+      });
+      if (duplicate) return duplicate;
+    }
 
     let campaignId = dto.campaignId ?? null;
     let scheduleItemId = dto.scheduleItemId ?? null;
@@ -2074,6 +2233,13 @@ export class ContentExecutionService implements OnModuleDestroy {
     }
 
     const isVerified = dto.verificationStatus === "PLATFORM_CONFIRMED" || dto.verificationStatus === "MANUAL_VERIFIED";
+
+    const timeInfo = this.validateAndParseActualPublishedAt(dto.actualPublishedAt);
+    let finalActualPublishedAt = timeInfo.actualPublishedAt;
+    let publicationTimeSource = timeInfo.publicationTimeSource;
+    if (dto.verificationStatus === "PLATFORM_CONFIRMED") {
+      publicationTimeSource = "PLATFORM_RECEIPT";
+    }
 
     const publishedAsset = await this.db.client.publishedAsset.create({
       data: {
@@ -2094,6 +2260,9 @@ export class ContentExecutionService implements OnModuleDestroy {
         sourceType: dto.sourceType || "MANUAL_VERIFIED",
         verificationNote: dto.verificationNote ?? null,
         metadata: (dto.metadata as any) ?? {},
+        actualPublishedAt: finalActualPublishedAt,
+        publicationTimeSource,
+        idempotencyKey: dto.idempotencyKey ?? null,
         verifiedAt: isVerified ? new Date() : null,
         verifiedById: isVerified ? userId : null,
       },

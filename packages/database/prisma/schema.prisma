@@ -1840,6 +1840,9 @@ model PublishedAsset {
   verificationNote     String?
 
   publishedAt          DateTime            @default(now())
+  actualPublishedAt    DateTime?
+  publicationTimeSource String?
+  idempotencyKey       String?
   metadata             Json                @default("{}")
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
@@ -1867,6 +1870,8 @@ model PublishedAsset {
   @@index([publicationId])
   @@index([platform])
   @@index([verificationStatus])
+  @@index([actualPublishedAt])
+  @@index([idempotencyKey])
 }
 
 model ContentAuditLog {

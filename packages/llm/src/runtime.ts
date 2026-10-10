@@ -11,9 +11,18 @@ import {
   ProviderBadRequestError
 } from './errors';
 import { calculateEstimatedCost } from './pricing';
-import { readRealProviderEnv, readQwenProviderEnv } from './config';
+import {
+  readRealProviderEnv,
+  readQwenProviderEnv,
+  DOUBAO_DEFAULT_BASE_URL,
+  DOUBAO_DEFAULT_MODEL,
+  KIMI_DEFAULT_BASE_URL,
+  KIMI_DEFAULT_MODEL,
+  ZHIPU_DEFAULT_BASE_URL,
+  ZHIPU_DEFAULT_MODEL,
+} from './config';
 
-export type InteractiveProvider = 'deepseek' | 'qwen' | 'mock' | 'auto';
+export type InteractiveProvider = ProviderKind | 'auto';
 
 export interface InteractiveRequest {
   provider?: InteractiveProvider;
@@ -67,24 +76,23 @@ export class InteractiveRuntime {
       return 'mock';
     }
 
-    if (requested === 'deepseek') {
+    if (requested !== 'auto') {
       if (!enableReal) {
         throw new ProviderDisabledError();
       }
-      if (!dsCfg.apiKey) {
+      if (requested === 'deepseek') {
+        if (!dsCfg.apiKey) throw new ProviderNotConfiguredError();
+        return 'deepseek';
+      }
+      if (requested === 'qwen') {
+        if (!qwenCfg.apiKey) throw new ProviderNotConfiguredError();
+        return 'qwen';
+      }
+      const envKey = `${requested.toUpperCase()}_API_KEY`;
+      if (!this.env[envKey]) {
         throw new ProviderNotConfiguredError();
       }
-      return 'deepseek';
-    }
-
-    if (requested === 'qwen') {
-      if (!enableReal) {
-        throw new ProviderDisabledError();
-      }
-      if (!qwenCfg.apiKey) {
-        throw new ProviderNotConfiguredError();
-      }
-      return 'qwen';
+      return requested;
     }
 
     // auto
@@ -156,8 +164,24 @@ export class InteractiveRuntime {
       url = `${qwenCfg.baseUrl}/chat/completions`;
       apiKey = qwenCfg.apiKey || '';
       defaultModel = qwenCfg.model;
+    } else if (provider === 'doubao') {
+      url = `${this.env.DOUBAO_BASE_URL || DOUBAO_DEFAULT_BASE_URL}/chat/completions`;
+      apiKey = this.env.DOUBAO_API_KEY || this.env.ARK_API_KEY || '';
+      defaultModel = this.env.DOUBAO_MODEL || DOUBAO_DEFAULT_MODEL;
+    } else if (provider === 'kimi') {
+      url = `${this.env.KIMI_BASE_URL || KIMI_DEFAULT_BASE_URL}/chat/completions`;
+      apiKey = this.env.KIMI_API_KEY || this.env.MOONSHOT_API_KEY || '';
+      defaultModel = this.env.KIMI_MODEL || KIMI_DEFAULT_MODEL;
+    } else if (provider === 'zhipu') {
+      url = `${this.env.ZHIPU_BASE_URL || ZHIPU_DEFAULT_BASE_URL}/chat/completions`;
+      apiKey = this.env.ZHIPU_API_KEY || this.env.GLM_API_KEY || '';
+      defaultModel = this.env.ZHIPU_MODEL || ZHIPU_DEFAULT_MODEL;
     } else {
-      throw new Error(`Unsupported provider: ${provider}`);
+      throw new ProviderNotConfiguredError();
+    }
+
+    if (!apiKey) {
+      throw new ProviderNotConfiguredError();
     }
 
     const requestedModel = request.model || defaultModel;
