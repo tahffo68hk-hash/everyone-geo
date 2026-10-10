@@ -510,7 +510,80 @@ export function generateMockFixture(
       break;
     }
 
+    case "brand_resolution": {
+      const brand = input?.brandName || "示例品牌";
+      const industry = input?.industryHint || "智能科技 / SaaS企业服务";
+      const region = input?.regionHint || "中国·上海";
+      mockContent = JSON.stringify({
+        brandName: brand,
+        fullName: `${brand}技术（中国）有限公司`,
+        region: region,
+        industry: industry,
+        aliases: [brand, `${brand}科技`, `${brand}中国`, `${brand}官方`],
+        competitors: [`${brand}竞品A`, `${brand}竞品B`, `${brand}同行标杆`, `行业头部服务商`],
+        coreKeywords: [
+          `${brand}`,
+          `${industry}选型`,
+          "企业级解决方案",
+          "AI数字化升级",
+          "性价比推荐",
+          "服务口碑评价",
+        ],
+        discoveryQueries: [
+          {
+            text: `2026年主流${industry}有哪些代表性品牌与厂商对比？`,
+            category: "行业选型",
+            intent: "COMMERCIAL",
+          },
+          {
+            text: `中小企业采购${industry}最应该看重哪些核心功能与资质？`,
+            category: "痛点解决",
+            intent: "INFORMATIONAL",
+          },
+          {
+            text: `目前市面上各家${industry}产品方案优缺点与避坑指南`,
+            category: "竞品对比",
+            intent: "COMMERCIAL",
+          },
+        ],
+      });
+      break;
+    }
+
+    case "video_script": {
+      const topic = input?.topic || "企业GEO优化与AI搜索收录指南";
+      const brand = input?.brandName || "品牌方";
+      mockContent = JSON.stringify({
+        title: `3招让AI大模型主动推荐你！${topic}`,
+        hook: `为什么你的同行在DeepSeek和豆包里总被推荐，而你的品牌却查无此人？`,
+        scenes: [
+          {
+            sceneNumber: 1,
+            visual: "特写镜头：展示主流大模型对行业选型提问的回答列表",
+            narration: "现在客户找供应商，已经直接问AI了！",
+            durationSeconds: 6,
+          },
+          {
+            sceneNumber: 2,
+            visual: "中景切换：展示GEO诊断大屏与竞品声量分析雷达",
+            narration: `要想让AI精准推荐${brand}，关键是打造Answer-First官方回答和高权重第三方信源。`,
+            durationSeconds: 15,
+          },
+          {
+            sceneNumber: 3,
+            visual: "全景特写：优化后的多模型提及对比与数据跃升",
+            narration: "做好GEO布局，AI可见度直接翻倍！",
+            durationSeconds: 9,
+          },
+        ],
+        callToAction: "点击左下角或私信，免费领取你所在赛道的AI搜索可见度全景诊断！",
+        tags: ["GEO优化", "AI搜索营销", "获客增长", "新媒体运营"],
+      });
+      break;
+    }
+
     default: {
+
       mockContent = JSON.stringify({
         message: `AI generation completed for feature: ${feature}`,
         feature,

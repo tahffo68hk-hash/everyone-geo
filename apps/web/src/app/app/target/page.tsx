@@ -25,6 +25,17 @@ function TargetInner() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [resolvedInfo, setResolvedInfo] = useState<{
+    brandName?: string;
+    fullName?: string;
+    region?: string;
+    industry?: string;
+    aliases?: string[];
+    competitors?: string[];
+    coreKeywords?: string[];
+    discoveryQueries?: Array<{ text: string; category: string; intent: string }>;
+  } | null>(null);
   const [newAlias, setNewAlias] = useState({ alias: "", aliasType: "CUSTOM" });
 
   useEffect(() => {
@@ -66,6 +77,67 @@ function TargetInner() {
       setTarget(t); setSaved("已保存。只影响之后的新检测，历史结果不会重新计算。");
     } catch (e) { setError(friendlyError(e)); }
     finally { setBusy(false); }
+  }
+
+  async function resolveBrand() {
+    if (!projectId || !form.canonicalName.trim()) {
+      setError("请先输入品牌/产品主名称，再执行智能解析");
+      return;
+    }
+    setResolving(true);
+    setError("");
+    setSaved("");
+    try {
+      const res = await api<{
+        data?: {
+          brandName: string;
+          fullName: string;
+          region: string;
+          industry: string;
+          aliases: string[];
+          competitors: string[];
+          coreKeywords: string[];
+          discoveryQueries: Array<{ text: string; category: string; intent: string }>;
+        };
+      }>(`/projects/${encodeURIComponent(projectId)}/ai/resolve-brand`, {
+        method: "POST",
+        body: JSON.stringify({ brandName: form.canonicalName.trim() }),
+      });
+
+      if (res && res.data) {
+        const d = res.data;
+        setResolvedInfo(d);
+        setForm(prev => ({
+          ...prev,
+          canonicalName: d.brandName || prev.canonicalName,
+          productCategory: d.industry || prev.productCategory,
+          description: prev.description || (d.fullName ? `${d.fullName}${d.region ? ` (${d.region})` : ""}，主营领域：${d.industry || ""}` : prev.description),
+        }));
+        setSaved(`AI 智能解析成功：已补全企业全称与主营品类，识别出 ${d.competitors?.length || 0} 个同赛道竞品及 ${d.aliases?.length || 0} 个关联别名建议。`);
+      }
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  async function quickAddAlias(aliasText: string) {
+    if (!projectId || !target?.brandId || !aliasText.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/projects/${encodeURIComponent(projectId)}/target-aliases`, {
+        method: "POST",
+        body: JSON.stringify({ alias: aliasText.trim(), aliasType: "CUSTOM" }),
+      });
+      await load();
+      setSaved(`已成功添加别名: ${aliasText}`);
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function addAlias() {
@@ -116,7 +188,18 @@ function TargetInner() {
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="text-xs font-medium text-slate-600">{TARGET_NAV.canonicalName}</span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-600">{TARGET_NAV.canonicalName}</span>
+              <button
+                type="button"
+                onClick={() => void resolveBrand()}
+                disabled={resolving || busy || !form.canonicalName.trim()}
+                className="flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+                title="利用大模型逆向解析企业全称、竞品与行业分类"
+              >
+                {resolving ? "✨ 解析中..." : "✨ AI 智能解析"}
+              </button>
+            </div>
             <input value={form.canonicalName} onChange={e => setForm({ ...form, canonicalName: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="如：AcmeFlow / CleanBot（虚构示例）" aria-label={TARGET_NAV.canonicalName} />
           </label>
           <label className="block">
@@ -139,6 +222,97 @@ function TargetInner() {
           {TARGET_NAV.save}
         </button>
       </section>
+
+      {resolvedInfo && (
+        <section className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-indigo-900 flex items-center gap-1.5">
+              <span>✨</span>
+              <span>AI 品牌与竞品画像透视</span>
+            </h2>
+            <button
+              type="button"
+              onClick={() => setResolvedInfo(null)}
+              className="text-xs text-indigo-600 hover:text-indigo-800"
+            >
+              收起
+            </button>
+          </div>
+          <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+            <div>
+              <span className="text-slate-500">企业全称:</span>{" "}
+              <span className="font-medium text-slate-800">{resolvedInfo.fullName || "未识别"}</span>
+            </div>
+            <div>
+              <span className="text-slate-500">主营赛道:</span>{" "}
+              <span className="font-medium text-slate-800">{resolvedInfo.industry || "未识别"}</span>
+            </div>
+            {resolvedInfo.region && (
+              <div>
+                <span className="text-slate-500">属地:</span>{" "}
+                <span className="font-medium text-slate-800">{resolvedInfo.region}</span>
+              </div>
+            )}
+          </div>
+
+          {resolvedInfo.competitors && resolvedInfo.competitors.length > 0 && (
+            <div className="mt-3">
+              <span className="text-xs font-semibold text-slate-700">同赛道竞品识别（对标矩阵）：</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {resolvedInfo.competitors.map((c, i) => (
+                  <span key={i} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 shadow-sm">
+                    ⚔️ {c}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {resolvedInfo.aliases && resolvedInfo.aliases.length > 0 && (
+            <div className="mt-3">
+              <span className="text-xs font-semibold text-slate-700">建议监测别名（点击一键加入）：</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {resolvedInfo.aliases.map((a, i) => {
+                  const alreadyAdded = target?.aliases.some(ea => ea.alias.toLowerCase() === a.toLowerCase());
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      disabled={alreadyAdded || busy || !target?.brandId}
+                      onClick={() => void quickAddAlias(a)}
+                      className={`rounded-md border px-2 py-1 text-xs transition ${
+                        alreadyAdded
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700 cursor-default"
+                          : "border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50"
+                      }`}
+                      title={alreadyAdded ? "已在监测列表中" : "点击添加到别名监测"}
+                    >
+                      {alreadyAdded ? "✓ " : "+ "}{a}
+                    </button>
+                  );
+                })}
+              </div>
+              {!target?.brandId && (
+                <p className="mt-1 text-[11px] text-amber-700">提示：请先保存上方品牌基本信息，即可直接点击一键添加别名。</p>
+              )}
+            </div>
+          )}
+
+          {resolvedInfo.discoveryQueries && resolvedInfo.discoveryQueries.length > 0 && (
+            <div className="mt-3 border-t border-indigo-100 pt-3">
+              <span className="text-xs font-semibold text-slate-700">Discovery 自然发现提问建议（无品牌词污染）：</span>
+              <div className="mt-1.5 space-y-1">
+                {resolvedInfo.discoveryQueries.slice(0, 3).map((q, i) => (
+                  <div key={i} className="rounded bg-white/80 px-2.5 py-1.5 text-xs text-slate-700 border border-indigo-100 flex items-center justify-between">
+                    <span>{q.text}</span>
+                    <span className="text-[10px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{q.category}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-slate-700">{TARGET_NAV.aliases}</h2>

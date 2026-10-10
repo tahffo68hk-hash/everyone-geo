@@ -35,7 +35,10 @@ import {
   SummarizeLearningDto,
   SummarizeOutcomeDto,
   SummarizeReportDto,
+  ResolveBrandDto,
+  GenerateVideoScriptDto,
 } from "./dto/ai.dto";
+
 
 @Injectable()
 export class AiService {
@@ -798,4 +801,69 @@ export class AiService {
       input: dto,
     });
   }
+
+  // ============================================================
+  // K. 品牌与竞品智能解析 (Commercial SOP Parity)
+  // ============================================================
+
+  async resolveBrand(userId: string, projectId: string, dto: ResolveBrandDto) {
+    const project = await this.tenant.assertUserInProject(userId, projectId);
+    return this.gateway.generateStructured<{
+      brandName: string;
+      fullName: string;
+      region: string;
+      industry: string;
+      aliases: string[];
+      competitors: string[];
+      coreKeywords: string[];
+      discoveryQueries: Array<{
+        text: string;
+        category: string;
+        intent: string;
+      }>;
+    }>({
+      organizationId: project.organizationId,
+      projectId: project.id,
+      userId,
+      feature: "brand_resolution",
+      provider: dto.provider,
+      model: dto.model,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      promptVersion: PROMPT_VERSIONS.BRAND_RESOLUTION,
+      input: dto,
+    });
+  }
+
+  // ============================================================
+  // L. 视频脚本生成 (Video Script Generation)
+  // ============================================================
+
+  async generateVideoScript(userId: string, projectId: string, dto: GenerateVideoScriptDto) {
+    const project = await this.tenant.assertUserInProject(userId, projectId);
+    return this.gateway.generateStructured<{
+      title: string;
+      hook: string;
+      scenes: Array<{
+        sceneNumber: number;
+        visual: string;
+        narration: string;
+        durationSeconds: number;
+      }>;
+      callToAction: string;
+      tags: string[];
+    }>({
+      organizationId: project.organizationId,
+      projectId: project.id,
+      userId,
+      feature: "video_script",
+      provider: dto.provider,
+      model: dto.model,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      promptVersion: PROMPT_VERSIONS.VIDEO_SCRIPT,
+      input: dto,
+    });
+  }
 }
+

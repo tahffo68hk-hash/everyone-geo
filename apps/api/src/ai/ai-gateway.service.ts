@@ -66,6 +66,7 @@ import {
   calculateEstimatedCost,
   type ModelPricing,
   InteractiveRuntime,
+  ProviderKind,
   LLMProviderError,
   ProviderDisabledError,
   ProviderNotConfiguredError,
@@ -184,7 +185,7 @@ export class AiGatewayService {
 
       // 2. 解析目标 Provider
       const isAuto = !req.provider || req.provider === "auto";
-      let targetProvider: "deepseek" | "qwen" | "mock";
+      let targetProvider: ProviderKind;
       let response: {
         content: string;
         model: string;
@@ -196,7 +197,7 @@ export class AiGatewayService {
         requestId: string | null;
       };
 
-      let activeProvider: "deepseek" | "qwen" | "mock" | "auto" = req.provider && req.provider !== "auto" ? req.provider : "auto";
+      let activeProvider: AiProviderName = req.provider && req.provider !== "auto" ? req.provider : "auto";
       let status = "SUCCESS";
       let errorCode: string | undefined;
       let errorMessage: string | undefined;
@@ -424,7 +425,7 @@ Please return ONLY the corrected, valid JSON conforming to the original schema. 
   /**
    * 解析目标 Provider，委托 @geo/llm InteractiveRuntime 统一处理
    */
-  private resolveProvider(requested?: AiProviderName): "deepseek" | "qwen" | "mock" {
+  private resolveProvider(requested?: AiProviderName): ProviderKind {
     try {
       return this.runtime.resolveProvider(requested || "auto");
     } catch (err: any) {

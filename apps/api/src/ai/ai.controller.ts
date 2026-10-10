@@ -40,7 +40,10 @@ import {
   SummarizeLearningDto,
   SummarizeOutcomeDto,
   SummarizeReportDto,
+  ResolveBrandDto,
+  GenerateVideoScriptDto,
 } from "./dto/ai.dto";
+
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -375,4 +378,33 @@ export class AiController {
   ) {
     return this.aiService.draftLearningActions(u.sub, id, dto);
   }
+
+  // ============================================================
+  // K. 品牌与竞品智能解析 (Commercial SOP Parity)
+  // ============================================================
+
+  @Post("projects/:id/ai/resolve-brand")
+  @HttpCode(200)
+  resolveBrand(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: ResolveBrandDto,
+  ) {
+    return this.aiService.resolveBrand(u.sub, id, dto);
+  }
+
+  // ============================================================
+  // L. 视频脚本生成 (Video Script AI)
+  // ============================================================
+
+  @Post("projects/:id/ai/video-script")
+  @HttpCode(200)
+  generateVideoScript(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: GenerateVideoScriptDto,
+  ) {
+    return this.aiService.generateVideoScript(u.sub, id, dto);
+  }
 }
+

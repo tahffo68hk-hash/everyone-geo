@@ -12,11 +12,20 @@ import {
   Min,
 } from "class-validator";
 
-export type AiProviderName = "deepseek" | "qwen" | "mock" | "auto";
+export type AiProviderName =
+  | "deepseek"
+  | "qwen"
+  | "doubao"
+  | "kimi"
+  | "zhipu"
+  | "yuanbao"
+  | "baidu"
+  | "mock"
+  | "auto";
 
 export class BaseAiOptionsDto {
   @IsOptional()
-  @IsIn(["deepseek", "qwen", "mock", "auto"])
+  @IsIn(["deepseek", "qwen", "doubao", "kimi", "zhipu", "yuanbao", "baidu", "mock", "auto"])
   provider?: AiProviderName;
 
   @IsOptional()
@@ -534,3 +543,44 @@ export class DraftLearningActionsDto extends BaseAiOptionsDto {
   @IsString()
   patternSummary?: string;
 }
+
+// K1. Brand & Competitor Auto-Resolution (SOP Parity from Commercial GEO Systems)
+export class ResolveBrandDto extends BaseAiOptionsDto {
+  @IsString()
+  @IsNotEmpty()
+  brandName: string;
+
+  @IsOptional()
+  @IsString()
+  industryHint?: string;
+
+  @IsOptional()
+  @IsString()
+  regionHint?: string;
+}
+
+// L1. Video Script Generation (Short-video & Social Channels)
+export class GenerateVideoScriptDto extends BaseAiOptionsDto {
+  @IsString()
+  @IsNotEmpty()
+  topic: string;
+
+  @IsOptional()
+  @IsString()
+  brandName?: string;
+
+  @IsOptional()
+  @IsString()
+  targetAudience?: string;
+
+  @IsOptional()
+  @IsIn(["DOUYIN", "KUAISHOU", "WECHAT_CHANNELS", "XIAOHONGSHU"])
+  platform?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(15)
+  @Max(180)
+  targetDurationSeconds?: number;
+}
+

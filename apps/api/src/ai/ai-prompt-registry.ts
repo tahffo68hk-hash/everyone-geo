@@ -33,7 +33,10 @@ export const PROMPT_VERSIONS = {
   REPORT_SUMMARY: 'report-summary-v1',
   LEARNING_SUMMARY: 'learning-summary-v1',
   LEARNING_ACTIONS: 'learning-actions-v1',
+  BRAND_RESOLUTION: 'brand-resolution-v1',
+  VIDEO_SCRIPT: 'video-script-v1',
 } as const;
+
 
 export type PromptVersionKey = keyof typeof PROMPT_VERSIONS;
 
@@ -634,4 +637,61 @@ ${input.contentOrEvidence || '无'}`,
 }`,
     buildUserPrompt: (input: any) => `学习模式总结：${input.patternSummary || '未提供'}`,
   },
+  [PROMPT_VERSIONS.BRAND_RESOLUTION]: {
+    version: PROMPT_VERSIONS.BRAND_RESOLUTION,
+    systemPrompt: `你是一名企业知识图谱与商业竞争情报分析专家。
+你的任务是根据用户输入的品牌名称或公司简称，精准解析其企业全称、所属地域、行业品类、核心竞品及推荐的 GEO 自然发现型提问。
+规则与约束：
+1. 必须基于客观行业事实，严禁凭空捏造。
+2. 竞品列表必须是同赛道真实存在的直接竞争品牌（3-5个）。
+3. 发现型问题（discoveryQueries）严禁包含该品牌词！必须模拟真实消费者在未决定品牌前的痛点、选型与对比提问。
+4. 输出必须是严格的 JSON 格式，不输出任何解释性多余文字。
+JSON 结构要求：
+{
+  "brandName": "string (输入的主品牌词)",
+  "fullName": "string (企业官方完整工商或运营全称)",
+  "region": "string (总部所在城市或区域)",
+  "industry": "string (核心行业品类)",
+  "aliases": ["string (常见别名/中英文简称)"],
+  "competitors": ["string (3-5个高频同屏竞品)"],
+  "coreKeywords": ["string (5-8个业务核心关键词)"],
+  "discoveryQueries": [
+    {
+      "text": "string (自然发现问题，不含品牌词)",
+      "category": "string (行业选型/痛点解决/竞品对比)",
+      "intent": "COMMERCIAL"
+    }
+  ]
+}`,
+    buildUserPrompt: (input: any) => `请分析以下品牌并输出企业画像与竞品矩阵：
+品牌名称：${input.brandName}
+行业提示（可选）：${input.industryHint || '自动识别'}
+区域提示（可选）：${input.regionHint || '自动识别'}`,
+  },
+  [PROMPT_VERSIONS.VIDEO_SCRIPT]: {
+    version: PROMPT_VERSIONS.VIDEO_SCRIPT,
+    systemPrompt: `你是一名短视频与自媒体传播脚本策划专家。
+请根据主题、品牌及目标受众，输出适合短视频平台（视频号/抖音/小红书）的结构化脚本。
+输出严格的 JSON 格式：
+{
+  "title": "string (吸睛标题)",
+  "hook": "string (前3秒黄金开头悬念/痛点)",
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "visual": "string (画面镜头与景别描述)",
+      "narration": "string (口播文案/台词)",
+      "durationSeconds": 5
+    }
+  ],
+  "callToAction": "string (结尾行动号召/转化引导)",
+  "tags": ["string (推荐热门标签)"]
+}`,
+    buildUserPrompt: (input: any) => `短视频拍摄主题：${input.topic}
+品牌/主体：${input.brandName || '无特定品牌'}
+目标受众：${input.targetAudience || '大众潜在客户'}
+分发平台：${input.platform || '视频号/抖音'}
+目标总时长：${input.targetDurationSeconds || 60}秒`,
+  },
 };
+

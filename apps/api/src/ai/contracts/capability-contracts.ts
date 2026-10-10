@@ -299,6 +299,54 @@ export const CAPABILITY_SCHEMAS: Record<string, DeepSchema> = {
       disclaimer: { type: 'string' },
     },
   },
+
+  // Brand Intelligence Domain
+  brand_resolution: {
+    type: 'object',
+    properties: {
+      brandName: { type: 'string' },
+      fullName: { type: 'string' },
+      region: { type: 'string' },
+      industry: { type: 'string' },
+      aliases: { type: 'array', items: { type: 'string' } },
+      competitors: { type: 'array', items: { type: 'string' } },
+      coreKeywords: { type: 'array', items: { type: 'string' } },
+      discoveryQueries: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            text: { type: 'string' },
+            category: { type: 'string' },
+            intent: { type: 'string' },
+          },
+        },
+      },
+    },
+  },
+
+  // Video Script Domain
+  video_script: {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      hook: { type: 'string' },
+      scenes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            sceneNumber: { type: 'number' },
+            visual: { type: 'string' },
+            narration: { type: 'string' },
+            durationSeconds: { type: 'number' },
+          },
+        },
+      },
+      callToAction: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } },
+    },
+  },
 };
 
 export function validateCapabilityOutput(feature: string, data: unknown): { valid: boolean; errors: string[] } {
