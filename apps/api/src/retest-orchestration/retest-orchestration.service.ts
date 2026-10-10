@@ -445,28 +445,73 @@ export class RetestOrchestrationService {
 
     if (!retestRun) throw new NotFoundException("重测任务不存在");
 
-    await this.db.client.retestRun.update({
-      where: { id: retestRunId },
-      data: { status: "RUNNING", startedAt: new Date() },
+    // 1. 终态幂等防护：若已经是 COMPLETED 终态，零副作用直接返回
+    if (retestRun.status === "COMPLETED") {
+      return retestRun;
+    }
+
+    // 2. 并发执行防护：若当前已处于 RUNNING 状态，避免并发重复调度
+    if (retestRun.status === "RUNNING") {
+      return retestRun;
+    }
+
+    // 3. 乐观原子锁：状态从可执行态流转至 RUNNING
+    const lockAcquired = await this.db.client.retestRun.updateMany({
+      where: {
+        id: retestRunId,
+        status: { in: ["PENDING", "QUEUED", "PARTIAL", "FAILED"] },
+      },
+      data: {
+        status: "RUNNING",
+        startedAt: retestRun.startedAt || new Date(),
+      },
     });
 
-    // 复用底层 MonitorTask 体系，形成完整 Run -> Evidence 链路
+    if (lockAcquired.count === 0) {
+      // 未获取到执行锁（可能已被并发请求抢占或已进入终态），直接返回当前最新状态
+      return this.db.client.retestRun.findUnique({
+        where: { id: retestRunId },
+        include: { items: true, project: true, publishedAsset: true },
+      });
+    }
+
+    // 4. 成功 Evidence 历史保护与增量重试：筛选出未成功的 items
+    const pendingItems = retestRun.items.filter((i) => i.status !== "SUCCEEDED" || !i.evidenceId);
+
+    // 若全部 item 事实上均已完成，结算为 COMPLETED
+    if (pendingItems.length === 0) {
+      await this.db.client.retestRun.update({
+        where: { id: retestRunId },
+        data: {
+          status: "COMPLETED",
+          completedItems: retestRun.items.length,
+          failedItems: 0,
+          completedAt: new Date(),
+        },
+      });
+      return this.db.client.retestRun.findUnique({
+        where: { id: retestRunId },
+        include: { items: true, project: true, publishedAsset: true },
+      });
+    }
+
+    // 复用底层 MonitorTask 体系，仅为本次需要执行的 pendingItems 建立执行上下文
     const monitorTask = await this.db.client.monitorTask.create({
       data: {
         organizationId: retestRun.organizationId,
         projectId: retestRun.projectId,
-        totalRuns: retestRun.items.length,
+        totalRuns: pendingItems.length,
         status: "RUNNING",
         startedAt: new Date(),
-        metadata: { retestRunId },
+        metadata: { retestRunId, retryCount: pendingItems.length },
       },
     });
 
     // 冻结目标实体快照
     const entities = await this.snapshotEntities(retestRun.projectId);
 
-    // 逐项执行每个 RetestItem
-    for (const item of retestRun.items) {
+    // 仅逐项执行未成功的 RetestItem；已成功的项严格保留原有 evidenceId 和 runId，绝不覆写
+    for (const item of pendingItems) {
       const itemStart = new Date();
       await this.db.client.retestItem.update({
         where: { id: item.id },

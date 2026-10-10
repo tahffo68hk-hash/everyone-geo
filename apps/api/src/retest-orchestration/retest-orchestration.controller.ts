@@ -36,7 +36,7 @@ export class RetestOrchestrationController {
    * 查询单次重测任务详情与状态
    * GET /retests/:id 或 GET /api/content/retests/:id
    */
-  @Get(["retests/:id", "api/content/retests/:id", "content/retests/:id"])
+  @Get(["retests/:id", "api/content/retests/:id", "content/retests/:id", "retest-runs/:id", "api/content/retest-runs/:id"])
   getRetestRun(
     @CurrentUser() u: JwtUserPayload,
     @Param("id", ParseUUIDPipe) id: string,
@@ -72,7 +72,13 @@ export class RetestOrchestrationController {
    * 手动触发/重试执行 Retest 任务
    * POST /retests/:id/process 或 POST /api/content/retests/:id/process
    */
-  @Post(["retests/:id/process", "api/content/retests/:id/process", "content/retests/:id/process"])
+  @Post([
+    "retests/:id/process",
+    "api/content/retests/:id/process",
+    "content/retests/:id/process",
+    "retest-runs/:id/execute",
+    "api/content/retest-runs/:id/execute",
+  ])
   @HttpCode(200)
   processRetest(
     @CurrentUser() u: JwtUserPayload,

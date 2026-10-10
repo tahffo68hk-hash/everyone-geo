@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 import { deriveRetestProgress } from "../../../lib/retest-progress";
 import type { RetestProgressInput, RetestProgressView } from "../../../lib/retest-progress";
 
