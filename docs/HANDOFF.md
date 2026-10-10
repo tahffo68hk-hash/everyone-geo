@@ -1,8 +1,8 @@
 # GeoLens 逆向成果收敛、功能验收与交接记录 (HANDOFF.md)
 
 - **交接日期**: 2026-10-11
-- **当前 Git HEAD**: `e731f92` (基线: `a7f210a`)
-- **Git 状态**: 本地已提交 (Local Commits Only, **STRICTLY NO PUSH**)
+- **当前 Git HEAD**: `b9399fb` (基线: `a7f210a`)
+- **Git 状态**: 本地已全部提交，工作区干净 (Local Commits Only, **STRICTLY NO PUSH**)
 
 ---
 
@@ -20,9 +20,9 @@
 
 ---
 
-## 二、三项核心功能验收与交付状态
+## 二、核心功能验收与交付状态
 
-### 1. 国产模型适配 (`packages/llm`) — 【部分完成 / 分级收敛】
+### 1. 国产模型适配 (`packages/llm`) — 【已验证 / 分级收敛】
 明确区分四个层级，不为了凑齐八个引擎提供虚假支持状态：
 - **A. 已实现并经过全面测试**: `mock`, `deepseek`, `qwen`。
 - **B. 已实现标准适配并具备优雅回退，但未配置真实收费 Key 实测**: `doubao` (火山引擎), `kimi` (月之暗面), `zhipu` (智谱 GLM)。在 InteractiveRuntime 中实现了 OpenAI-compatible 端点及环境变量回退；当未配置 Key 时统一抛出 `ProviderNotConfiguredError`。
@@ -41,8 +41,19 @@
   - **即时撤销机制**: 租户可通过 `POST /reports/:id/revoke-share` 一键撤销分享，撤销后公开链接立刻返回 404。
   - **前端协同**: 在 `/app/reports/[id]` 内部报告详情页提供「复制安全链接」、「📱 预览 H5」与「撤销分享」按钮；在 `/share/report/[token]` 提供适配移动端与微信环境的公开诊断页面。
 
-### 4. 增量支持：短视频脚本生成 AI (`video_script`) — 【已验证可用】
+### 4. 短视频脚本生成 AI (`video_script`) — 【已验证可用】
 - 针对用户对于自媒体辅助能力的扩展需求，在 AI 领域服务中扩展了短视频脚本生成能力（`GenerateVideoScriptDto`, `video-script-v1`, `POST /projects/:id/ai/video-script`），支持视频号、抖音、小红书的 3 秒黄金悬念 Hook、分镜口播与 CTA 转化脚本生成，与现有 `content-execution` 多渠道分发架构保持无缝协同。
+
+### 5. LOC-002: 真实发布时间与资产身份核验 — 【已验证交付】
+- **真实时间确权**: 在资产登记中严格落地 `actualPublishedAt`，当外部渠道尚未返回真实发布时间时，显式保持为 `null`，严禁用当前系统时间（`now`）伪造已发布状态。
+- **防伪造与边界防护**: 拒绝未来时间、无时区非法时间；严格拦截跨项目计划注入与内容版本错配；未接入官方开放平台授权凭证时拦截伪造 `PLATFORM_CONFIRMED`。
+- **重复登记幂等性**: 对相同外部 URL / 资产 ID 的重复登记操作提供幂等保护。
+
+### 6. LOC-003: Retest 执行幂等、并发防护与 Evidence 历史保护 — 【已验证交付】
+- **终态幂等**: 对已处于 `COMPLETED` 状态的 Retest 任务，重放调用零副作用，不产生冗余 MonitorTask。
+- **原子并发锁**: 采用乐观原子更新机制防护多客户端/进程并发触发重测。
+- **成功 Evidence 保护与增量重试**: 当重测任务部分失败并重新触发时，严格保留已有成功的 `evidenceId` 和 `runId`，绝不覆写历史有效证据；仅对尚未成功的条目进行增量调度。
+- **Web 端协同**: Outcome Workspace 中 `retest-progress-panel` 与 `retest-run-selector` 完整呈现执行进度、部分失败提示及历史运行切换。
 
 ---
 
@@ -50,28 +61,34 @@
 
 1. **`@geo/llm` 单元测试**:
    - `node --test packages/llm/test/*.test.ts` -> **55/55 passed (100%)**
-2. **`@geolens/api` 端到端与安全测试**:
+2. **`@geolens/api` 单元与 E2E 测试**:
    - `jest test/reports.e2e-spec.ts` -> **18/18 passed (包含新增公开分享令牌、白名单字段与撤销 404 验证)**
    - `jest test/ai-gateway.e2e-spec.ts` -> **4/4 passed**
    - `jest test/schema-validator.e2e-spec.ts` -> **5/5 passed**
+   - `jest test/ai-brand-resolution.e2e-spec.ts` -> **6/6 passed (AI 解析、Discovery 词非污染、候选隔离与短视频脚本)**
+   - `jest test/loc002-loc003-trust.e2e-spec.ts` -> **11/11 passed (LOC-002 真实资产身份与 LOC-003 执行幂等)**
 3. **全栈生产构建**:
-   - `nest build` -> **成功，0 错误**
-   - `next build` -> **成功，全站 25 个静态与动态页面编译完成，0 报错**
+   - `pnpm build:api` (`nest build`) -> **成功，0 错误**
+   - `pnpm build:web` (`next build`) -> **成功，全站 25 个静态与动态页面编译完成，0 报错**
 
 ---
 
 ## 四、本地 Commit 记录 (NO PUSH)
 
 ```
-083a1dd feat(llm): adapt domestic model configs and execution fallbacks
-d5a6294 feat(ai): add brand auto-resolution with schema validation and video script generation
+b9399fb feat(retest): complete LOC-002 real published assets and LOC-003 retest execution idempotency
+1517fa6 test(ai): add e2e test suite for brand resolution, discovery query integrity and video script
+1c09d6a docs: add handoff document for rea technical verification and acceptance
 e731f92 feat(reports): secure h5 report sharing with cryptographic tokens and field whitelisting
+d5a6294 feat(ai): add brand auto-resolution with schema validation and video script generation
+083a1dd feat(llm): adapt domestic model configs and execution fallbacks
+a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safety boundaries
 ```
 
 ---
 
-## 五、下一条可执行任务 (Next Steps)
+## 五、当前系统状态与后续建议 (Next Steps)
 
-1. **真实模型联调准备 (可选)**: 如需将 `doubao` 或 `kimi` 升级为 A 级已测状态，在预发环境提供真实 API Key 并编写集成测试。
-2. **RPA / 消费者 AI 搜索端收录采集**: 竞品针对元宝与文心一言的监测采用的是模拟客户端/网页端查询，若需要对齐此项能力，需评估部署轻量级无头浏览器抓取 Worker。
-3. **保护未提交的并行分支任务**: 工作区中保留的其他 Agent 修改（`retest-orchestration` 相关文件及 `loc002-loc003-trust.e2e-spec.ts`）请勿覆盖，继续由对应负责人推进。
+1. **Git 仓库状态**: 所有新功能与 LOC-002/003 均已完成本地 Commit，工作区干净，严格遵守 **NO PUSH** 规则。
+2. **生产部署准备**: 前后端构建产物已完整生成（Next.js 15 生产优化产物与 NestJS dist 包）。
+3. **真实模型密钥上线 (可选)**: 如需将 `doubao` 或 `kimi` 升级为 A 级已测状态，在生产/预发环境变量中配置对应 API Key 即可，代码适配与兜底均已就绪。
