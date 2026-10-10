@@ -1,0 +1,788 @@
+# WEB-007 — F1/F2 真实性与重放失败场景设计
+
+> **交付性质：仅静态场景规格（PROPOSED），不是已实现 Jest 测试、生产 API、迁移、运行证据或真实平台/Provider 核验。** 输入仓库 HEAD `4652ae647e67385f4732c4a867d764248055c9ea`，Context `ctx-v1-4818611febb3`；实际本地 HEAD、DB/Redis、Provider 幂等/收费、版本路由均 **UNKNOWN**。
+
+## 1. 当前实现已具备（仅基于所给 EXISTING 源码片段）
+
+- **DTO 可表达** `provider`、`retrievalMode`、`sourceType`、`queryIds`、`forceNew`、`autoExecute`、`simulateFailureQueryId`；`autoExecute` 的服务端逻辑是未显式 `false` 即同步调用 `executeRetestRunInternal`。这不是 worker 异步重放保证。
+- **创建重测前已有租户检查**：`createRetestRun` 用 `tenant.assertUserInProject(userId, asset.projectId)`。`TenantService` 实际实现是检查项目所属组织 membership，**不是**项目级单独 ACL。
+- **部分幂等防护**：`forceNew=false` 时先 `findFirst` 查找 `PENDING/QUEUED/RUNNING` 的 RetestRun 并复用。查找与创建跨步骤，给定 schema 片段未显示活跃 Run 唯一互斥。
+- **Query 冻结快照**：创建时产生 `querySnapshot` 的 `id/text/category/intent/queryType/sanity`；`RetestItem` 包含 `queryText`、`attemptCount`、`runId`、`evidenceId`、`baselineStatus`。
+- **执行路径（给定片段）**：开始时更新 Run=`RUNNING`，新建 `MonitorTask`，遍历 `retestRun.items` 把 item 标为 `RUNNING` 并递增 `attemptCount`；成功分支展示的 Evidence 是本地拼出的 Mock 文本及 canonicalUrl 引用，不能因此声称进行了网页检索。
+- **发布真实性有格式级校验**：`validateAuthenticExternalEvidence` 拒绝特定 mock/fake URL/ID；PLATFORM_CONFIRMED 要求 URL 或 ID；MANUAL_VERIFIED 要求 URL/ID 和说明。但格式检查≠真实平台证明。
+- **已存在部分关联检查**：创建 PublishedAsset 校验 Draft 同项目、Revision 属该 Draft、Publication/Campaign/Schedule 在当前项目；展示的 PlanItem 检索却只限定 `organizationId`。是否在下文追加检查需本地看完整函数。
+- **现有 schema 版本唯一性**：`@@unique([retestItemId, comparisonVersion])` 与 `@@unique([outcomeComparisonId, attributionVersion])`；不等于读取时总能选中正确版本。
+- **前端可观察序列**：`handleTriggerRetest` 先 `createRetestRun(assetId, true)`，再 `processRetestRun(retest.id)`，最后固定展示“复测已完成并更新归因分析”；真实调用契约/阶段是否吻合需浏览器测试。
+- **现成测试基础**：有 NestJS + `@nestjs/testing`、Supertest、`@geo/database`、Jest e2e config；本交付**没有**向 Jest 注册新测试。
+
+### 证据定位（只引用 Context Pack 提供的行号与全文 SHA256）
+
+| 已有文件 | 片段位置 | 完整文件 SHA256 |
+|---|---|---|
+| `apps/api/src/retest-orchestration/dto/retest-orchestration.dto.ts` | L1–69 | `6be7382571cd694431452dd7b271980d70dd08fbec84ac33d430a3a77393dc92` |
+| `apps/api/src/retest-orchestration/retest-orchestration.service.ts` | L224–302 / L394–402 / L436–554 | `1d098a9b399b0eda99163743517bcdfb5a0cfaaec35507c9f8f69596739ed63c` |
+| `apps/api/src/content-execution/dto/content-execution.dto.ts` | L410–534 | `60ae8411ca76e383707d7d7a0672932ed2cacea7a65b87cd1af7aec1474dbce7` |
+| `apps/api/src/content-execution/content-execution.service.ts` | L1841–1897 / L1937–2027 / L2011–2052 | `73f362d509c38b33392295617494a7bda1bead2253548846a00d3565acef0556` |
+| `packages/database/prisma/schema.prisma` | L2056–2235 | `c302882c10e386d79138b288c0974e933543baf7e5d0dd686d5b012d294e3886` |
+| `apps/api/src/common/tenant.service.ts` | L1–37 | `16f8301ef74d1dfe597cbf469f26b94ebcb35562707b23346aaba7b7cfda85c3` |
+| `apps/web/src/components/content/outcome-workspace/outcome-workspace-view.tsx` | L79–98 | `37f5e4fb0c3f6601926ad9e4ac147b8afeca0de7301f3dc96003f3b0a0243c15` |
+| `apps/api/test/retest-orchestration.e2e-spec.ts` | L1–8 | `be609c36ccde1b001558caf95f61cc1b88b68e6b285107d9a774f923b0503698` |
+| `apps/api/test/jest-e2e.json` | L1–14 | `8568366f710fcbba542194a7e56f308716f7cb02a1fbc1640e1172c422c951fc` |
+
+以上 SHA 是输入 Context Pack 的**声明值**；当前没有仓库副本，未重新计算/比对原文件。`docs/DEVELOPMENT_WORKFLOW.md`、`docs/DECISIONS.md`、`docs/EVIDENCE.md` 被列为规范来源，但正文未提供，故不得据此填补未给出的 Service 行为。
+
+## 2. 静态缺口、风险与判断边界
+
+1. **真实性语义**：平台 URL/ID 仅通过格式校验的片段，不能证实 externalAssetId、真实发布时间或 PubAttempt 来源；发布时刻与 `verifiedAt` 有本质区别。`PLATFORM_CONFIRMED`、`MANUAL_VERIFIED`、Mock、`official_api`、`api_plain` 不可互相替代。
+2. **血缘一致性**：组织级 membership 不保证相同项目的 Plan/Query/Publication/Draft/Revision/Outcome；应逐个核对项目键与父子关系。给定片段对 PlanItem 仅限制组织，对 Publication 未显示 `draftId/revisionId` 交叉一致性检查。
+3. **同步执行与重放**：服务端默认 autoExecute，Web 随后 process；`executeRetestRunInternal` 在所给片段中无终态 guard/领取租约，且遍历所有 Item。需验证一次点击、终态 replay、partial retry、双进程 race、崩溃恢复，不能用单线程 Jest 代替。
+4. **Evidence 真实时间/来源**：成功分支人工构造引用，并可将 `createdAt` 调到发布/核验相关未来时间之后；这是测试关注的静态风险，不代表实际已有线上伪造记录。
+5. **成本和 Provider**：Provider 已处理但响应丢失、返回后崩溃、幂等键、账单与预算 schema 均 UNKNOWN；不允许默认 cost=0、无计费或声称可 exactly-once。
+6. **版本/下游阶段**：有比较/归因版本唯一性，不保证读写 selector 正确；Run 完成不意味着 OutcomeComparison/Attribution 已生成，M11 的 `sampleCount>=3` 规则不能用单样本伪造规律。
+7. **现有覆盖边界**：给定源码与已存在 M10 suites 并非本轮实测证据；此处布尔值 `expectedCurrentFailure` 是**静态预测标签**，true 不意味着已复现、false 不意味着已通过。
+
+### 观测与判定通则
+
+- 每个场景的 `C0/C1` 指动作前后**同一过滤条件下**的 count；ID 必须来自真实测试数据库返回，不可拼造；影响对象由子表至父表核对。最常用关联键是 `organizationId / projectId / publishedAssetId / retestRunId / retestItemId / queryId / runId / evidenceId / comparisonVersion / attributionVersion`。
+- History SHA256：对测试前锁定的**合成历史行集合**，按 `(表名,主键)` 排序，读取数据库完整原始字段（含 `updatedAt`），将 Date 统一 ISO-8601 UTC、JSON 键递归排序、Decimal/BigInt 作无损字符串化，UTF-8 序列化后做 SHA256；先后必须用同一投影与规则。不要 hash 经过 UI 清洗的显示文本。
+- 请求计数：浏览器 network log 记录 create/process 的各次 HTTP；fake Provider ledger 独立记录 accepted、replayed、idempotencyKey 与未知费用；DB 记录 Run/MonitorTask/Evidence counts。Provider 的 accepted 和 HTTP client 的发送次数不一定一致。
+- 错误边界：404 防资源存在性泄漏，4xx/409 是否合适须遵循已有 DTO/Controller；失败时数/指纹不变优先于特定错误字符串；UNKNOWN/null 不能自动重写为 0/false/当前时间。
+- 若某个字段或入口在本地不存在，场景标 `BLOCKED_HARNESS`，在报告中标注缺失的**真实**接口和对应 LOC 编号；**禁止**为过关而凭空发明 production DTO/service、数据库迁移或外部数据。
+
+## 3. 拟议测试：场景矩阵（完整断言在 JSON 中可机器读取）
+
+共 **31** 项：F1 13，F2 15，HISTORY 3。规格文件：`apps/api/test/f1-f2-trust.scenarios.json`，`schemaVersion=1`；**它不是 `.e2e-spec.ts`，Jest 不会自动执行。**
+
+| ID | 主题 | 静态预期失败 |
+|---|---|---|
+| `F1-001` | 同组织跨项目 PlanItem 身份绑定 | 是（待复现） |
+| `F1-002` | 不同草稿的 Revision 与 Publication 混绑 | 是（待复现） |
+| `F1-003` | 伪造但格式合法的 PLATFORM_CONFIRMED | 是（待复现） |
+| `F1-004` | 已知 Mock URL/ID 与空核验依据的边界拒绝 | 否/未知（待测试） |
+| `F1-005` | Mock PublicationAttempt 不得升级为真实平台核验 | 是（待复现） |
+| `F1-006` | 真实发布时间 UNKNOWN 不能回填为核验时刻 | 是（待复现） |
+| `F1-007` | 未来发布时间、核验时间及 Evidence 时序 | 是（待复现） |
+| `F1-008` | 并发重复发布资产登记 | 是（待复现） |
+| `F1-009` | mock Provider 携带 official_api 的身份漂白 | 是（待复现） |
+| `F1-010` | 构造引用与人为未来 createdAt 不得变成来源证明 | 是（待复现） |
+| `F1-011` | 跨租户访问零副作用 | 否/未知（待测试） |
+| `F1-012` | 显式 queryIds 跨项目注入 | 否/未知（待测试） |
+| `F1-013` | manual_verified 说明与 sourceType 来源一致性 | 是（待复现） |
+| `F2-001` | 前端一次点击造成 create 自动执行再 process | 是（待复现） |
+| `F2-002` | COMPLETED 终态重复 process | 是（待复现） |
+| `F2-003` | 两个独立进程并发 process 同一个 Run | 是（待复现） |
+| `F2-004` | PARTIAL 失败重试不重写已成功 Item/Evidence | 是（待复现） |
+| `F2-005` | Provider 已处理但响应丢失的重试幂等性 | 否/未知（待测试） |
+| `F2-006` | Provider 返回成功、落库前进程崩溃 | 否/未知（待测试） |
+| `F2-007` | 费用返回 UNKNOWN 与预算闸门 | 否/未知（待测试） |
+| `F2-008` | Query 编辑后运行输入快照仍冻结 | 否/未知（待测试） |
+| `F2-009` | 同一 RetestItem 多算法版本首条污染 | 否/未知（待测试） |
+| `F2-010` | 缺 baseline 或 INCOMPATIBLE 不产生虚假 delta | 否/未知（待测试） |
+| `F2-011` | Outcome 与 Attribution 尚未生成不能显示闭环完成 | 是（待复现） |
+| `F2-012` | 切换项目后旧请求晚返回污染 UI | 否/未知（待测试） |
+| `F2-013` | 并发 create 同一资产活跃 Run 的序号与幂等 | 是（待复现） |
+| `F2-014` | 中途异常后 RUNNING 状态的恢复与错误边界 | 否/未知（待测试） |
+| `F2-015` | Run 成功但 Evidence 链路缺失不能计为成功 | 否/未知（待测试） |
+| `HISTORY-001` | M10/M11/Report/Evidence 历史指纹守恒 | 否/未知（待测试） |
+| `HISTORY-002` | 跨项目血缘与历史读取隔离 | 否/未知（待测试） |
+| `HISTORY-003` | 重复重测不污染既有 Report/Evidence 与旧版本下游 | 是（待复现） |
+
+### 完整 setup / actions / observables / assertions / cleanup 矩阵
+
+#### F1-001 · 同组织跨项目 PlanItem 身份绑定
+
+**Setup**
+- geo_test 合成组织 O1 含项目 P_A、P_B；用户 U1 为 O1 成员；P_A 草稿 D_A 与版本 R_A，P_B 规划项 PLAN_B；记录创建前关联项与 publishedAsset 总数 C0。
+
+**Action**
+- 按本地已存在的 createPublishedAsset 入口提交 projectId=P_A、draftId=D_A、revisionId=R_A、planItemId=PLAN_B，其余必填为合成合法值。
+
+**Observable**
+- Prisma.contentPlanItem.findUnique(PLAN_B) 的 projectId=P_B、organizationId=O1；PublishedAsset 同一 draftId=D_A 且 planItemId=PLAN_B 的 count；PublishedAsset 创建总数 C1；HTTP 返回状态。
+
+**Assertion**
+- 必须拒绝跨项目组合且不泄露 P_B 的资源内容；C1-C0=0；不存在 projectId=P_A 且 planItemId=PLAN_B 的记录。
+- 如接受即失败；仅组织级 membership 与 planItem.organizationId=O1 不足以证明计划项同项目。
+
+**Cleanup**
+- 按合成 ID 删除草稿、规划项与项目；检查历史数据指纹不变，不删除已有资产。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 本地需要 createPublishedAsset 控制器路由、完整 PlanItem schema/关联字段、独立 geo_test 合成 seed。
+
+#### F1-002 · 不同草稿的 Revision 与 Publication 混绑
+
+**Setup**
+- O1/P_A 内建立 D1/R1/Publication PUB1 与 D2/R2/Publication PUB2；预存 D1、R1、PUB1、PUB2 的 draftId/revisionId；PublishedAsset count=C0。
+
+**Action**
+- 对 D1/R1 传 publicationId=PUB2；再对 D1/R1/PUB1 传不相符的 publication 内版本关系（按实际 schema 可表达的非法组合）。
+
+**Observable**
+- contentRevision(R1).draftId、publication(PUB2).draftId 与 revisionId；PublishedAsset 包含 draftId/revisionId/publicationId 的组合；新建计数 C1-C0 与响应码。
+
+**Assertion**
+- 两种非法组合均须拒绝且 C1-C0=0；新 PublishedAsset 不存在 publication.draftId != asset.draftId 或 publication.revisionId != asset.revisionId（适用字段存在时）。
+
+**Cleanup**
+- 删除本场景合成 publication/revision/draft 和误创建资产，仅触达 P_A 资源。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 需要确认 Publication schema 是否包含 revisionId；完整 createPublishedAsset 校验后半段未在 Context Pack 中给出。
+
+#### F1-003 · 伪造但格式合法的 PLATFORM_CONFIRMED
+
+**Setup**
+- 创建合成 publication PUB_A；构造未被平台证明的 https://publisher.invalid/articles/opaque 与看似合法的 externalAssetId=asset-opaque；真实外部调用始终关闭；快照 PublishedAsset count C0。
+
+**Action**
+- 用 PLATFORM_CONFIRMED、canonicalUrl 和 externalAssetId 走现有发布确认入口；fake 平台核验适配器返回明确 NOT_FOUND（若当前无适配器，记录阻塞）。
+
+**Observable**
+- PublishedAsset count C1、verificationStatus/verifiedAt；publication.status/publishedAt；假平台核验请求数；相应 Audit 创建数（需本地确认查询方式）。
+
+**Assertion**
+- 未获得独立平台确认时，不得写入 verificationStatus=PLATFORM_CONFIRMED，也不得推进 publication=PUBLISHED / schedule=DONE；C1-C0=0；不得把格式合法等同真实证明。
+
+**Cleanup**
+- 清理合成 PUB_A 及子记录；不能清理/更改真实资产。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 现有片段只有格式/Mock 前缀校验；实际平台核验接口与第三方回执能力 UNKNOWN，LOC-003/004 需补 fake fixture。
+
+#### F1-004 · 已知 Mock URL/ID 与空核验依据的边界拒绝
+
+**Setup**
+- O1/P_A 合成 publication PUB_A；记录 PublishedAsset count C0 与 schedule 状态 S0。
+
+**Action**
+- 分别提交 PLATFORM_CONFIRMED + mock://asset、PLATFORM_CONFIRMED + mock_123、PLATFORM_CONFIRMED 且无 URL/ID；提交 MANUAL_VERIFIED 但 verificationNote 空白。
+
+**Observable**
+- 每次响应码/错误分类；PublishedAsset count C1；publication.status；scheduleItem.productionStatus；任何新增审计行数。
+
+**Assertion**
+- 四个非法输入逐一失败（按已有服务语义为参数拒绝）；C1-C0=0，publication/schedule 状态等于 S0；无核验成功审计。
+
+**Cleanup**
+- 清理测试合成 publication 与排期项；比较测试前后 count。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** 当前 validateAuthenticExternalEvidence 代码显示预期拒绝；需确认两条创建/确认入口均调用此 helper，不能仅凭 helper 存在宣称端到端通过。
+
+#### F1-005 · Mock PublicationAttempt 不得升级为真实平台核验
+
+**Setup**
+- 合成 Publication PUB_A 与仅含 mock/fake 回执的 Attempt ATT_M；不存在真实平台回执；先记录 asset 数 C0。
+
+**Action**
+- 选择 PUB_A 的最近 Attempt=ATT_M；尝试以 PLATFORM_CONFIRMED 进行发布确认；可另作 MANUAL_VERIFIED + 人工说明对照，明确其来源类别。
+
+**Observable**
+- PublicationAttempt id、来源/回执字段（本地 schema 适配）、PublishedAsset.publicationAttemptId、verificationStatus、verifiedAt；fake 平台核验调用数和 C1-C0。
+
+**Assertion**
+- 不可因为 ATT_M 存在而将其当成已验证的平台回执；PLATFORM_CONFIRMED 应拒绝或保持待核验，真实平台核验请求数=0 时不得声称平台已确认；MANUAL_VERIFIED 不可伪装为 PLATFORM_CONFIRMED。
+
+**Cleanup**
+- 清理 ATT_M、PUB_A 与关联合成资产；恢复测试 seed 状态。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** PublicationAttempt 完整字段及真实核验适配器缺失；需 LOC-003/004 在 fake fixture 定义来源和平台回执语义。
+
+#### F1-006 · 真实发布时间 UNKNOWN 不能回填为核验时刻
+
+**Setup**
+- 合成 pub PUB_U 无平台发布时刻，且发布时间未知；核验时刻 T_verify 为本地固定时钟；记录 PublishedAsset、Publication 与排期 metadata 初值。
+
+**Action**
+- 执行允许的人工核验路径；若策略禁止无发布时间数据，则断言明确待补；读取 PublishedAsset、Publication.publishedAt、scheduleItem.metadata.publishedAt。
+
+**Observable**
+- 各字段 serialized 值与类型；T_verify；C1-C0；核验状态；前端呈现发布时间文本（如可观察）。
+
+**Assertion**
+- 没有真实发布时刻证据时，展示/存储的实际发布时间必须为 null/UNKNOWN，不得用 T_verify 或记录创建时间冒充；verifiedAt 可以保留独立 T_verify。
+- 若业务要求已核验但发布时刻未知，状态必须可表达未知而非虚构。
+
+**Cleanup**
+- 删除合成数据；不回写旧 Publication/PublishedAsset 的任何时间字段。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** PublishedAsset 完整 schema 的 publishedAt 有无与核验策略 UNKNOWN；本地需冻结时钟并验证具体持久化字段与 UI 展示。
+
+#### F1-007 · 未来发布时间、核验时间及 Evidence 时序
+
+**Setup**
+- 为合成资产设置业务申报的真实发布时间 T_pub=T0+2d、核验时间 T_verify=T0、当前测试时刻 T0；建立发布时间 T_pub 前后不同的 baseline Evidence（合成）；原有 Evidence 指纹 H0。
+
+**Action**
+- 在 T0 触发 RetestRun(autoExecute=true)；若路径禁止未来 T_pub，则记录拒绝；检查新 Evidence.createdAt 和选用 baseline。
+
+**Observable**
+- RetestRun.status、RetestItem.baselineEvidenceId/status、Evidence.createdAt、PublishedAsset.publishedAt/verifiedAt；T_pub,T_verify,T0；新增 Run/Evidence count；H0/H1。
+
+**Assertion**
+- 未来真实发布时间未到，不得通过将 Evidence.createdAt 人为推至未来满足 eligibility；若无真实时序依据，应拒绝重测或保持缺基线/时间 UNKNOWN。
+- verifiedAt!=publishedAt 时的 baseline 判定必须使用有来源的真正发布时间；历史 H1=H0。
+
+**Cleanup**
+- 移除合成未来资产、baseline 与 retest 子数据；重新计算历史指纹。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 需要 fake clock 与合法的时间注入/受控 DB seed；PublishedAsset publishedAt 字段的 schema/流转来源需本地核对。
+
+#### F1-008 · 并发重复发布资产登记
+
+**Setup**
+- 同一 O1/P_A、草稿 D_A、Publication PUB_A 与平台回执 fixture；PublishedAsset count C0；使用两个独立 HTTP 客户端和 DB 连接。
+
+**Action**
+- 屏障同步两次针对同一逻辑外部资产 canonicalUrl/externalAssetId 的登记或核验请求；收集两个响应/失败。
+
+**Observable**
+- PublishedAsset 新增 ID 列表、count C1-C0、相同 externalAssetId + publicationId 组合数、PublicationAttempt 锚点、scheduleItem.metadata.publishedAssetId、Audit 记录数。
+
+**Assertion**
+- 同一逻辑资产新有效记录最多 1 条（C1-C0<=1）；关联引用与 schedule 锚点必须唯一一致；允许一个请求以明确 conflict/idempotent reuse 结束，但不能双重认为是两次独立发布。
+
+**Cleanup**
+- 按 fixture 的实际创建 ID 清理合成登记；不清理其他历史同 external ID 记录。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 唯一约束/事务/幂等键及并发可重复性 UNKNOWN；需 LOC-003 双连接 barrier，确认多版本发布策略后定义逻辑资产键。
+
+#### F1-009 · mock Provider 携带 official_api 的身份漂白
+
+**Setup**
+- O1/P_A 合成 Verified Asset，Mock 引擎与 1 条 Query；ENABLE_REAL_PROVIDERS=false；记录 Evidence count C0。
+
+**Action**
+- 调用 CreateRetestRunDto {provider:"mock",sourceType:"official_api",retrievalMode:"api_plain",autoExecute:true}，通过实际 enum 映射；查询 Run/Evidence。
+
+**Observable**
+- RetestRun.provider/sourceType/retrievalMode、Evidence.provider/sourceType、Evidence.rawResponse、MonitorTask/Run 数、Provider 真实/假 HTTP 请求数与 C1-C0。
+
+**Assertion**
+- 若真实 Provider 请求数=0 且生成的是 Mock 文本，持久化 sourceType 必须为 mock 或直接拒绝混合声明；不得以 official_api 对外宣称真实 API 证据；不得用 api_plain 证明网页被检索。
+
+**Cleanup**
+- 删除合成 run/items/run/evidence/MonitorTask，保证历史指纹不变。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** DTO 允许各字段独立指定；Service 片段未显示组合校验；具体 API 入口及 SourceType enum 取值需本地确认。
+
+#### F1-010 · 构造引用与人为未来 createdAt 不得变成来源证明
+
+**Setup**
+- 合成已核验资产 A，canonicalUrl 为 example.test 合成地址；T0 时钟，VerifiedAt=T0+1h；预记录 Evidence count C0 与 hash H0。
+
+**Action**
+- 同步重测 1 条 Query；只允许 fake Provider；检查自动拼接 rawResponse 中“参考来源”和 metadata.structuredCitations；检查写入的 Evidence.createdAt。
+
+**Observable**
+- Evidence.rawResponse/metadata.structuredCitations、createdAt、sourceType、provider、Run/Evidence count；fake HTTP 请求数；T0/VerifiedAt；H0/H1。
+
+**Assertion**
+- 不应把服务本地拼接 canonicalUrl 的引用作为外部模型/网页实际引用；结构化引用必须标记 synthetic/mock，不能断言外部命中。
+- Evidence.createdAt 不得晚于真实测试时钟容差来伪造 >= VerifiedAt；无真实时序数据应阻断或标注 UNKNOWN；旧 H1=H0。
+
+**Cleanup**
+- 清理本场景所有新 Evidence 和子记录；不触达 H0 覆盖对象。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** Test-only clock 与引用来源真实性判定规则未实现/未知；需要 fake Provider 记录外部回执并验证 temporal gate。
+
+#### F1-011 · 跨租户访问零副作用
+
+**Setup**
+- 合成 O1/P_A/U1 与 O2/P_Z/U2，确保 U2 非 O1 成员；收集 O1 中 PublishedAsset、RetestRun、RetestItem、Evidence、Audit、Engine 基线 counts/sha。
+
+**Action**
+- U2 尝试 createRetestRun(P_A 的 PublishedAsset)、读对应 RetestRun、按实际 HTTP 路由创建或确认 P_A 的资产；不使用数据库特权绕过鉴权。
+
+**Observable**
+- 每个 HTTP 状态码、跨租户 response body、上述 O1 的前后 count/sha、Engine upsert 数、外部 fake HTTP 请求数。
+
+**Assertion**
+- 必须以 404/不泄露语义拒绝 U2；所有 O1 count/sha 完全相同；本次非法请求不得创建 Engine/Run/Evidence/Audit 且外部请求数=0。
+
+**Cleanup**
+- 只删除 O2 测试用户和合成访问日志 fixture；保留 O1 的历史数据。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** createRetestRun 显示 assertUserInProject，在其他接口/读路径仍需本地逐一路由验证。
+
+#### F1-012 · 显式 queryIds 跨项目注入
+
+**Setup**
+- O1 下有 P_A/P_B，各自合成 Query Q_A/Q_B；P_A 资产 A；记录 RetestRun/Item/Evidence counts C0。
+
+**Action**
+- 在 A 上发起 CreateRetestRunDto {queryIds:[Q_B],autoExecute:false}；另用不存在的 UUID 作为对照。
+
+**Observable**
+- RetestRun.querySnapshot、RetestItem.queryId/queryText、projectId；返回状态与 C1-C0；Query(Q_B).projectId。
+
+**Assertion**
+- 不得生成 projectId=P_A 且 queryId=Q_B 的 retestItem；非法引用拒绝且 C1-C0=0；错误不泄露 P_B Query 文本；不存在 UUID 同样不创建挂接记录。
+
+**Cleanup**
+- 清理 synthetic Queries/Assets 与意外创建的 Run；确认原始记录 untouched。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** deriveQueriesForAsset 实现未提供，是否已验证跨项目无法静态判断；需本地确认 Query 项目键与其关联表。
+
+#### F1-013 · manual_verified 说明与 sourceType 来源一致性
+
+**Setup**
+- 合成 Pub 与人工说明 "synthetic operator confirmation"、外部 URL 仅指向 fake fixture；记录 asset 数 C0。
+
+**Action**
+- 尝试 MANUAL_VERIFIED（有效 note），并传冲突 sourceType="PLATFORM_PUBLISH"；对照缺 note 的请求。
+
+**Observable**
+- PublishedAsset.verificationStatus/sourceType/verificationNote/verifiedAt/verifiedById；pub.status；count C1-C0；所有 fake platform 核验请求数。
+
+**Assertion**
+- 缺 note 必须拒绝；有 note 时若接受，公开来源必须明确是人工核验且不能自动宣称平台确认；不得从 sourceType 自由文本推导真实平台证据；不得伪造真实发布时间。
+
+**Cleanup**
+- 删除场景新增资产与合成 publication；核验 audit 不污染其他项目。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** sourceType 是字符串字段，后续约束未知；人工核验的接受政策与外部链接可达性不能由这份片段独立证明。
+
+#### F2-001 · 前端一次点击造成 create 自动执行再 process
+
+**Setup**
+- 合成已核验资产 A 含两条 Query Q1/Q2，隔离浏览器会话；清空或记录 A 所属 MonitorTask、Run、Evidence 的 C0；捕捉 UI fetch 请求。
+
+**Action**
+- 在现有 outcome-workspace-view.tsx 的按钮上仅点击 1 次，保留 createRetestRun(assetId,true) 的实际请求载荷，记录随后 processRetestRun(retest.id)；等待 UI 刷新。
+
+**Observable**
+- 浏览器网络 POST URL、顺序、payload autoExecute、有无默认值；RetestRun.id、RetestItem.id/attemptCount、MonitorTask/Run/Evidence 新增数、反馈文本与状态；fake HTTP 计数。
+
+**Assertion**
+- 一次点击对每条 Q 最多生成一次有效 Evidence 和一次有效外部请求；已同步执行的 Run 不得因紧随其后的 process 再执行；终态同一 RetestRun 的成功 item attemptCount=1。
+- UI 必须依据可验证的阶段状态展示，不可只凭 process 返回就声称归因已更新。
+
+**Cleanup**
+- 重置合成项目的 UI state 和所有本场景新增 retest 记录，保留既有历史 snapshot。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 必须浏览器级拦截真实 create/process 请求并在 geo_test 核数；process API 内部行为与默认 autoExecute 实际序列需 LOC-004 实证。
+
+#### F2-002 · COMPLETED 终态重复 process
+
+**Setup**
+- 完成一条 Query 的合成 RetestRun R，status=COMPLETED，记录 item.runId/evidenceId/attemptCount、Run/MonitorTask/Evidence counts 与 Evidence SHA256 H0。
+
+**Action**
+- 用现有 HTTP process 路由连续调用 R 两次，单客户端顺序提交，不传 forceNew。
+
+**Observable**
+- R.status/startedAt/completedAt、item.runId/evidenceId/attemptCount、Run/MonitorTask/Evidence 的 C1-C0、Evidence H1、fake Provider HTTP 请求数。
+
+**Assertion**
+- 终态必须不可重新执行，允许 409 或幂等返回；C1-C0=0；attemptCount/IDs/startedAt/completedAt 完全不变，H1=H0；外部请求数=0。
+
+**Cleanup**
+- 清理新建的合成 R，不能修改/删历史 Evidence。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** executeRetestRunInternal 片段无终态检查但 process 路由可能另有 guard；需确认处理入口是否直达该方法。
+
+#### F2-003 · 两个独立进程并发 process 同一个 Run
+
+**Setup**
+- geo_test 中创建 autoExecute=false 的合成 RetestRun R、两条 PENDING Item；两个 Node 进程独立连接 DB，隔离 Redis；记录计数 C0。
+
+**Action**
+- barrier 同时放行两个进程调用相同 R 的 process 路径；重复有限轮（每轮新 R），不依赖网络真实 Provider。
+
+**Observable**
+- 每轮 RetestRun.status、每个 RetestItem.runId/evidenceId/attemptCount；MonitorTask/Run/Evidence counts、同一 item 的关联 evidence 个数；两个响应与 fake HTTP 请求数。
+
+**Assertion**
+- 每个 item 仅能由一个进程领取并产出一个有效 Evidence；单轮两条 Item 的成功外部调用总数<=2；Run/Evidence 结果不得双写或丢失。
+- 如果其中一个进程拒绝重复领取，应提供可解释冲突/幂等响应，不能覆盖先前成功 ID。
+
+**Cleanup**
+- 按每轮新建 R 的子记录清理；复核并发日志中无真实 Provider URL。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** LOC-004：需要两进程 barrier、worker 独立执行身份和可观察调用计数；目前 schema 未显示互斥 unique/lease。
+
+#### F2-004 · PARTIAL 失败重试不重写已成功 Item/Evidence
+
+**Setup**
+- 3 Query 合成 R；在第一次 process 使用 simulateFailureQueryId=Q2，使 Q1/Q3 成功、Q2 FAILED；记录成功 items 的 runId/evidenceId/attemptCount 与 SHA H0；所有 Run/Evidence counts C0。
+
+**Action**
+- 对同一 R 再触发无故障注入的 process（若业务支持重试）；对比成功 Q1/Q3 和失败 Q2 的结果。
+
+**Observable**
+- RetestRun.status、3 个 RetestItem.status/runId/evidenceId/attemptCount；每 Query 的 Run/Evidence 数量变化；Q1/Q3 H1；新增 MonitorTask 数；fake HTTP 请求数。
+
+**Assertion**
+- 重试仅执行 Q2 或明确以不变方式拒绝重试；Q1/Q3 的 runId/evidenceId/attemptCount/SHA 不变，成功项额外调用=0；Q2 最多新增一次有效成功 Evidence；历史 Evidences 不被 update。
+
+**Cleanup**
+- 删除全部本场景 RetestRun/Item/Run/Evidence/MonitorTask；验证不触达其他项目。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** executeRetestRunInternal 当前遍历 retestRun.items，未显示跳过 SUCCEEDED；需 LOC-004 partial 状态回归。
+
+#### F2-005 · Provider 已处理但响应丢失的重试幂等性
+
+**Setup**
+- 以 fake HTTP Provider 代替真实外部调用，维护 fixture ledger：idempotencyKey->acceptedCount/chargeUnknown；单 Query PENDING R；初始 Evidence count C0。
+
+**Action**
+- fixture 收到请求后记录 accepted=1 并断开连接（响应丢失）；按实际 retry 策略重新 process，同一逻辑 Item 的 idempotencyKey 固定。
+
+**Observable**
+- fixture 接受/执行/去重次数、出站 HTTP 次数、请求幂等键；RetestItem.status/attemptCount、Run/Evidence counts、错误类、cost/usage 的 UNKNOWN 表达。
+
+**Assertion**
+- 不得因响应未知就宣称调用未发生或费用为 0；若 Provider 支持幂等，重试必须复用相同 key 且 fixture accepted=1；不支持幂等时不得静默无限重试，应显式标记 UNKNOWN/人工确认。
+- Evidence 至多 1 条可被视为有效，禁止 fabricated success。
+
+**Cleanup**
+- 删除本场景 fixture ledger 与合成 R；不记录真实凭证。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** LOC-004/006：现有截取路径是确定性 Mock，没有真实 Provider 调用/幂等键契约；需先定义适配器和可注入请求跟踪，再据实定失败预期。
+
+#### F2-006 · Provider 返回成功、落库前进程崩溃
+
+**Setup**
+- fake HTTP fixture 返回合成成功响应并记 accepted=1；单 Query PENDING R；准备可控故障点：外部响应之后、Evidence.create 之前；记录起始 Evidence count C0。
+
+**Action**
+- 运行进程收到 Provider 响应后强制退出；独立新进程读取 DB 状态并尝试 recover/process；检查同一响应是否被重复消费/再次收费。
+
+**Observable**
+- fixture accepted/replayed 次数、重启前后 RetestRun/RetestItem.status、Run/Evidence count、item.runId/evidenceId、失败阶段标记、usage/cost UNKNOWN 字段。
+
+**Assertion**
+- 不得从外部成功推断 Evidence 已落库；恢复后不得出现两条同逻辑有效 Evidence；有 Provider idempotency 时 accepted=1；没有时保留不确定成本与人工处理态，禁止自动回填虚构 Evidence。
+
+**Cleanup**
+- 销毁本场景崩溃进程 fixture、ledger 和合成记录；确保 Test DB 无跨轮污染。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** LOC-004：需要故障注入钩子/进程 kill barrier 与真实数据持久化时序；当前摘录没有可证明的 Provider 调用路径。
+
+#### F2-007 · 费用返回 UNKNOWN 与预算闸门
+
+**Setup**
+- 在 fake Provider 产生三种回执：usage/cost 缺失、usage 有而单价未知、明确消耗；使用两个合成预算策略（可用预算、禁止继续），不得使用真实支付账户；记录最初请求数 C0。
+
+**Action**
+- 在可用预算策略下请求 1 条 Query；模拟结果 cost=UNKNOWN；在预算不足/未知下尝试额外 2 条 Query；仅统计 fake 出站请求数和实际持久化记录。
+
+**Observable**
+- fixture usage/cost 原始值与 ledger、fake HTTP acceptedCount、RetestRun/Item.status、Evidence.metadata 中是否出现任何“0”成本、UI 成本呈现；预算配置读取路径是否存在。
+
+**Assertion**
+- 未知成本须继续为 null/UNKNOWN，不能自动写成 0；无预算授权时真实付费调用数必须=0；无法证明预算上限时禁止宣称已经实施 cost guard 或“未收费”。
+
+**Cleanup**
+- 移除合成预算配置与 fake ledger；确认未碰生产账单或真实 API。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** LOC-006 强阻塞：Context Pack 未提供预算 schema、usage/cost 字段或 billing adapter；本场景为预备门禁，不能编写不存在的费用接口。
+
+#### F2-008 · Query 编辑后运行输入快照仍冻结
+
+**Setup**
+- 合成 Q1 原文 "synthetic alpha"、意图/分类 V1；为资产创建 R(autoExecute=false)，保存 querySnapshot/RetestItem.queryText 的 UTF-8 SHA H0；注意 querySnapshot 为 JSON，需要规范化序列化。
+
+**Action**
+- 将 Query Q1.text 改为 "synthetic beta" 并更改分类/意图；再执行 R；读取 Evidence.queryText/rawPrompt 和 R.querySnapshot，必要时捕获 fake 请求 prompt。
+
+**Observable**
+- Query.text 当前值、R.querySnapshot 原始字节/规范化 sha、RetestItem.queryText、Evidence.queryText/rawPrompt、fake Provider prompt、C1-C0。
+
+**Assertion**
+- R 的被冻结文本/语义字段仍是 V1，snapshot SHA 不变；该 R 新 Evidence.queryText 与执行 prompt 使用 V1 而非 V2；编辑不覆写任何历史 Evidence。
+
+**Cleanup**
+- 删除 R/Evidence 并回滚合成 Q1，复核 H0；不修改真实 Query。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** 现有快照创建逻辑已展示，但执行下游调用是否只读 RetestItem.queryText 需本地实证。
+
+#### F2-009 · 同一 RetestItem 多算法版本首条污染
+
+**Setup**
+- 单 RetestItem I 的同一历史合成输入，预置 OutcomeComparison(I,version=v1) 与 OutcomeComparison(I,version=v2) 及相应 Attribution，两个版本的 delta/status 刻意不同；保留每版 SHA H0。
+
+**Action**
+- 按现有 read/compute 入口分别请求 v1、v2；改变两条记录 createdAt 排序或插入第三版本以测试“findFirst”陷阱。
+
+**Observable**
+- OutcomeComparison 按 (retestItemId,comparisonVersion) 的 id/count、Outcomes 所引用的 version/IDs、Attribution.outcomeComparisonId/attributionVersion、读接口返回的 delta/status；H0/H1。
+
+**Assertion**
+- v2 请求必须关联 v2 comparison，不能拿 createdAt 较早的 v1 首条；各 version id 与 H0 恒定；新 Attribution 只能绑定对应 version 的 outcomeComparisonId，不因读顺序改变。
+
+**Cleanup**
+- 移除本场景不同版本的新表记录，保留一切非 synthetic 历史；核查唯一约束未被改动。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** schema 唯一约束可见，实际 read/compute selectors 与版本参数约定没有提供；需本地定位，不得臆造 API。
+
+#### F2-010 · 缺 baseline 或 INCOMPATIBLE 不产生虚假 delta
+
+**Setup**
+- 创建两条合成 RetestItem：I1 baselineStatus=MISSING_BASELINE 且 baselineEvidenceId=null；I2=INCOMPATIBLE 有不同检索模式的 baseline；记录已有 OutcomeComparison count C0。
+
+**Action**
+- 通过现有 OutcomeComparison 生成入口分别构建比较，再读取 comparisonStatus、before/after/deltaSnapshot 与 summary。
+
+**Observable**
+- OutcomeComparison(I1/I2) 的 baselineCompatibility/comparisonStatus、deltaSnapshot 的值和 key、beforeSnapshot、afterSnapshot；对应 attribution/learning 生成数与 C1-C0。
+
+**Assertion**
+- I1 比较状态=MISSING_BASELINE；I2=INCOMPATIBLE；两者不可输出可比的定量提升 delta，不得 0% 或伪造零变化；下游 Attribution 不得宣称可归因于发布。
+
+**Cleanup**
+- 删除合成 comparison/attribution/learning 和 RetestRun；原历史比较 SHA 不变。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** M10C 具体异常处理实现及 delta 字段 schema 未完整提供；需本地用合成固定输入确认结果表达。
+
+#### F2-011 · Outcome 与 Attribution 尚未生成不能显示闭环完成
+
+**Setup**
+- 合成 R 的所有 RetestItem 均为 SUCCEEDED 且 Evidence 存在；刻意不创建任何 OutcomeComparison / OutcomeAttribution；记录两表 count=0。
+
+**Action**
+- 通过真实 outcome workspace UI 刷新对应 A，捕获 read 接口结果、render 文本和后续 compute 请求；只触发一次复测流程。
+
+**Observable**
+- R.status、RetestItem/Evidence count、OutcomeComparison.count=0、OutcomeAttribution.count=0、LearningObservation.count；UI 进度标签与反馈“已更新归因分析”。
+
+**Assertion**
+- 仅执行结束不得显示“已完成并更新归因分析”；只有两类下游结果已生成且有可追溯匹配 ID 时才能展示闭环完成；未生成须展示待计算/UNKNOWN。
+
+**Cleanup**
+- 清理合成 R 与前端 local state；不生成虚构归因。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 前端片段固定写成功反馈；具体 loadWorkspace 自动触发生成的条件 UNKNOWN，需浏览器级实际时序观测。
+
+#### F2-012 · 切换项目后旧请求晚返回污染 UI
+
+**Setup**
+- 创建 P_A/P_B 各一条资产；browser 请求 A 的 workspace 被 fake HTTP 延迟；切换到 P_B 并先完成 B 的页面渲染。
+
+**Action**
+- 先发出 loadWorkspace(A)；导航/切换至 P_B，发出并完成 loadWorkspace(B)；再放行 A 的旧响应；同时观测处理中的 retest 成功反馈。
+
+**Observable**
+- 浏览器 fetch 请求顺序与项目/资产 ID；selectedAssetId、页面资产标题/Project label、Outcome IDs、stale response apply 次数；Server DB 读写计数。
+
+**Assertion**
+- 旧 A 响应不得覆盖 B 当前项目 UI；页面所有资产/比较 ID 都属于 P_B；旧 A 的反馈不可冒充 B 操作成功；不存在跨项目 DB 变更。
+
+**Cleanup**
+- 释放 fake HTTP 延迟，卸载测试页面并删除两个 synthetic assets；服务端历史 sha 不变。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** 需 Playwright/现有 browser runner 或等价 HTTP 拦截 fixture；Context Pack 只有 handleTriggerRetest 的局部片段，无法预判其它 state guard。
+
+#### F2-013 · 并发 create 同一资产活跃 Run 的序号与幂等
+
+**Setup**
+- P_A 已发布资产 A；没有进行中 RetestRun；两连接屏障使两个 createRetestRun(A,{autoExecute:false,forceNew:false}) 同时查询 active；记录 R 数 C0。
+
+**Action**
+- 两个并发 create 到达 findFirst 后一起释放，收集返回 RetestRun.id/sequence。
+
+**Observable**
+- RetestRun count C1-C0、两个 response.id/sequence、对 A 的 active status 数与 sequence 重复数、RetestItem count、Engine 数。
+
+**Assertion**
+- 默认幂等语义下同一资产同一逻辑进行中 Run 最多一个；C1-C0=1 且两个 response.id 相同，或一个明确冲突且仅一条创建；sequence 不应并发碰撞。
+
+**Cleanup**
+- 删除 A 产生的合成 RetestRuns/Items，清除测试屏障。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 当前 findFirst 后 create 属静态竞态窗口；数据库对 (publishedAssetId,sequence) 是否有额外唯一索引未知（所给 schema 未显示）。
+
+#### F2-014 · 中途异常后 RUNNING 状态的恢复与错误边界
+
+**Setup**
+- 单 Query autoExecute=false 的 R；故障点放在 retestRun.status=RUNNING、monitorTask 创建后、item 完成前；记录计数 C0。
+
+**Action**
+- 触发进程退出或可控异常；重启读取 R 并尝试一次恢复；记录状态是否永远 RUNNING、是否产生重复 monitorTask。
+
+**Observable**
+- R.status/startedAt/completedAt、MonitorTask.id/count、RetestItem.attemptCount/status、Run/Evidence counts、恢复请求次数、错误码。
+
+**Assertion**
+- 不能将卡住的 RUNNING 判为 COMPLETED；恢复必须有确定性 lease/超时策略且不得重复创建有效 Evidence；所有不完整条目保留明确失败/未知进度。
+
+**Cleanup**
+- 清除进程故障 fixture、合成 R 及关联任务；不调整历史状态记录。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** LOC-004：当前片段无租约/恢复 scheduler 信息；需检查 worker 实际执行语义和可控故障注入能力。
+
+#### F2-015 · Run 成功但 Evidence 链路缺失不能计为成功
+
+**Setup**
+- 在 geo_test 合成 R 的 I1 设置 runId=RUN1、run.status=SUCCEEDED 但 evidenceId=null，Evidence 表中没有 linked row；I2 完全成功作为对照；记录总数/关联初值。
+
+**Action**
+- 调用现有 getRetestRun/outcome comparison 的只读入口，若允许执行恢复则进一步尝试处理 I1；检查 run-level 总计。
+
+**Observable**
+- RetestItem.status/evidenceId、Run.status、Evidence 按 runId 的 count、RetestRun.completedItems/failedItems/status、OutcomeComparison.count 与 UI 百分比。
+
+**Assertion**
+- Evidence count(RUN1)=0 时 I1 不可作为证据充分的完成项；不得生成凭空的 OutcomeComparison/Attribution；run-level complete 应区分执行结果与链路完整性。
+
+**Cleanup**
+- 删除 synthetic partial R，并复原对照记录；原始 Evidence 不得修改。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** 服务完整完成状态计算与 Evidence 绑定后续代码未提供；需在 geo_test 模拟半提交故障。
+
+#### HISTORY-001 · M10/M11/Report/Evidence 历史指纹守恒
+
+**Setup**
+- 只在 geo_test 预置已知不可变合成快照：Evidence、Report、OutcomeComparison、OutcomeAttribution、LearningObservation、LearningAggregate；选择每类 2 个历史 id；记录主键集合、row count 与完整规范化 sha H0。
+
+**Action**
+- 执行 F1/F2 中任意 1 条成功路径、1 条失败路径、1 条 replay 路径；两轮中逐项采样 H0/H1 和历史主键集合。
+
+**Observable**
+- Prisma model id 与行计数、按主键读取 JSON+时间字段的稳定序列化 SHA256、旧 OutcomeComparison.version、Attribution.version、LearningObservation.version；新增记录与旧记录 id 集合交集。
+
+**Assertion**
+- 所有采样历史行的 H1=H0，旧 ID 集合不增删、不覆盖；新成果只能以追加 ID 及正确 lineage 产生；Report、M10/M11 快照绝不被业务重算暗中更新。
+
+**Cleanup**
+- 删除所有仅新建的 synthetic 子记录；不要 truncate 公共测试库、更不要重写历史 fixture。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** 完整 Report/Learning schema 未给出；需本地确定 model 名、字段与日期/Decimal/JSON 序列化规范；原历史受保护对象只用 synthetic fixture。
+
+#### HISTORY-002 · 跨项目血缘与历史读取隔离
+
+**Setup**
+- 同一组织 O1 两项目 P_A/P_B，分别含历史 Report、Evidence、RetestRun、OutcomeComparison、Attribution、Learning；用户 U1 是 O1 成员；各项目主键与指纹 H0。
+
+**Action**
+- 创建针对 P_A 的合成 Retest，然后故意传入 P_B Evidence/OutcomeComparison 作下游关联（通过本地已存在实际入口或服务测试；若接口未暴露，标记不可测）；读取 P_A 工作台。
+
+**Observable**
+- RetestRun.projectId、RetestItem/OutcomeComparison/Attribution.projectId、baselineEvidenceId/outcomeComparisonId 的上游 projectId、P_A UI 结果 ID、P_B 行 count/sha。
+
+**Assertion**
+- 任何关联实体 projectId 必须与同一 lineage 的根 asset.projectId 匹配；P_A 结果不包含 P_B 的任何行；H1(P_B)=H0(P_B)。
+- 组织 membership 不意味着可跨项目混绑业务血缘。
+
+**Cleanup**
+- 仅删除 P_A 新增的测试数据，不对 P_B 历史记录做清理。
+
+**expectedCurrentFailure:** `false`（静态预期；未经实测）
+
+**harnessGap:** OutcomeComparison/Attribution 的创建 API 和 baseline selector 未给出；需定位真实调用入口与本地 schema。
+
+#### HISTORY-003 · 重复重测不污染既有 Report/Evidence 与旧版本下游
+
+**Setup**
+- 构造 V1 已完成 synthetic RetestRun R1 和 M10/M11 比较、归因、Learning；记录旧全链路 ID/sha H0；为同一资产创建允许的新 R2。
+
+**Action**
+- 按真实流程运行 R2，再重试 R1 的终态 process；在任意次序下重算允许的新版本结果，读取旧 R1。
+
+**Observable**
+- R1/R2 的 Evidence ID 集合与交集、按旧 ID 的 SHA H1、OutcomeComparison(comparisonVersion)/Attribution(attributionVersion)/Learning observation 计数、旧 Report SHA。
+
+**Assertion**
+- R2 必须形成独立追加血缘；旧 Evidence/Report/M10/M11 快照 SHA 恒等、R1 原有版本键无覆盖；重试 R1 不能创建新的有效 Evidence。
+
+**Cleanup**
+- 按 R2 的新建 ID 清理，不删除 R1 基线；对 R1 保留期数据执行 read-only fingerprint 复核。
+
+**expectedCurrentFailure:** `true`（静态预期；未经实测）
+
+**harnessGap:** 部分场景依赖 F2-002 终态保护；实际历史 Report/M11 关联 API 缺失，需定位后才能落地 harness。
+
+## 4. 本地 harness 需补（不在本次交付范围内）
+
+### 4.1 环境、隔离和录制
+
+- **仅 geo_test**：运行前人工核对 `DATABASE_URL` 最终数据库名确为 `geo_test`，确认 Redis 为独立测试实例，`ENABLE_REAL_PROVIDERS` 保持禁用、生产密钥不加载；未确认则停止。真实 Provider、真实发布平台、真实账单均不得接触。
+- **合成固定 seed**：O1/O2、P_A/P_B、U1/U2、D/R/Publication/Attempt/Plan/Query/Asset 及受控 Evidence，全部用生成的 UUID；种子/清理仅在隔离 Test DB 中操作，场景之间不共用未清理数据。
+- **API/浏览器入口**：先从本地 Controller 和 Web API adapter 中确认实际路由/export、cookie session、`createRetestRun(assetId,true)` 的第二参数真实含义、`processRetestRun` 的返回/错误契约；不按名字猜 URL。
+- **两进程与时间控制**：跨两个独立进程的 barrier、fake clock、故障注入（响应丢失/响应后写库前退出）、Provider ledger、平台核验 fake HTTP fixture；按进程与 itemId 记录请求数。
+- **指纹与删除**：before/after counts+sha、FK lineage 断言、测试创建 ID 白名单；完成后按 FK 依赖逆序删除新数据，绝不清空历史或把真实客户 Evidence 原文嵌进测试。
+
+### 4.2 LOC 实证门槛与停止条件
+
+| Gate | 必须形成的本地证据 | 未满足时状态 |
+|---|---|---|
+| LOC-003（真实性/并发登记） | 平台回执来源的 fake 校验、身份/关联键约束、同一逻辑资产重复登记及 publish timestamp 区分 | `BLOCKED_HARNESS`；不能确认 PLATFORM_CONFIRMED |
+| LOC-004（执行/重放） | 一次 UI 点击网络链、终态/partial replay、两进程 process、crash/recover、Provider 幂等演练 | `BLOCKED_HARNESS`；不能声称 exactly-once |
+| LOC-006（费用/预算） | usage/cost UNKNOWN 编码、可配置预算触发前拦截、Provider accepted/账单结果区分 | `BLOCKED_HARNESS`；不得声称无收费或预算有效 |
+
+每项报告必须有 `NOT_RUN / PASS / FAIL / BLOCKED_HARNESS` 之一、该次 Run 的本地 commit/环境、参数/fixture、前后 ID/count/sha、网络请求数与证据文件位置；若失败，优先保留第一条可复现失败及 rollback 检查。**本网页交付全部为 NOT_RUN。**
+
+### 4.3 极简映射伪代码（说明设计；非可直接 import 的 helper）
+
+```text
+assert databaseName == "geo_test" && realProvidersDisabled
+before = snapshotByActualPrismaModels(testOwnedIds, baselineHistoryIds)
+seedSyntheticFixtureForScenario(scenario.id)
+executeActionsViaVerifiedLocalControllerOrWorker(scenario.actions)
+after = snapshotByActualPrismaModels(testOwnedIds, baselineHistoryIds)
+assertScenarioCountIdFkHashAndHttpLedger(before, after, scenario.assertions)
+cleanupOnlyTestOwnedIdsInForeignKeyOrder()
+assertHistoryHashesUnchanged()
+```
+
+以上函数名均为**伪代码占位符**，并非项目已存在的 imports/exports；必须由本地 harness 实际实现与记录证据。
+
+### 4.4 完成定义与不在范围
+
+本包完成定义：两份目标设计文件 JSON parse/结构校验、场景覆盖与 SHA256 manifest 完整，ZIP 路径可直接隔离解压。**不包含** Service/DTO/Prisma 改动、迁移、Jest 测试代码、历史数据修复、数据库写入、构建、Provider/平台调用、Git commit/push。静态标出的风险不自动转化为 bug ticket 的 VERIFIED FAIL，须本地重现。
