@@ -65,6 +65,48 @@ export default function ReportDetailPage() {
   const [selection, setSelection] = useState<{ label: string; queries: string[] | null }>({ label: "全部检测记录", queries: null });
   const [error, setError] = useState("");
   const [evidenceRunId, setEvidenceRunId] = useState<string | null>(null);
+  const [copiedShare, setCopiedShare] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [sharingBusy, setSharingBusy] = useState(false);
+
+  async function copyShareLink() {
+    if (!report) return;
+    setSharingBusy(true);
+    try {
+      const res = await api<{ shareToken: string; shareUrl: string }>(
+        `/reports/${encodeURIComponent(params.id)}/share`,
+        { method: "POST" }
+      );
+      setShareToken(res.shareToken);
+      const url = `${window.location.origin}/share/report/${res.shareToken}`;
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setCopiedShare(true);
+        setTimeout(() => setCopiedShare(false), 2500);
+      } else {
+        prompt("请复制以下安全公开分享链接：", url);
+      }
+    } catch (e) {
+      alert("创建分享链接失败：" + friendlyError(e));
+    } finally {
+      setSharingBusy(false);
+    }
+  }
+
+  async function revokeShare() {
+    if (!report) return;
+    if (!confirm("确定要撤销公开分享吗？撤销后，外部客户将无法再访问此报告。")) return;
+    setSharingBusy(true);
+    try {
+      await api(`/reports/${encodeURIComponent(params.id)}/revoke-share`, { method: "POST" });
+      setShareToken(null);
+      alert("已成功撤销公开分享，外部链接已失效。");
+    } catch (e) {
+      alert("撤销失败：" + friendlyError(e));
+    } finally {
+      setSharingBusy(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -95,14 +137,49 @@ export default function ReportDetailPage() {
   return (
     <main className="text-slate-900">
       <div className="mx-auto max-w-none space-y-6">
-        <header>
-          <Link href="/app/reports" className="text-sm text-blue-700 hover:underline">← 返回报告列表</Link>
-          <h1 className="mt-3 text-2xl font-semibold">检测报告</h1>
-          {report.completion.partial && (
-            <p className="mt-2 inline-block rounded bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
-              部分完成 —— 本报告不代表完整测试集（成功 {report.completion.succeededRuns} / 总计划 {snap.plannedRuns ?? report.completion.completedRuns + report.completion.failedRuns} 条）
-            </p>
-          )}
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <Link href="/app/reports" className="text-sm text-blue-700 hover:underline">← 返回报告列表</Link>
+            <h1 className="mt-3 text-2xl font-semibold">检测报告</h1>
+            {report.completion.partial && (
+              <p className="mt-2 inline-block rounded bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
+                部分完成 —— 本报告不代表完整测试集（成功 {report.completion.succeededRuns} / 总计划 {snap.plannedRuns ?? report.completion.completedRuns + report.completion.failedRuns} 条）
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              type="button"
+              disabled={sharingBusy}
+              onClick={copyShareLink}
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition shadow-sm disabled:opacity-50"
+              title="生成或复制客户免登安全分享链接，支持微信与移动端 H5 快速查阅"
+            >
+              <span>{copiedShare ? "✓ 已复制安全链接" : "🔗 复制移动端 H5 分享链接"}</span>
+            </button>
+            {shareToken && (
+              <>
+                <Link
+                  href={`/share/report/${shareToken}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition shadow-sm"
+                  title="在新标签页预览移动端公开诊断报告"
+                >
+                  <span>📱 预览 H5</span>
+                </Link>
+                <button
+                  type="button"
+                  disabled={sharingBusy}
+                  onClick={revokeShare}
+                  className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs font-medium text-rose-700 hover:bg-rose-100 transition shadow-sm disabled:opacity-50"
+                  title="撤销公开分享，使外部链接立刻失效"
+                >
+                  撤销分享
+                </button>
+              </>
+            )}
+          </div>
         </header>
 
         {/* 报告头 */}

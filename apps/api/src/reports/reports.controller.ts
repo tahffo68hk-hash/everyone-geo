@@ -41,6 +41,24 @@ export class ReportsController {
     return this.reports.reportEvidence(user.sub, id);
   }
 
+  /** 创建或刷新报告公开分享链接（生成安全不可猜测令牌，记录分享人与时间）。 */
+  @Post("reports/:id/share")
+  createShareLink(@CurrentUser() user: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.reports.createShareLink(user.sub, id);
+  }
+
+  /** 获取报告分享状态。 */
+  @Get("reports/:id/share")
+  getShareStatus(@CurrentUser() user: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.reports.getShareStatus(user.sub, id);
+  }
+
+  /** 撤销报告公开分享（链接立刻失效，404）。 */
+  @Post("reports/:id/revoke-share")
+  revokeShareLink(@CurrentUser() user: JwtUserPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.reports.revokeShareLink(user.sub, id);
+  }
+
   /** 报告对比：先判定可比性（COMPARABLE / PARTIALLY_COMPARABLE / NOT_COMPARABLE），再给 Δ。 */
   @Post("reports/compare")
   compare(@CurrentUser() user: JwtUserPayload, @Body() dto: CompareReportsDto) {

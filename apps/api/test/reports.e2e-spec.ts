@@ -395,4 +395,39 @@ describe("Reports M6C e2e", () => {
     await request(app.getHttpServer()).get(`/reports/${reportIds.runA1m6b}/evidence`).expect(401);
     await request(app.getHttpServer()).post("/reports/compare").send({}).expect(401);
   });
+
+  // ---------------- 公开分享与令牌安全 ----------------
+  it("公开分享报告：授权用户创建分享 → 获得不可猜测 shareToken → 匿名凭 Token 读取白名单数据", async () => {
+    const reportId = reportIds.runA1m4;
+    // 1. 外部直接用 reportId 猜测访问公开端点 → 404 (防止遍历猜测私有报告)
+    await request(app.getHttpServer()).get(`/public/reports/${reportId}`).expect(404);
+
+    // 2. 非租户成员创建分享 → 404
+    await outsider.post(`/reports/${reportId}/share`).expect(404);
+
+    // 3. 授权用户主动创建分享 → 成功生成 48 位安全 shareToken
+    const { body: shareMeta } = await owner.post(`/reports/${reportId}/share`).expect(201);
+    expect(shareMeta.shareToken).toBeDefined();
+    expect(typeof shareMeta.shareToken).toBe("string");
+    expect(shareMeta.shareToken.length).toBeGreaterThanOrEqual(32);
+    expect(shareMeta.shareEnabled).toBe(true);
+
+    // 4. 匿名用户使用 shareToken 访问公开报告 → 200，且仅暴露白名单聚合字段
+    const { body: publicRep } = await request(app.getHttpServer())
+      .get(`/public/reports/${shareMeta.shareToken}`)
+      .expect(200);
+    expect(publicRep.shareToken).toBe(shareMeta.shareToken);
+    expect(publicRep.suiteName).toBeDefined();
+    expect(publicRep.metricsSnapshot).toBeDefined();
+    // 白名单验证：不得泄露租户 ID、内部组织 ID 与私有配置
+    expect(publicRep.projectId).toBeUndefined();
+    expect(publicRep.organizationId).toBeUndefined();
+    expect(publicRep.metadata).toBeUndefined();
+
+    // 5. 授权用户撤销分享 → 成功
+    await owner.post(`/reports/${reportId}/revoke-share`).expect(201);
+
+    // 6. 撤销后再次以 shareToken 访问 → 404 (立即失效)
+    await request(app.getHttpServer()).get(`/public/reports/${shareMeta.shareToken}`).expect(404);
+  });
 });

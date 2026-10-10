@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "@geo/database";
 import { PrismaService } from "../prisma.service";
@@ -178,6 +179,125 @@ export class ReportsService {
     const row = await this.reportForUser(userId, id);
     return this.presentReport(row);
   }
+
+  /** 创建或刷新报告公开分享链接（生成安全不可猜测的 shareToken）。 */
+  async createShareLink(userId: string, reportId: string): Promise<any> {
+    const report = await this.reportForUser(userId, reportId);
+    const existingMeta = (report.metadata as any) || {};
+    const shareToken = existingMeta.shareToken || crypto.randomBytes(24).toString("hex");
+
+    const updated = await this.db.client.benchmarkReport.update({
+      where: { id: report.id },
+      data: {
+        metadata: {
+          ...existingMeta,
+          shareToken,
+          shareEnabled: true,
+          sharedAt: existingMeta.sharedAt || new Date().toISOString(),
+          sharedByUserId: userId,
+        },
+      },
+    });
+
+    return {
+      reportId: report.id,
+      shareToken,
+      shareEnabled: true,
+      shareUrl: `/share/report/${shareToken}`,
+      sharedAt: (updated.metadata as any).sharedAt,
+    };
+  }
+
+  /** 获取报告分享状态。 */
+  async getShareStatus(userId: string, reportId: string): Promise<any> {
+    const report = await this.reportForUser(userId, reportId);
+    const meta = (report.metadata as any) || {};
+    return {
+      reportId: report.id,
+      shareToken: meta.shareToken || null,
+      shareEnabled: !!meta.shareEnabled,
+      shareUrl: meta.shareToken && meta.shareEnabled ? `/share/report/${meta.shareToken}` : null,
+      sharedAt: meta.sharedAt || null,
+    };
+  }
+
+  /** 撤销报告公开分享（链接立即失效，无法再公开访问）。 */
+  async revokeShareLink(userId: string, reportId: string): Promise<any> {
+    const report = await this.reportForUser(userId, reportId);
+    const existingMeta = (report.metadata as any) || {};
+    await this.db.client.benchmarkReport.update({
+      where: { id: report.id },
+      data: {
+        metadata: {
+          ...existingMeta,
+          shareEnabled: false,
+          revokedAt: new Date().toISOString(),
+          revokedByUserId: userId,
+        },
+      },
+    });
+
+    return {
+      reportId: report.id,
+      shareEnabled: false,
+      revoked: true,
+    };
+  }
+
+  /**
+   * 公开分享报告只读快照：
+   * 严格验证 shareToken 且 shareEnabled=true；
+   * 使用公开白名单字段投影，严禁泄露内部租户 ID、系统配置及原始证据明细。
+   */
+  async getPublicReport(token: string): Promise<any> {
+    if (!token || typeof token !== "string" || token.trim() === "") {
+      throw new NotFoundException("未提供有效的分享令牌");
+    }
+
+    const rows = await this.db.client.benchmarkReport.findMany({
+      where: {
+        metadata: {
+          path: ["shareToken"],
+          equals: token.trim(),
+        },
+      },
+      take: 1,
+    });
+
+    const row = rows[0];
+    if (!row) {
+      throw new NotFoundException("未找到该分享报告或链接已失效");
+    }
+
+    const meta = (row.metadata as any) || {};
+    if (!meta.shareEnabled) {
+      throw new NotFoundException("该报告分享已被发布者撤销或暂停访问");
+    }
+
+    // 白名单字段过滤：只返回展示所需聚合指标，不暴露敏感内部数据
+    return {
+      shareToken: token,
+      suiteName: row.suiteName,
+      suiteVersion: row.suiteVersion,
+      runType: row.runType,
+      provider: row.provider,
+      engineName: row.engineName,
+      requestedModel: row.requestedModel,
+      responseModel: row.responseModel,
+      metricSource: row.metricSource,
+      analysisVersion: row.analysisVersion,
+      completion: {
+        completedRuns: row.completedRuns,
+        succeededRuns: row.succeededRuns,
+        failedRuns: row.failedRuns,
+        analyzedRuns: row.analyzedRuns,
+        partial: row.partial,
+      },
+      metricsSnapshot: row.metricsSnapshot,
+      generatedAt: row.generatedAt,
+    };
+  }
+
 
   /** Report → BenchmarkRun → Query → Run → Evidence 的可追溯行（不改 Evidence）。 */
   async reportEvidence(userId: string, id: string): Promise<any> {
