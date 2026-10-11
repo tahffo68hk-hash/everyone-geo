@@ -1,7 +1,7 @@
 # GeoLens 逆向成果收敛、功能验收与交接记录 (HANDOFF.md)
 
 - **交接日期**: 2026-10-11
-- **当前 Git HEAD**: `a365f11` (基线: `a7f210a`)
+- **当前 Git HEAD**: `c4239d0` (基线: `a7f210a`)
 - **Git 状态**: 本地已全部提交，工作区干净 (Local Commits Only, **STRICTLY NO PUSH**)
 
 ---
@@ -134,3 +134,43 @@ a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safe
 1. **Git 仓库状态**: 所有核心闭环与全站商业级 UI/UX 改造均已完成，测试与构建全部绿灯，严格遵守 **STRICTLY NO PUSH** 规则。
 2. **生产部署准备**: 前后端构建产物已完整生成（Next.js 15 生产优化产物与 NestJS dist 包）。
 3. **视觉与业务完整性**: 平台已具备同等国内头部商业 GEO SaaS（如竹小推、B7U）的现代化视觉质感与端到端闭环可运行性。
+
+---
+
+## 六、Astra 独立审核清单 (UI-01 ~ UI-11) 修复与多视口验收
+
+针对独立审核报告 `UI_INTERIM_REVIEW.md` 与清单 `ANTIGRAVITY_FIX_LIST.md`，已全面完成代码修复、生产构建与三视口（1440px / 720px / 390px）真实浏览器 CDP 验收：
+
+| 编号 | 严重度 | 审核问题项 | 状态 | 具体修复与证据 |
+| :--- | :---: | :--- | :---: | :--- |
+| **UI-01** | P1 | Dashboard 虚构数据与固定状态胶囊 | **FIXED** | 移除硬编码 85 分兜底（实据呈现或“待检测”），趋势从最近两次报告真实动态计算（无前序基线时隐藏百分比）；Hero 胶囊联动 `runningTasksCount`，侧边栏状态胶囊绑定系统真实 `context.error`。 |
+| **UI-02** | P1 | Outcome 快照字段映射 | **FIXED** | 全面复用 `@/lib/outcome-snapshot.ts` 标准归一器，在 `QueryOutcomeTable`、`QueryOutcomeDrawer` 与 `AssetOutcomeOverview` 中规范使用 `brandMentioned`、`mentionPosition`、`recommended`、`capturedAt`、`citationCount`，AI 归因输入正确映射为 `PRESENT / ABSENT / UNKNOWN`。 |
+| **UI-03** | P1 | Retest/Comparison/Attribution 阶段提示 | **FIXED** | 增加真实执行状态判断（`COMPLETED` / `PARTIAL` / `FAILED`），执行完成后自动触发 `generateRetestOutcomes` 对比聚合，分阶段输出诚实提示，未完成前不虚报归因就绪。 |
+| **UI-04** | P1 | 720px / 390px 响应式导航 | **FIXED** | 合并清理冲突的媒体查询断点，实现移动端抽屉式侧边栏（Hamburger 切换、半透明遮罩、路由跳转自动关闭），图标导航项统一补充 `title` 和 `aria-label`。 |
+| **UI-05** | P1 | 报告专业语义恢复 | **FIXED** | 报告详情页与 H5 分享页中，将“强推荐率 / 首选”准确恢复为标准“推荐率 / 是否推荐 / 是”，将“权威独立域名”恢复为客观“独立引用域名”。 |
+| **UI-06** | P2 | 共享布局 CSS 回归 | **FIXED** | 在 `globals.css` 中基于全新 CSS 变量完整补齐 `.workflow-rail`、`.setup-checklist`、`.setup-step`、`.product-action-list`、`.fact-interpretation` 等产品化关键类。 |
+| **UI-07** | P2 | Hero Banner 标题字体与颜色 | **FIXED** | 使用 `:where(h2):not(.hero-banner-title)` 隔离全局浅色主题对深色 Hero 的特异性污染，显式指定 `.hero-banner-title` 为白色、28px、Font-weight 800。 |
+| **UI-08** | P2 | 外层宽度与表格横向溢出收敛 | **FIXED** | 为 `.app-body` 添加 `overflow-x: clip`，为 `.app-content` 添加 `min-width: 0; max-width: 1440px; box-sizing: border-box;`，为 `.table-scroll` 添加 `min-width: 0; max-width: 100%;`，实测 1440px、720px、390px 全页面无横向滚动条溢出。 |
+| **UI-09** | P2 | Outcome 摘要与差异展示精准度 | **FIXED** | 修复 `+-N` 负增量双符号 Bug（`formatDelta` 辅助函数），重命名卡片为“新增品牌提及”，准确展示位次前移/后移，缺失基线与证据不足时展示 `insufficientEvidenceCount`，不再虚假声称“证据链完备”。 |
+| **UI-10** | P2 | 报告情感分布未知样本恢复 | **FIXED** | 在报告详情页情感倾向分布中完整呈现 `/ 未知 {snap.overall.sentimentDistribution.unknown ?? 0}`。 |
+| **UI-11** | P2 | 顶栏无效搜索暗示移除 | **FIXED** | 移除顶栏无后台支持的占位搜索框及 ⌘K 伪快捷键暗示，保留真实有效的全局状态指示与退出操作。 |
+
+### 验证证据汇总
+- **浏览器视觉快照 (`output/ui-verification-astra/`)**:
+  - `dashboard_1440px.png`, `dashboard_720px.png`, `dashboard_390px.png` (全部 Overflow: NONE)
+  - `queries_1440px.png`, `queries_720px.png`, `queries_390px.png` (全部 Overflow: NONE)
+  - `outcome_workspace_l1_1440px.png`, `720px.png`, `390px.png` (全部 Overflow: NONE)
+  - `outcome_workspace_l2_1440px.png`, `720px.png`, `390px.png` (全部 Overflow: NONE)
+  - `outcome_drawer_1440px.png`, `outcome_drawer_720px.png`
+  - `mobile_nav_open_720px.png`, `mobile_nav_open_390px.png`
+  - `report_detail_1440px.png`, `720px.png`, `390px.png` (全部 Overflow: NONE)
+  - `h5_share_report_390px.png`, `720px.png`, `1440px.png` (全部 Overflow: NONE)
+- **自动化测试**:
+  - `pnpm --filter @geo/core test` -> 256/256 passed
+  - `pnpm --filter @geo/llm test` -> 55/55 passed
+  - `pnpm --filter @geo/queue test` -> 54/54 passed
+  - `pnpm --filter @geolens/web test:r2` -> 16/16 passed
+  - `pnpm --filter @geolens/web run smoke:pages` -> 6/6 passed
+  - `pnpm --filter @geolens/web run check:zh` -> 73 文件 0 纯英文 UI 节点
+  - `pnpm --filter @geolens/web build` -> Next.js 15 优化生产构建完成，25 条路由 0 错误
+
