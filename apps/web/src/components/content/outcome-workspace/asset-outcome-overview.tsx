@@ -16,6 +16,12 @@ import { QueryOutcomeTable } from "./query-outcome-table";
 import { QueryOutcomeDrawer } from "./query-outcome-drawer";
 import { RetestRunSelector } from "./retest-run-selector";
 import { RetestProgressPanel } from "./retest-progress-panel";
+import { normalizeOutcomeSnapshot } from "@/lib/outcome-snapshot";
+
+function formatDelta(val?: number): string {
+  if (val === undefined || val === null || val === 0) return "0";
+  return val > 0 ? `+${val}` : `${val}`;
+}
 
 interface AssetOutcomeOverviewProps {
   workspace: AssetOutcomeWorkspace;
@@ -74,12 +80,17 @@ export function AssetOutcomeOverview({
           citationDelta: obsSummary?.citationCountDeltaTotal,
           likelyRelated: attrSummary?.likelyRelatedCount,
         },
-        queryLevelDetails: activeRun?.queryRows?.slice(0, 10).map((r) => ({
-          query: r.queryText,
-          before: r.outcome?.beforeSnapshot?.brandMentionStatus || "ABSENT",
-          after: r.outcome?.afterSnapshot?.brandMentionStatus || "ABSENT",
-          attribution: r.attribution?.status || "INSUFFICIENT_EVIDENCE",
-        })),
+        queryLevelDetails: activeRun?.queryRows?.slice(0, 10).map((r) => {
+          const b = normalizeOutcomeSnapshot(r.outcome?.beforeSnapshot);
+          const a = normalizeOutcomeSnapshot(r.outcome?.afterSnapshot);
+          const toStatus = (v: boolean | null) => (v === true ? "PRESENT" : v === false ? "ABSENT" : "UNKNOWN");
+          return {
+            query: r.queryText,
+            before: toStatus(b.brandMentioned),
+            after: toStatus(a.brandMentioned),
+            attribution: r.attribution?.status || "INSUFFICIENT_EVIDENCE",
+          };
+        }),
       });
       setAttributionResult(res.data);
       setAiMetadata(res);
@@ -295,11 +306,11 @@ export function AssetOutcomeOverview({
               </span>
             </div>
 
-            {/* 2. 品牌提及净增 */}
+            {/* 2. 新增品牌提及 */}
             <div className="metric-card">
-              <span className="metric-label">品牌提及净增</span>
+              <span className="metric-label">新增品牌提及</span>
               <strong className={obsSummary?.mentionAbsentToPresent ? "text-emerald-700" : "text-slate-800"}>
-                {obsSummary?.mentionAbsentToPresent ? `+${obsSummary.mentionAbsentToPresent}` : "0"}{" "}
+                {formatDelta(obsSummary?.mentionAbsentToPresent)}{" "}
                 <span className="text-xs font-normal text-slate-500">个问题新提及</span>
               </strong>
               <span className="metric-note">
@@ -310,12 +321,12 @@ export function AssetOutcomeOverview({
             {/* 3. 引用净增与位次 */}
             <div className="metric-card">
               <span className="metric-label">引用净增总量</span>
-              <strong className={obsSummary?.citationCountDeltaTotal ? "text-emerald-700" : "text-slate-800"}>
-                {obsSummary?.citationCountDeltaTotal ? `+${obsSummary.citationCountDeltaTotal}` : "0"}{" "}
+              <strong className={(obsSummary?.citationCountDeltaTotal ?? 0) > 0 ? "text-emerald-700" : (obsSummary?.citationCountDeltaTotal ?? 0) < 0 ? "text-rose-700" : "text-slate-800"}>
+                {formatDelta(obsSummary?.citationCountDeltaTotal)}{" "}
                 <span className="text-xs font-normal text-slate-500">次净增引用</span>
               </strong>
               <span className="metric-note">
-                {obsSummary?.positionImproved ? `${obsSummary.positionImproved} 个问题位次前移` : "位次保持平稳"}
+                {obsSummary?.positionImproved ? `${obsSummary.positionImproved} 个问题位次前移` : obsSummary?.positionWorsened ? `${obsSummary.positionWorsened} 个问题位次后移` : "位次保持平稳"}
               </span>
             </div>
 
@@ -328,7 +339,11 @@ export function AssetOutcomeOverview({
               </strong>
               <span className="metric-note">
                 {attrSummary?.confoundedCount ? `${attrSummary.confoundedCount} 项存在混杂 · ` : ""}
-                {attrSummary?.noObservedChangeCount ? `${attrSummary.noObservedChangeCount} 项无变化` : "证据链完备"}
+                {attrSummary?.insufficientEvidenceCount
+                  ? `${attrSummary.insufficientEvidenceCount} 项证据不足`
+                  : attrSummary?.noObservedChangeCount
+                  ? `${attrSummary.noObservedChangeCount} 项无变化`
+                  : "证据链完备"}
               </span>
             </div>
           </div>

@@ -295,9 +295,9 @@ export default function PublicShareReportPage() {
             </div>
 
             <div className="bg-slate-900/90 rounded-xl p-4 border border-slate-800 shadow-sm">
-              <div className="text-xs text-slate-400">强推荐率 (Recommend)</div>
+              <div className="text-xs text-slate-400">推荐率 (Recommend)</div>
               <div className="text-2xl font-bold mt-1 text-white">{formatPct(recommendationRate)}</div>
-              <div className="text-[11px] text-slate-500 mt-1">被 AI 首选或着重推荐的频次占比</div>
+              <div className="text-[11px] text-slate-500 mt-1">被 AI 推荐的频次占比</div>
             </div>
 
             <div className="bg-slate-900/90 rounded-xl p-4 border border-slate-800 shadow-sm">
@@ -309,10 +309,10 @@ export default function PublicShareReportPage() {
             </div>
 
             <div className="bg-slate-900/90 rounded-xl p-4 border border-slate-800 shadow-sm">
-              <div className="text-xs text-slate-400">权威引用源 (Citations)</div>
+              <div className="text-xs text-slate-400">独立引用源 (Citations)</div>
               <div className="text-2xl font-bold mt-1 text-white">{overall.citationCount} 条</div>
               <div className="text-[11px] text-slate-500 mt-1">
-                覆盖 {overall.citationDomainCount} 个权威第三方独立域名
+                覆盖 {overall.citationDomainCount} 个第三方独立引用域名
               </div>
             </div>
           </div>
@@ -383,7 +383,7 @@ export default function PublicShareReportPage() {
                         : "bg-rose-500/10 text-rose-400 border border-rose-500/30"
                     }`}
                   >
-                    {q.recommended ? "首选推荐" : q.brandMentioned ? "提及品牌" : "未提及"}
+                    {q.recommended ? "推荐品牌" : q.brandMentioned ? "提及品牌" : "未提及"}
                   </span>
                 </div>
                 <div className="flex items-center space-x-3 text-[11px] text-slate-500">

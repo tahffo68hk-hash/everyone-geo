@@ -6,6 +6,7 @@ import {
   formatBaselineStatus,
   type QueryOutcomeRow,
 } from "@/lib/outcome-api";
+import { normalizeOutcomeSnapshot } from "@/lib/outcome-snapshot";
 
 interface QueryOutcomeTableProps {
   rows: QueryOutcomeRow[];
@@ -99,8 +100,8 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
               const attrInfo = formatAttributionStatus(attribution?.status);
               const baseInfo = formatBaselineStatus(row.baselineStatus || outcome?.baselineCompatibility);
 
-              const before = outcome?.beforeSnapshot ?? {};
-              const after = outcome?.afterSnapshot ?? {};
+              const before = normalizeOutcomeSnapshot(outcome?.beforeSnapshot);
+              const after = normalizeOutcomeSnapshot(outcome?.afterSnapshot);
 
               const isComparable =
                 outcome?.comparisonStatus === "COMPARABLE" ||
@@ -132,9 +133,9 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                   <td>
                     {isComparable ? (
                       <span className="font-mono text-xs">
-                        {before.brandMention === true ? "提及" : before.brandMention === false ? "未提" : "—"} →{" "}
-                        <span className={after.brandMention === true ? "text-emerald-700 font-bold" : after.brandMention === false ? "text-slate-500" : "text-slate-400"}>
-                          {after.brandMention === true ? "提及" : after.brandMention === false ? "未提" : "—"}
+                        {before.brandMentioned === true ? "提及" : before.brandMentioned === false ? "未提" : "—"} →{" "}
+                        <span className={after.brandMentioned === true ? "text-emerald-700 font-bold" : after.brandMentioned === false ? "text-slate-500" : "text-slate-400"}>
+                          {after.brandMentioned === true ? "提及" : after.brandMentioned === false ? "未提" : "—"}
                         </span>
                       </span>
                     ) : (
@@ -147,7 +148,7 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                     {isComparable ? (
                       <span className="font-mono text-xs">
                         {typeof before.citationCount === "number" ? before.citationCount : "—"} →{" "}
-                        <span className={typeof after.citationCount === "number" && (before.citationCount === undefined || after.citationCount > before.citationCount) ? "text-emerald-700 font-bold" : ""}>
+                        <span className={typeof after.citationCount === "number" && (before.citationCount === null || after.citationCount > before.citationCount) ? "text-emerald-700 font-bold" : ""}>
                           {typeof after.citationCount === "number" ? after.citationCount : "—"}
                         </span>
                       </span>
@@ -160,16 +161,16 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                   <td>
                     {isComparable ? (
                       <span className="font-mono text-xs">
-                        {typeof before.position === "number" && before.position > 0 ? `#${before.position}` : before.position === null || before.position === 0 ? "未上榜" : "—"} →{" "}
+                        {before.mentionPosition ? `#${before.mentionPosition}` : before.mentionPosition === null && before.brandMentioned === false ? "未上榜" : before.mentionPosition === null && before.brandMentioned === true ? "未标位" : "—"} →{" "}
                         <span className={
-                          typeof after.position === "number" && after.position > 0 &&
-                          (!before.position || before.position === 0 || after.position < before.position)
+                          after.mentionPosition &&
+                          (!before.mentionPosition || after.mentionPosition < before.mentionPosition)
                             ? "text-emerald-700 font-bold"
-                            : typeof after.position === "number" && typeof before.position === "number" && before.position > 0 && after.position > before.position
+                            : after.mentionPosition && before.mentionPosition && after.mentionPosition > before.mentionPosition
                             ? "text-amber-700"
                             : ""
                         }>
-                          {typeof after.position === "number" && after.position > 0 ? `#${after.position}` : after.position === null || after.position === 0 ? "未上榜" : "—"}
+                          {after.mentionPosition ? `#${after.mentionPosition}` : after.mentionPosition === null && after.brandMentioned === false ? "未上榜" : after.mentionPosition === null && after.brandMentioned === true ? "未标位" : "—"}
                         </span>
                       </span>
                     ) : (
@@ -181,9 +182,9 @@ export function QueryOutcomeTable({ rows, onSelectRow }: QueryOutcomeTableProps)
                   <td>
                     {isComparable ? (
                       <span className="text-xs">
-                        {before.recommendation === true ? "推荐" : before.recommendation === false ? "未推荐" : "—"} →{" "}
-                        <span className={after.recommendation === true ? "text-emerald-700 font-semibold" : after.recommendation === false ? "text-slate-500" : "text-slate-400"}>
-                          {after.recommendation === true ? "推荐" : after.recommendation === false ? "未推荐" : "—"}
+                        {before.recommended === true ? "推荐" : before.recommended === false ? "未推荐" : "—"} →{" "}
+                        <span className={after.recommended === true ? "text-emerald-700 font-semibold" : after.recommended === false ? "text-slate-500" : "text-slate-400"}>
+                          {after.recommended === true ? "推荐" : after.recommended === false ? "未推荐" : "—"}
                         </span>
                       </span>
                     ) : (

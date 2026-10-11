@@ -9,6 +9,7 @@ import {
   formatReasonCode,
   type QueryOutcomeRow,
 } from "@/lib/outcome-api";
+import { normalizeOutcomeSnapshot } from "@/lib/outcome-snapshot";
 
 interface QueryOutcomeDrawerProps {
   row: QueryOutcomeRow | null;
@@ -35,9 +36,14 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
   const baseInfo = formatBaselineStatus(row.baselineStatus || outcome?.baselineCompatibility);
   const changeInfo = formatObservedChangeType(attribution?.observedChangeType);
 
-  const beforeSnap = outcome?.beforeSnapshot ?? {};
-  const afterSnap = outcome?.afterSnapshot ?? {};
+  const beforeSnap = (outcome?.beforeSnapshot as Record<string, any>) ?? {};
+  const afterSnap = (outcome?.afterSnapshot as Record<string, any>) ?? {};
+  const beforeNorm = normalizeOutcomeSnapshot(outcome?.beforeSnapshot);
+  const afterNorm = normalizeOutcomeSnapshot(outcome?.afterSnapshot);
   const deltaSnap = outcome?.deltaSnapshot ?? {};
+
+  const hasBefore = Boolean(beforeNorm.capturedAt || beforeNorm.evidenceId || beforeSnap.timestamp || beforeSnap.model || beforeSnap.brandMention !== undefined);
+  const hasAfter = Boolean(afterNorm.capturedAt || afterNorm.evidenceId || afterSnap.timestamp || afterSnap.model || afterSnap.brandMention !== undefined);
 
   const isComparable =
     outcome?.comparisonStatus === "COMPARABLE" ||
@@ -174,14 +180,18 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <span className="font-semibold text-xs text-slate-700">Before（发布前基线）</span>
                   <span className="text-xs text-slate-400">
-                    {beforeSnap.timestamp ? new Date(beforeSnap.timestamp).toLocaleString("zh-CN", { hour12: false }) : "无基线"}
+                    {beforeNorm.capturedAt
+                      ? new Date(beforeNorm.capturedAt).toLocaleString("zh-CN", { hour12: false })
+                      : beforeSnap.timestamp
+                      ? new Date(beforeSnap.timestamp).toLocaleString("zh-CN", { hour12: false })
+                      : "无基线"}
                   </span>
                 </div>
-                {beforeSnap.timestamp ? (
+                {hasBefore ? (
                   <dl className="grid grid-cols-2 gap-x-2 gap-y-2 text-xs">
                     <div>
                       <dt className="text-slate-400">模型 / 引擎</dt>
-                      <dd className="font-medium text-slate-800 mt-0.5">{beforeSnap.model || "默认模型"}</dd>
+                      <dd className="font-medium text-slate-800 mt-0.5">{beforeSnap.model || beforeSnap.engineName || "默认模型"}</dd>
                     </div>
                     <div>
                       <dt className="text-slate-400">检索模式</dt>
@@ -190,27 +200,35 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
                     <div>
                       <dt className="text-slate-400">品牌提及</dt>
                       <dd className="font-medium text-slate-800 mt-0.5">
-                        {beforeSnap.brandMention ? (
+                        {beforeNorm.brandMentioned === true ? (
                           <span className="text-emerald-700 font-semibold">出现</span>
-                        ) : (
+                        ) : beforeNorm.brandMentioned === false ? (
                           <span className="text-slate-500">未出现</span>
+                        ) : (
+                          <span className="text-slate-400">未知</span>
                         )}
                       </dd>
                     </div>
                     <div>
                       <dt className="text-slate-400">引用数</dt>
-                      <dd className="font-medium text-slate-800 mt-0.5">{beforeSnap.citationCount ?? 0}</dd>
+                      <dd className="font-medium text-slate-800 mt-0.5">{beforeNorm.citationCount ?? beforeSnap.citationCount ?? 0}</dd>
                     </div>
                     <div>
                       <dt className="text-slate-400">位置排名</dt>
                       <dd className="font-medium text-slate-800 mt-0.5">
-                        {beforeSnap.position ? `#${beforeSnap.position}` : "无排名"}
+                        {beforeNorm.mentionPosition
+                          ? `#${beforeNorm.mentionPosition}`
+                          : beforeNorm.mentionPosition === null && beforeNorm.brandMentioned === false
+                          ? "未上榜"
+                          : beforeSnap.position
+                          ? `#${beforeSnap.position}`
+                          : "无排名"}
                       </dd>
                     </div>
                     <div>
                       <dt className="text-slate-400">推荐态度</dt>
                       <dd className="font-medium text-slate-800 mt-0.5">
-                        {beforeSnap.recommendation ? "推荐" : "未推荐"}
+                        {beforeNorm.recommended === true ? "推荐" : beforeNorm.recommended === false ? "未推荐" : "—"}
                       </dd>
                     </div>
                     <div>
@@ -219,8 +237,10 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
                     </div>
                     <div>
                       <dt className="text-slate-400">提及竞品</dt>
-                      <dd className="font-medium text-slate-800 mt-0.5 truncate" title={Array.isArray(beforeSnap.competitors) ? beforeSnap.competitors.join(", ") : "无"}>
-                        {Array.isArray(beforeSnap.competitors) && beforeSnap.competitors.length > 0
+                      <dd className="font-medium text-slate-800 mt-0.5 truncate" title={Array.isArray(beforeNorm.competitorsMentioned) ? beforeNorm.competitorsMentioned.join(", ") : Array.isArray(beforeSnap.competitors) ? beforeSnap.competitors.join(", ") : "无"}>
+                        {Array.isArray(beforeNorm.competitorsMentioned) && beforeNorm.competitorsMentioned.length > 0
+                          ? beforeNorm.competitorsMentioned.join(", ")
+                          : Array.isArray(beforeSnap.competitors) && beforeSnap.competitors.length > 0
                           ? beforeSnap.competitors.join(", ")
                           : "无"}
                       </dd>
@@ -236,14 +256,18 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <span className="font-semibold text-xs text-slate-700">After（发布后复测）</span>
                   <span className="text-xs text-slate-400">
-                    {afterSnap.timestamp ? new Date(afterSnap.timestamp).toLocaleString("zh-CN", { hour12: false }) : "无结果"}
+                    {afterNorm.capturedAt
+                      ? new Date(afterNorm.capturedAt).toLocaleString("zh-CN", { hour12: false })
+                      : afterSnap.timestamp
+                      ? new Date(afterSnap.timestamp).toLocaleString("zh-CN", { hour12: false })
+                      : "无结果"}
                   </span>
                 </div>
-                {afterSnap.timestamp ? (
+                {hasAfter ? (
                   <dl className="grid grid-cols-2 gap-x-2 gap-y-2 text-xs">
                     <div>
                       <dt className="text-slate-400">模型 / 引擎</dt>
-                      <dd className="font-medium text-slate-800 mt-0.5">{afterSnap.model || "默认模型"}</dd>
+                      <dd className="font-medium text-slate-800 mt-0.5">{afterSnap.model || afterSnap.engineName || "默认模型"}</dd>
                     </div>
                     <div>
                       <dt className="text-slate-400">检索模式</dt>
@@ -252,27 +276,35 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
                     <div>
                       <dt className="text-slate-400">品牌提及</dt>
                       <dd className="font-medium text-slate-800 mt-0.5">
-                        {afterSnap.brandMention ? (
+                        {afterNorm.brandMentioned === true ? (
                           <span className="text-emerald-700 font-semibold">出现</span>
-                        ) : (
+                        ) : afterNorm.brandMentioned === false ? (
                           <span className="text-slate-500">未出现</span>
+                        ) : (
+                          <span className="text-slate-400">未知</span>
                         )}
                       </dd>
                     </div>
                     <div>
                       <dt className="text-slate-400">引用数</dt>
-                      <dd className="font-medium text-slate-800 mt-0.5">{afterSnap.citationCount ?? 0}</dd>
+                      <dd className="font-medium text-slate-800 mt-0.5">{afterNorm.citationCount ?? afterSnap.citationCount ?? 0}</dd>
                     </div>
                     <div>
                       <dt className="text-slate-400">位置排名</dt>
                       <dd className="font-medium text-slate-800 mt-0.5">
-                        {afterSnap.position ? `#${afterSnap.position}` : "无排名"}
+                        {afterNorm.mentionPosition
+                          ? `#${afterNorm.mentionPosition}`
+                          : afterNorm.mentionPosition === null && afterNorm.brandMentioned === false
+                          ? "未上榜"
+                          : afterSnap.position
+                          ? `#${afterSnap.position}`
+                          : "无排名"}
                       </dd>
                     </div>
                     <div>
                       <dt className="text-slate-400">推荐态度</dt>
                       <dd className="font-medium text-slate-800 mt-0.5">
-                        {afterSnap.recommendation ? "推荐" : "未推荐"}
+                        {afterNorm.recommended === true ? "推荐" : afterNorm.recommended === false ? "未推荐" : "—"}
                       </dd>
                     </div>
                     <div>
@@ -281,8 +313,10 @@ export function QueryOutcomeDrawer({ row, onClose }: QueryOutcomeDrawerProps) {
                     </div>
                     <div>
                       <dt className="text-slate-400">提及竞品</dt>
-                      <dd className="font-medium text-slate-800 mt-0.5 truncate" title={Array.isArray(afterSnap.competitors) ? afterSnap.competitors.join(", ") : "无"}>
-                        {Array.isArray(afterSnap.competitors) && afterSnap.competitors.length > 0
+                      <dd className="font-medium text-slate-800 mt-0.5 truncate" title={Array.isArray(afterNorm.competitorsMentioned) ? afterNorm.competitorsMentioned.join(", ") : Array.isArray(afterSnap.competitors) ? afterSnap.competitors.join(", ") : "无"}>
+                        {Array.isArray(afterNorm.competitorsMentioned) && afterNorm.competitorsMentioned.length > 0
+                          ? afterNorm.competitorsMentioned.join(", ")
+                          : Array.isArray(afterSnap.competitors) && afterSnap.competitors.length > 0
                           ? afterSnap.competitors.join(", ")
                           : "无"}
                       </dd>

@@ -93,6 +93,24 @@ export default function AppPage() {
   }
 
   const latest = reports[0];
+  const previous = reports[1];
+
+  const calculateTrend = (curr?: number | null, prev?: number | null) => {
+    if (curr == null || prev == null) return undefined;
+    const diff = (curr - prev) * 100;
+    if (Math.abs(diff) < 0.05) {
+      return { value: "0.0%", label: "环比持平", direction: "neutral" as const };
+    }
+    return {
+      value: `${Math.abs(diff).toFixed(1)}%`,
+      label: diff > 0 ? "环比上升" : "环比下降",
+      direction: diff > 0 ? ("up" as const) : ("down" as const),
+    };
+  };
+
+  const visibilityTrend = calculateTrend(latest?.summary?.visibilityRate, previous?.summary?.visibilityRate);
+  const recommendationTrend = calculateTrend(latest?.summary?.recommendationRate, previous?.summary?.recommendationRate);
+  const runningTasksCount = activity.filter((x) => ["PENDING", "QUEUED", "RUNNING"].includes(x.status)).length;
   const totalQueries = suites.reduce((sum, suite) => sum + (suite.queryCount ?? 0), 0);
   const actionItems = deriveActionItems({
     projectId,
@@ -152,11 +170,23 @@ export default function AppPage() {
             <div className="absolute right-0 top-0 -mt-10 -mr-10 w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
             <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
               <div className="space-y-2 max-w-2xl">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 backdrop-blur-md">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  GEO 全景诊断监控系统 · 运行中
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+                {runningTasksCount > 0 ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 backdrop-blur-md">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    GEO 监测任务 · {runningTasksCount} 项执行中
+                  </div>
+                ) : latest ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 backdrop-blur-md">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    GEO 全景诊断 · 最新快照已归档
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 backdrop-blur-md">
+                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                    GEO 监测看板 · 待初始化基准
+                  </div>
+                )}
+                <h2 className="hero-banner-title text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
                   {currentTarget?.canonicalName ?? project?.name ?? "目标品牌"} 的 AI 搜索可见度大盘
                 </h2>
                 <p className="text-indigo-200/90 text-sm leading-relaxed">
@@ -168,8 +198,14 @@ export default function AppPage() {
                 <div className="text-right">
                   <div className="text-xs text-indigo-200 font-medium">当前综合可见度得分</div>
                   <div className="text-3xl font-black text-white tracking-tight">
-                    {latest?.summary?.visibilityRate != null ? Math.round(latest.summary.visibilityRate * 100) : "85"}
-                    <span className="text-lg font-normal text-indigo-300 ml-1">/ 100</span>
+                    {latest?.summary?.visibilityRate != null ? (
+                      <>
+                        {Math.round(latest.summary.visibilityRate * 100)}
+                        <span className="text-lg font-normal text-indigo-300 ml-1">/ 100</span>
+                      </>
+                    ) : (
+                      <span className="text-2xl font-bold text-indigo-200">待检测</span>
+                    )}
                   </div>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
@@ -183,15 +219,15 @@ export default function AppPage() {
             <MetricCard
               label="AI 可见度"
               value={latest ? pct(latest.summary?.visibilityRate) : "—"}
-              note={latest ? "最近报告 · 点击进入报告" : "完成一次检测后显示"}
-              trend={{ value: "12.4%", label: "环比上周期", direction: "up" }}
+              note={latest ? (visibilityTrend ? "对比上周期报告" : "最近报告 · 暂无对比基期") : "完成一次检测后显示"}
+              trend={visibilityTrend}
               href={latest ? `/app/reports/${latest.id}` : undefined}
             />
             <MetricCard
               label="核心推荐率"
               value={latest ? pct(latest.summary?.recommendationRate) : "—"}
-              note={latest ? "最近报告" : "完成一次检测后显示"}
-              trend={{ value: "5.1%", label: "环比上周期", direction: "up" }}
+              note={latest ? (recommendationTrend ? "对比上周期报告" : "最近报告 · 暂无对比基期") : "完成一次检测后显示"}
+              trend={recommendationTrend}
               href={latest ? `/app/reports/${latest.id}` : undefined}
             />
             <MetricCard

@@ -226,11 +226,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const context = useProjectContext();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("geolens_sidebar_collapsed");
     if (saved === "true") setCollapsed(true);
   }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -281,8 +286,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         跳到主要内容
       </a>
 
+      {/* 移动端遮罩 */}
+      {mobileOpen && (
+        <div
+          className="mobile-backdrop"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* 商业级多层级分组侧边栏 */}
-      <aside className={`app-sidebar ${collapsed ? "collapsed" : ""}`}>
+      <aside className={`app-sidebar ${collapsed ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}>
         <Link href={href("/app")} className="app-brand" title="GeoLens 首页">
           <div className="brand-icon-box">G</div>
           {!collapsed && (
@@ -313,7 +327,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                     href={href(item.path)}
                     className={`sidebar-nav-item ${active ? "active" : ""}`}
                     aria-current={active ? "page" : undefined}
-                    title={collapsed ? item.label : undefined}
+                    title={item.label}
+                    aria-label={item.label}
                   >
                     <span className="sidebar-item-icon">
                       <Icon className="w-[18px] h-[18px]" />
@@ -337,9 +352,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="sidebar-foot">
           {!collapsed && (
             <div className="sidebar-status-pill">
-              <span className="status-dot-pulse" aria-hidden="true" />
-              <span className="font-medium text-slate-700">实时引擎就绪</span>
-              <span className="ml-auto text-[10px] text-slate-400">v2.4</span>
+              <span className={`w-2 h-2 rounded-full ${context.error ? "bg-rose-500" : "bg-emerald-500"}`} aria-hidden="true" />
+              <span className="font-medium text-slate-700">{context.error ? "服务异常" : "平台运行正常"}</span>
+              <span className="ml-auto text-[10px] text-slate-400">GeoLens</span>
             </div>
           )}
 
@@ -371,6 +386,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* 全新半透明毛玻璃 Topbar */}
         <header className="app-topbar">
           <div className="topbar-left">
+            {/* 移动端汉堡菜单触发器 */}
+            <button
+              type="button"
+              className="mobile-menu-toggle md:hidden"
+              onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label={mobileOpen ? "关闭导航菜单" : "打开导航菜单"}
+            >
+              <svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {mobileOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+
             {/* 项目切换器 */}
             <div className="project-switch-box">
               <span className="text-indigo-600 text-xs font-bold" aria-hidden="true">❖</span>
@@ -411,14 +442,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="topbar-right">
-            {/* 全局快捷搜索提示 */}
-            <div className="hidden lg:flex items-center gap-2 text-xs text-slate-400 bg-slate-100/80 px-3 py-1.5 rounded-lg border border-slate-200/60">
-              <IconQueries className="w-3.5 h-3.5 text-slate-400" />
-              <span>快速搜索问题或任务</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-white rounded border border-slate-200 text-slate-500 shadow-xs">
-                ⌘K
-              </kbd>
-            </div>
+            {/* 用户租户信息与退出 */}
 
             {/* 用户租户信息与退出 */}
             <div className="flex items-center gap-2 text-xs">

@@ -215,7 +215,7 @@ export default function ReportDetailPage() {
             {[
               { label: "品牌可见度", value: percent(snap.overall.visibilityRate), queries: snap.byQuery.filter(q => q.analyzed && q.brandMentioned).map(q => q.queryText), note: "查看提及品牌的问题" },
               { label: "推荐率", value: percent(snap.overall.recommendationRate), queries: snap.byQuery.filter(q => q.analyzed && q.recommended).map(q => q.queryText), note: "查看推荐品牌的问题" },
-              { label: "引用次数", value: `${snap.overall.citationCount} 次`, queries: snap.byQuery.filter(q => q.analyzed && (q.citationCount ?? 0) > 0).map(q => q.queryText), note: `${snap.overall.citationDomainCount} 个权威独立域名` },
+              { label: "引用次数", value: `${snap.overall.citationCount} 次`, queries: snap.byQuery.filter(q => q.analyzed && (q.citationCount ?? 0) > 0).map(q => q.queryText), note: `${snap.overall.citationDomainCount} 个独立引用域名` },
               { label: "AI 声量份额（SOV）", value: !report.competitorSet ? "不适用" : competitor?.status !== "ready" ? "暂不可用" : percent(snap.overall.shareOfVoice), queries: snap.byQuery.filter(q => q.analyzed).map(q => q.queryText), note: !report.competitorSet ? "未绑定竞品集合" : "查看品牌与竞品对抗" },
             ].map(metric => (
               <button
@@ -236,7 +236,7 @@ export default function ReportDetailPage() {
           </div>
           <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
             <span>平均首次提及位次：<strong>{snap.overall.averageMentionPosition == null ? "—" : `第 ${snap.overall.averageMentionPosition.toFixed(2)} 位`}</strong> · 引用独立域名数：<strong>{snap.overall.citationDomainCount}</strong></span>
-            <span>情感倾向分布：正面 {snap.overall.sentimentDistribution.positive} / 中性 {snap.overall.sentimentDistribution.neutral} / 负面 {snap.overall.sentimentDistribution.negative}</span>
+            <span>情感倾向分布：正面 {snap.overall.sentimentDistribution.positive} / 中性 {snap.overall.sentimentDistribution.neutral} / 负面 {snap.overall.sentimentDistribution.negative} / 未知 {snap.overall.sentimentDistribution.unknown ?? 0}</span>
           </div>
         </div>
       </div>
@@ -262,7 +262,7 @@ export default function ReportDetailPage() {
                   <th>成功样本</th>
                   <th>提及问题数</th>
                   <th>品牌可见率</th>
-                  <th>强推荐率</th>
+                  <th>推荐率</th>
                 </tr>
               </thead>
               <tbody>
@@ -347,7 +347,7 @@ export default function ReportDetailPage() {
                 <th>检测问题</th>
                 <th>场景分类</th>
                 <th>品牌提及</th>
-                <th>强推荐</th>
+                <th>是否推荐</th>
                 <th>首次提及位次</th>
                 <th>引用数</th>
                 <th>状态</th>
@@ -372,7 +372,7 @@ export default function ReportDetailPage() {
                     {row.analyzed ? (
                       row.recommended ? (
                         <span className="inline-flex items-center gap-1 text-indigo-700 font-semibold text-xs">
-                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> 首选
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> 是
                         </span>
                       ) : <span className="text-slate-400 text-xs">否</span>
                     ) : "—"}
