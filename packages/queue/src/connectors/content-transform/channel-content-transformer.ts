@@ -359,6 +359,115 @@ export function transformContentForChannel(
       };
     }
 
+    case 'XIAOHONGSHU': {
+      // 小红书：生活种草笔记（20 字以内标题、Emoji 分段、热门标签）
+      const rawTitle = content.title || '精选生活种草';
+      const title = rawTitle.slice(0, 20);
+      const tagStr = tags.map((t) => (t.startsWith('#') ? t : '#' + t)).join(' ');
+      let bodyText = content.body;
+      if (!bodyText.includes('✨') && !bodyText.includes('📌')) {
+        bodyText = '✨ ' + bodyText.replace(/\n\n+/g, '\n\n💡 ').replace(/\n/g, '\n');
+      }
+      if (tagStr) {
+        bodyText += '\n\n' + tagStr;
+      }
+      const trimmedBody = bodyText.slice(0, 1000);
+      const images = (content.assets || [])
+        .filter((a) => a.type === 'IMAGE' || a.type === 'COVER')
+        .slice(0, 9);
+
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title,
+        body: trimmedBody,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          title,
+          content: trimmedBody,
+          tags,
+          images: images.map((img) => ({ url: img.url, externalId: img.externalId })),
+          callToAction: '欢迎点赞、收藏并在评论区交流讨论！',
+        },
+      };
+    }
+
+    case 'ZHIHU': {
+      // 知乎：专业深度长文与问答 Markdown
+      const title = (content.title || '深度探讨').slice(0, 100);
+      const cleanTags = tags.slice(0, 5);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title,
+        body: content.body,
+        summary: content.summary || undefined,
+        tags: cleanTags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          title,
+          content_markdown: content.body,
+          topics: cleanTags,
+        },
+      };
+    }
+
+    case 'WORDPRESS': {
+      // WordPress: 博客与企业 CMS 文章（HTML/Markdown 支持、分类与特色图）
+      const title = (content.title || '站点精选文章').slice(0, 200);
+      const htmlBody = content.body.startsWith('<p>')
+        ? content.body
+        : '<p>' + content.body.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br/>') + '</p>';
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title,
+        body: htmlBody,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: false,
+        channelSpecificPayload: {
+          title,
+          content: htmlBody,
+          excerpt: content.summary || undefined,
+          status: 'draft',
+          tags,
+        },
+      };
+    }
+
+    case 'WECHAT_CHANNELS': {
+      // 视频号：短视频动态与分镜口播
+      const title = (content.title || '精彩视频动态').slice(0, 60);
+      const desc = (content.title ? content.title + '：' + content.body : content.body).slice(0, 1000);
+      return {
+        channel,
+        sourceDraftId,
+        sourceRevisionId,
+        title,
+        body: desc,
+        summary: content.summary || undefined,
+        tags,
+        coverUrl,
+        requiresVideo: true,
+        channelSpecificPayload: {
+          title,
+          description: desc,
+          tags,
+          coverUrl,
+          videoScript: content.metadata?.script ? String(content.metadata.script) : undefined,
+        },
+      };
+    }
+
     default: {
       return {
         channel,

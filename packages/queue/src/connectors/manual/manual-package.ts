@@ -75,6 +75,48 @@ export function generateManualPublishingPackage(
       '粘贴正文，插入配图与排版。',
       '添加相关话题标签后发布。',
     ];
+  } else if (channel === 'WECHAT_OFFICIAL_ACCOUNT' || channel === 'WECHAT') {
+    cta = '点击上方蓝字关注我们，分享在看，第一时间获取最新洞察！';
+    checklist = [
+      '登录微信公众平台 (mp.weixin.qq.com)。',
+      '进入【草稿箱】->【新建图文】。',
+      '填入标题、作者、封面图，将正文富文本排版后粘贴。',
+      '保存草稿或进行群发/发布。',
+    ];
+  } else if (channel === 'DOUYIN') {
+    cta = '关注我，带你解锁更多行业干货，我们下期见！';
+    checklist = [
+      '登录抖音创作者服务平台 (creator.douyin.com) 或抖音 App。',
+      '点击【发布视频】或【发布图文】。',
+      '上传制作好的视频素材或图文幻灯片。',
+      '填写视频描述、话题标签、添加合集或位置信息。',
+      '检查完播率与封面展示，确认发布。',
+    ];
+  } else if (channel === 'WORDPRESS') {
+    cta = '欢迎收藏本站并订阅 RSS 获取最新技术与行业资讯！';
+    checklist = [
+      '登录 WordPress 站点后台管理面板 (/wp-admin)。',
+      '导航至【文章】->【写文章】。',
+      '填入文章标题，切换至 Gutenberg 或经典编辑器粘贴 HTML/Markdown 内容。',
+      '设置特色图片 (Featured Image)、选择分类目录与标签。',
+      '点击【发布】或【保存草稿】。',
+    ];
+  } else if (channel === 'WEIBO') {
+    cta = '转发微博抽送好礼，关注博主带你掌握最新一手信息！';
+    checklist = [
+      '登录微博创作者中心或网页版微博 (weibo.com)。',
+      '点击发微博输入框，或进入【头条文章】长图文编辑器。',
+      '填入内容，添加双井号 #话题#，上传配图。',
+      '设置可见范围并点击【发送】。',
+    ];
+  } else if (channel === 'BILIBILI') {
+    cta = '一键三连不迷路，弹幕留言走起！';
+    checklist = [
+      '登录哔哩哔哩创作服务平台 (member.bilibili.com)。',
+      '点击【投稿】->【专栏投稿】或【视频投稿】。',
+      '上传封面、填写标题与简介，选择合适分区与标签。',
+      '确认发布。',
+    ];
   }
 
   return {

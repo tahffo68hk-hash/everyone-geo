@@ -1,7 +1,7 @@
 # GeoLens 逆向成果收敛、功能验收与交接记录 (HANDOFF.md)
 
 - **交接日期**: 2026-10-11
-- **当前 Git HEAD**: `c4239d0` (基线: `a7f210a`)
+- **当前 Git 基线**: `b251ea9`
 - **Git 状态**: 本地已全部提交，工作区干净 (Local Commits Only, **STRICTLY NO PUSH**)
 
 ---
@@ -168,9 +168,56 @@ a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safe
 - **自动化测试**:
   - `pnpm --filter @geo/core test` -> 256/256 passed
   - `pnpm --filter @geo/llm test` -> 55/55 passed
-  - `pnpm --filter @geo/queue test` -> 54/54 passed
-  - `pnpm --filter @geolens/web test:r2` -> 16/16 passed
-  - `pnpm --filter @geolens/web run smoke:pages` -> 6/6 passed
-  - `pnpm --filter @geolens/web run check:zh` -> 73 文件 0 纯英文 UI 节点
-  - `pnpm --filter @geolens/web build` -> Next.js 15 优化生产构建完成，25 条路由 0 错误
+## 七、多平台内容分发中心 (自动发布 + 人工辅助发布) 闭环交付
+
+根据商业 GEO SaaS 的多平台内容分发业务诉求，已全面完成多平台内容分发中心全栈交付，打通自动同步、人工辅助发布包与 GEO 效果闭环：
+
+### 1. 核心架构与双模式统一
+- **同一个工作台无缝兼容两种模式**：
+  - **模式 A (官方授权自动分发)**：针对具备开放接口或草稿同步能力的渠道（WordPress 支持 `DIRECT_PUBLISH` 与 `draft` 模式；微信公众号通过 `DRAFT_ONLY` 安全隔离至公众平台草稿箱，绝不私自群发）。
+  - **模式 B (多端人工辅助分发)**：针对小红书、知乎、抖音、微信视频号、微博、哔哩哔哩等平台，自动适配各端特性并生成结构化 `ManualPublishingPackage`（含标题字数限制、Emoji 分段、热门话题标签、素材顺序清单与各平台官方 Checklist 操作指引），提供一键复制标题/正文、一键下载 JSON 发布包及直达官方创作者后台链接。
+- **一键批量跨渠道触发**：支持单份 Draft/Revision 勾选多个渠道，每个渠道具有独立的发布模式与执行状态，互不阻塞。
+- **真实时间与落地资产确权**：人工发布后，支持在工作台中回填真实公开地址 (`canonicalUrl`)、平台内容 ID (`externalAssetId`) 与实际发布时刻 (`actualPublishedAt`)，确认后直接在数据库落成 `PublishedAsset`，并将血缘反向串联至 Draft 与 Revision，无缝接入 `/app/content/verification` GEO 复测与归因闭环。未确认的人工发布绝不伪造成 `PUBLISHED`。
+
+### 2. 覆盖的 8 大重点渠道矩阵
+| 渠道枚举 | 中文名称 | 分类 | 自动能力 | 人工能力 | 平台专属适配特性 |
+| :--- | :--- | :--- | :---: | :---: | :--- |
+| `WECHAT_OFFICIAL_ACCOUNT` | 微信公众号 | 私域图文 | `DRAFT_ONLY` | 支持 | 微信富文本排版、封面图匹配、草稿箱安全隔离 |
+| `WORDPRESS` | WordPress / 企业 CMS | 官方网站 | `DIRECT_PUBLISH` | 支持 | HTML 自动转换、特色分类图、支持 draft / publish 状态 |
+| `XIAOHONGSHU` | 小红书 | 社交种草 | `MANUAL_ONLY` | 支持 | 20 字精炼标题限制、Emoji 结构化排版、话题标签、1-9 张配图 |
+| `ZHIHU` | 知乎 | 问答社区 | `MANUAL_ONLY` | 支持 | 深度专业 Markdown 长文排版、5 个精准话题导出 |
+| `DOUYIN` | 抖音 | 短视频/图文 | `MANUAL_ONLY` | 支持 | 分镜口播台词、画面指引、热门话题、视频素材就绪校验 |
+| `WECHAT_CHANNELS` | 微信视频号 | 短视频 | `MANUAL_ONLY` | 支持 | 动态描述、分镜脚本、视频号挂载公众号文章链接指引 |
+| `WEIBO` | 微博 | 社交媒体 | `MANUAL_ONLY` | 支持 | 140 字速览短贴与头条文章长图文、双井号热门话题 |
+| `BILIBILI` | 哔哩哔哩 | 视频/专栏 | `MANUAL_ONLY` | 支持 | 专栏图文与视频投稿简介、分区指引、一键三连互动引导 |
+
+### 3. 后端服务与 API 交付
+- `apps/api/src/content-execution/`:
+  - `GET /projects/:id/distribution/channels`: 获取支持的渠道矩阵、连接状态与能力描述。
+  - `POST /projects/:id/content-drafts/:draftId/distribution/adapt`: 多渠道变体内容生成与人工发布包清单。
+  - `POST /projects/:id/content-drafts/:draftId/distribution/batch`: 一键批量创建发布任务，自动模式触发 `PublicationRouter`，人工模式生成待办任务。
+  - `POST /publications/:id/confirm-manual-published`: 人工发布回填确认，生成带完整血缘的 `PublishedAsset`。
+  - `apps/api/test/distribution-workbench.e2e-spec.ts`: 4/4 自动化 E2E 场景测试通过。
+
+### 4. 前端工作台与全站导航交付
+- `apps/web/src/lib/distribution-api.ts`: 强类型分发 API 客户端。
+- `apps/web/src/components/content/distribution/distribution-workbench.tsx`:
+  - 步骤 1：选择分发源草稿（展示版本、正文预览与 GEO 审批状态）。
+  - 步骤 2：渠道卡片矩阵与双模式切换开关。
+  - 步骤 3：多端变体排版预览与内联微调（支持实时字数计数、一键复制、下载发布包、直达创作者后台）。
+  - 步骤 4：分发执行看板与人工发布结果回填 Modal，落地为 GEO 资产后一键直达效果验证工作台。
+- `apps/web/src/app/app/content/distribution/page.tsx`: 独立分发页面。
+- `apps/web/src/app/app/content/page.tsx`: 集成 `多平台分发 (自动+人工)` Tab。
+- `apps/web/src/components/app-shell.tsx`: 侧边栏「内容生产与分发」新增「多平台分发」导航。
+- `apps/web/src/components/project-context.tsx`: `staticSubpages` 注册 `distribution`，消除误判草稿 ID 的路由缺陷。
+
+### 5. 验收测试与构建证据
+- **队列与数据包测试**: `pnpm --filter @geo/queue test` -> **54/54 passed (100%)**
+- **分发后端 E2E 测试**: `jest test/distribution-workbench.e2e-spec.ts` -> **4/4 passed (100%)**
+- **Web 生产构建**: `pnpm --filter @geolens/web build` -> **26 条页面路由编译优化完成，0 错误**
+- **真实 Chrome 浏览器 CDP 视觉与 DOM 验收**:
+  - `http://localhost:3000/app/content/distribution` (1440px 桌面端): 全部步骤与 8 大平台组件 100% 渲染生效。
+  - `http://localhost:3000/app/content?tab=distribution`: Tab 联动 100% 渲染生效。
+  - 响应式多视口检测 (720px 平板 / 390px 移动端): `hasOverflow: false`，零横向滚动条溢出。
+  - 快照归档在 `output/ui-verification-distribution/`。
 

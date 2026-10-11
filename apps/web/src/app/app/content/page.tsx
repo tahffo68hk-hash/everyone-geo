@@ -35,6 +35,7 @@ import { ContentCalendarView } from "@/components/content/content-calendar-view"
 import { CampaignWorkspaceView } from "@/components/content/campaign-workspace-view";
 import { CreateCampaignModal } from "@/components/content/create-campaign-modal";
 import { OutcomeWorkspaceView } from "@/components/content/outcome-workspace/outcome-workspace-view";
+import { DistributionWorkbench } from "@/components/content/distribution/distribution-workbench";
 import { AiActionButton } from "@/components/ai/ai-action-button";
 import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
 import {
@@ -86,17 +87,19 @@ export default function ContentWorkspacePage() {
   const { projectId } = useProjectContext();
   const searchParams = useSearchParams();
 
-  // Tab 状态：operations (M9B 运营执行), strategy (M9A 战略与计划), drafts (草稿与资产库), verification (M10E 效果验证与归因)
+  // Tab 状态：operations (M9B 运营执行), strategy (M9A 战略与计划), drafts (草稿与资产库), distribution (多平台分发), verification (M10E 效果验证与归因)
   const tabParam = searchParams.get("tab");
   const initialTab =
     tabParam === "strategy"
       ? "strategy"
       : tabParam === "drafts"
       ? "drafts"
+      : tabParam === "distribution"
+      ? "distribution"
       : tabParam === "verification"
       ? "verification"
       : "operations";
-  const [activeTab, setActiveTab] = useState<"operations" | "strategy" | "drafts" | "verification">(initialTab);
+  const [activeTab, setActiveTab] = useState<"operations" | "strategy" | "drafts" | "distribution" | "verification">(initialTab);
 
   // 运营执行二级视图状态 (queue / calendar / campaigns)
   const initialOpView =
@@ -535,6 +538,20 @@ export default function ContentWorkspacePage() {
             }`}
           >
             草稿与资产库 ({rows.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("distribution")}
+            className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+              activeTab === "distribution"
+                ? "border-teal-700 text-teal-800"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            多平台分发
+            <span className="ml-1.5 rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700 border border-teal-200">
+              自动+人工
+            </span>
           </button>
           <button
             type="button"
@@ -1439,6 +1456,11 @@ export default function ContentWorkspacePage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* TAB: 多平台分发中心 */}
+        {activeTab === "distribution" && (
+          <DistributionWorkbench projectId={projectId} />
         )}
 
         {/* TAB 3: 效果验证与归因 (M10E) */}

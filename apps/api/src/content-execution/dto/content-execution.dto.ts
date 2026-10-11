@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min } from "class-validator";
+import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 const GENERATION_MODES = ["MANUAL", "AI_ASSISTED", "AI_GENERATED"] as const;
@@ -551,4 +551,80 @@ export class ListPublishedAssetsDto {
   offset?: number;
 }
 
+export class AdaptChannelsDto {
+  @IsOptional()
+  @IsUUID()
+  revisionId?: string;
 
+  @IsArray()
+  @IsString({ each: true })
+  channels!: string[];
+}
+
+export class BatchDistributeItemDto {
+  @IsString()
+  channel!: string;
+
+  @IsIn(['AUTO', 'MANUAL'])
+  mode!: 'AUTO' | 'MANUAL';
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  body?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsString()
+  coverUrl?: string;
+
+  @IsOptional()
+  @IsIn(['draft', 'publish'])
+  targetStatus?: 'draft' | 'publish';
+}
+
+export class BatchDistributeDto {
+  @IsOptional()
+  @IsUUID()
+  revisionId?: string;
+
+  @IsOptional()
+  autoApprove?: boolean;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BatchDistributeItemDto)
+  items!: BatchDistributeItemDto[];
+}
+
+export class ConfirmManualPublishedDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 1024)
+  canonicalUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 256)
+  externalAssetId?: string;
+
+  @IsOptional()
+  @IsString()
+  actualPublishedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 2000)
+  verificationNote?: string;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+}

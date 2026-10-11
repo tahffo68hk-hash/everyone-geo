@@ -52,7 +52,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         if (controller.signal.aborted) return;
         setMe(identity); setProjects(options.projects);
         const segments = pathname.split("/").filter(Boolean);
-        const staticSubpages = ["new", "compare", "verification", "publications"];
+        const staticSubpages = ["new", "compare", "verification", "publications", "distribution"];
         let isDetail = false;
         let resSection = "";
         let resId = "";

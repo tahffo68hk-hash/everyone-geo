@@ -117,6 +117,15 @@ function IconContent({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
+function IconDistribution({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </svg>
+  );
+}
+
 function IconNewContent({ className = "w-4 h-4" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -201,6 +210,7 @@ const navGroups: NavGroup[] = [
     groupTitle: "内容生产与分发",
     items: [
       { label: "内容工作台", path: "/app/content", icon: IconContent, exact: true },
+      { label: "多平台分发", path: "/app/content/distribution", icon: IconDistribution, badge: "自动+人工" },
       { label: "新建内容", path: "/app/content/new", icon: IconNewContent },
       { label: "站点资产", path: "/app/site-assets", icon: IconSiteAssets },
     ],
@@ -262,6 +272,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (item.path === "/app/content/verification") {
       return pathname.startsWith("/app/content/verification");
     }
+    if (item.path === "/app/content/distribution") {
+      return pathname.startsWith("/app/content/distribution");
+    }
     return pathname.startsWith(item.path);
   }
 
@@ -278,7 +291,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isDetail =
     segments.length >= 3 &&
-    !["new", "compare", "verification", "publications"].includes(subSegment);
+    !["new", "compare", "verification", "publications", "distribution"].includes(subSegment);
 
   return (
     <div className="app-shell">

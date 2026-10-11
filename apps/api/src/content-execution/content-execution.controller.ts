@@ -13,6 +13,7 @@ import {
   RewriteVariantDto, UpdateDraftDto, ValidatePublicationDto,
   CreateVerifiedFactDto, ExtractClaimsDto, SafeRewriteDto, GenerateImagePreviewDto, AcceptImageAssetDto,
   ConfirmPublishedAssetDto, CreatePublishedAssetDto, ListPublishedAssetsDto,
+  AdaptChannelsDto, BatchDistributeDto, ConfirmManualPublishedDto,
 } from "./dto/content-execution.dto";
 
 /**
@@ -427,4 +428,51 @@ export class ContentExecutionController {
     }
     return this.content.listPublishedAssets(u.sub, projectId, dto);
   }
+
+  // ---- 多平台内容分发中心 (Multi-Platform Distribution Center) ----
+
+  /** 获取支持的渠道矩阵与连接状态 */
+  @Get("projects/:id/distribution/channels")
+  getDistributionChannels(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.content.getDistributionChannels(u.sub, id);
+  }
+
+  /** 多渠道适配预览与人工发布包生成 */
+  @Post("projects/:id/content-drafts/:draftId/distribution/adapt")
+  @HttpCode(200)
+  adaptContentForChannels(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("draftId", ParseUUIDPipe) draftId: string,
+    @Body() dto: AdaptChannelsDto,
+  ) {
+    return this.content.adaptContentForChannels(u.sub, id, draftId, dto);
+  }
+
+  /** 一键多渠道分发任务批量创建与触发（自动发布 + 人工辅助发布） */
+  @Post("projects/:id/content-drafts/:draftId/distribution/batch")
+  @HttpCode(201)
+  batchDistribute(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("draftId", ParseUUIDPipe) draftId: string,
+    @Body() dto: BatchDistributeDto,
+  ) {
+    return this.content.batchDistribute(u.sub, id, draftId, dto);
+  }
+
+  /** 人工发布回填确认 (回填真实链接/ID/发布时间，直接落成 PublishedAsset) */
+  @Post(["publications/:id/confirm-manual-published", "api/content/publications/:id/confirm-manual-published"])
+  @HttpCode(200)
+  confirmManualPublished(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: ConfirmManualPublishedDto,
+  ) {
+    return this.content.confirmManualPublished(u.sub, id, dto);
+  }
 }
+
