@@ -321,14 +321,23 @@ export class RetestOrchestrationService {
     });
     const sequence = prevCount + 1;
 
-    // 发布时间锚点（必须有明确基准时间，否则取创建时间）
-    const publishedAt = asset.verifiedAt || asset.publishedAt || asset.createdAt;
+    // 发布时间锚点：严格以真实 actualPublishedAt（或 publishedAt）划定发布前基线；
+    // 缺发布时间时明确缺基线，绝不用核验时间 (verifiedAt) 或创建时间替代（避免晚回填把发布后证据错算为基线）
+    const publishedAnchor: Date | null = asset.actualPublishedAt ?? asset.publishedAt ?? null;
 
     // 确定每条 Query 的基线选择与匹配兼容性
     const targetConfig = { provider, retrievalMode, sourceType, model, requestedModel };
     const queryBaselines = await Promise.all(
       queries.map(async (q) => {
-        const baseline = await this.selectBaselineForQuery(q.id, asset.projectId, publishedAt, targetConfig);
+        if (!publishedAnchor) {
+          return {
+            query: q,
+            baselineEvidenceId: null,
+            baselineStatus: "MISSING_BASELINE" as const,
+            baselineWarning: "资产缺少对外真实发布时间 (actualPublishedAt)，无法划分发布前基线",
+          };
+        }
+        const baseline = await this.selectBaselineForQuery(q.id, asset.projectId, publishedAnchor, targetConfig);
         return { query: q, ...baseline };
       }),
     );
@@ -340,7 +349,7 @@ export class RetestOrchestrationService {
         platform: asset.platform,
         title: asset.title,
         canonicalUrl: asset.canonicalUrl,
-        publishedAt: publishedAt.toISOString(),
+        publishedAt: publishedAnchor ? publishedAnchor.toISOString() : null,
       },
       configuration: {
         provider,

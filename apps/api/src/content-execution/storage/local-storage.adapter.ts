@@ -47,4 +47,19 @@ export class DevLocalStorageAdapter {
     await writeFile(join(base, key), bytes);
     return { storageRef: `dev-local://${key}`, storageKey: key, devOnly: true, adapter: "dev-local" };
   }
+
+  /** 读取 Buffer；针对 storageKey 执行防路径穿越检查。 */
+  async get(key: string): Promise<Buffer | null> {
+    const base = contentAssetStorageDir();
+    const filePath = resolve(base, key);
+    if (!filePath.startsWith(resolve(base))) {
+      return null;
+    }
+    try {
+      const { readFile } = await import("node:fs/promises");
+      return await readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
 }

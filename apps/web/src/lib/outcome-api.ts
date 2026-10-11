@@ -216,10 +216,10 @@ export const getAssetOutcomeWorkspace = (
   );
 };
 
-export const createRetestRun = (assetId: string, forceNew = false, autoExecute = true) =>
+export const createRetestRun = (assetId: string, forceNew = false, autoExecute = true, queryIds?: string[]) =>
   api<{ id: string; status?: string }>(`/published-assets/${encode(assetId)}/retests`, {
     method: "POST",
-    body: JSON.stringify({ forceNew, autoExecute }),
+    body: JSON.stringify({ forceNew, autoExecute, queryIds }),
   });
 
 export const processRetestRun = (retestRunId: string) =>

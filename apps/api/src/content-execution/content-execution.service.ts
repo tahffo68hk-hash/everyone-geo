@@ -748,14 +748,36 @@ export class ContentExecutionService implements OnModuleDestroy {
     return this.getPublication(userId, pub.id);
   }
 
-  /** 算子触发：重新执行发布尝试（幂等键每次刷新 → 形成新 attempt；同键重放安全）。 */
+  /** 算子触发：重新执行发布尝试（保留原始渠道 Connector 校验与 targetStatus，幂等键每次刷新 → 形成新 attempt） */
   async processPublication(userId: string, publicationId: string) {
-    const pub = await this.db.client.publication.findUnique({ where: { id: publicationId } });
+    const pub = await this.db.client.publication.findUnique({
+      where: { id: publicationId },
+      include: { connection: true },
+    });
     if (!pub) throw new NotFoundException("发布不存在");
     await this.tenant.assertUserInOrganization(userId, pub.organizationId);
     // 若已成功发布，重放安全返回，不再执行。
     if (pub.status === "PUBLISHED") return this.getPublication(userId, publicationId);
-    await executePublication(this.db.client, publicationId, { idempotencyKey: randomUUID() });
+    if (pub.status === "CANCELLED") throw new BadRequestException("已取消的发布任务无法重新执行");
+
+    let targetStatus: "draft" | "publish" = "draft";
+    try {
+      const parsed = JSON.parse(pub.payload);
+      if (parsed.targetStatus) targetStatus = parsed.targetStatus;
+    } catch {}
+
+    const connector = defaultConnectorRegistry.getConnector(pub.channel);
+    if (connector) {
+      const router = new PublicationRouter(this.db.client);
+      await router.routeAndPublish(publicationId, {
+        confirm: true,
+        targetStatus,
+        idempotencyKey: randomUUID(),
+      });
+    } else {
+      await executePublication(this.db.client, publicationId, { idempotencyKey: randomUUID() });
+    }
+
     return this.getPublication(userId, publicationId);
   }
 
@@ -800,42 +822,84 @@ export class ContentExecutionService implements OnModuleDestroy {
     const where: Prisma.PublicationWhereInput = { projectId };
     if (filters.status) where.status = filters.status as Prisma.PublicationWhereInput["status"];
     if (filters.channel) where.channel = filters.channel as Prisma.PublicationWhereInput["channel"];
-    const page = Math.max(1, filters.page ?? 1);
-    const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? 20));
+    const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? filters.limit ?? 20));
+    let page = Math.max(1, filters.page ?? 1);
+    if (filters.offset !== undefined && filters.page === undefined) {
+      page = Math.floor(filters.offset / pageSize) + 1;
+    }
+    const skip = filters.offset !== undefined ? filters.offset : (page - 1) * pageSize;
     const [total, rows] = await Promise.all([
       this.db.client.publication.count({ where }),
       this.db.client.publication.findMany({
         where,
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
-        skip: (page - 1) * pageSize,
+        skip,
         take: pageSize,
         include: {
+          draft: { select: { title: true } },
           connection: { select: { id: true, channel: true, displayName: true, status: true } },
-          attempts: { orderBy: [{ attemptNo: "desc" }], take: 1 },
+          attempts: { orderBy: [{ attemptNo: "asc" }] },
+          publishedAssets: {
+            select: {
+              id: true,
+              canonicalUrl: true,
+              externalAssetId: true,
+              verificationStatus: true,
+              actualPublishedAt: true,
+            },
+          },
         },
       }),
     ]);
     return {
       page, pageSize, total,
       items: rows.map((p) => {
-        const last = p.attempts[0] ?? null;
+        let mode = "AUTO";
+        try {
+          const parsed = JSON.parse(p.payload);
+          if (parsed.mode) mode = parsed.mode;
+        } catch {}
+
+        const last = p.attempts[p.attempts.length - 1] ?? null;
         return {
           id: p.id,
+          projectId: p.projectId,
           draftId: p.draftId,
           revisionId: p.revisionId,
+          connectionId: p.connectionId,
           channel: p.channel,
+          title: p.title || p.draft?.title || "未命名分发内容",
+          mode,
           status: p.status,
           accountConnection: {
             id: p.connection.id, channel: p.connection.channel,
             displayName: p.connection.displayName, status: p.connection.status,
           },
           createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
           scheduledAt: null, // 本轮无排期功能；字段稳定保留供前端消费。
           publishedAt: p.publishedAt,
           externalUrl: last?.externalUrl ?? null,
           externalId: last?.externalId ?? null,
           publisher: last?.publisher ?? null,
-          isMock: last ? last.publisher === "mock" : true, // 本轮恒 mock
+          isMock: last ? last.publisher === "mock" : true,
+          attempts: p.attempts.map((a) => ({
+            id: a.id,
+            attemptNo: a.attemptNo,
+            status: a.status,
+            publisher: a.publisher,
+            externalId: a.externalId,
+            externalUrl: a.externalUrl,
+            errorMessage: a.errorMessage,
+            createdAt: a.createdAt,
+          })),
+          publishedAssets: p.publishedAssets.map((pa) => ({
+            id: pa.id,
+            canonicalUrl: pa.canonicalUrl,
+            externalAssetId: pa.externalAssetId,
+            verificationStatus: pa.verificationStatus,
+            actualPublishedAt: pa.actualPublishedAt ? pa.actualPublishedAt.toISOString() : null,
+          })),
         };
       }),
     };
@@ -926,6 +990,23 @@ export class ContentExecutionService implements OnModuleDestroy {
       ownerId: a.ownerId,
       createdAt: a.createdAt,
       updatedAt: a.updatedAt,
+    };
+  }
+
+  /** 素材物理下载（真实从 DevLocalStorageAdapter 流式读取并校验租户隔离） */
+  async downloadAsset(orgId: string, filename: string) {
+    const key = `${orgId}/${filename}`;
+    const buf = await this.storage.get(key);
+    if (!buf) {
+      throw new NotFoundException("素材文件不存在");
+    }
+    const asset = await this.db.client.contentAsset.findFirst({
+      where: { storageKey: key },
+    });
+    return {
+      buffer: buf,
+      mimeType: asset?.mimeType || "application/octet-stream",
+      sizeBytes: asset?.sizeBytes || buf.length,
     };
   }
 
@@ -2708,7 +2789,16 @@ export class ContentExecutionService implements OnModuleDestroy {
         sourceDraftId: draftId,
         sourceRevisionId: revision.id,
       });
-      const manualPackage = generateManualPublishingPackage(channel as any, normalizedInput);
+      const manualPackage = generateManualPublishingPackage(channel as any, {
+        title: adapted.title,
+        body: adapted.body,
+        tags: adapted.tags,
+        coverUrl: adapted.coverUrl,
+        assets: normalizedAssets,
+        metadata: {
+          script: (revision as any).metadata?.videoScript || (revision as any).metadata?.script || null,
+        },
+      });
       return {
         channel,
         title: adapted.title,
@@ -2735,30 +2825,46 @@ export class ContentExecutionService implements OnModuleDestroy {
   async batchDistribute(userId: string, projectId: string, draftId: string, dto: BatchDistributeDto) {
     const draft = await this.requireDraft(userId, draftId);
     if (draft.projectId !== projectId) throw new NotFoundException("草稿不存在于该项目");
+    await this.tenant.assertUserInProject(userId, projectId);
+    await this.assertApprover(userId, draft.organizationId);
 
-    const latest = dto.revisionId
+    // DIST-01: 严格审批闸门，草稿必须经由审批通过，绝不静默补齐审批
+    if (draft.status !== "APPROVED" && draft.status !== "PUBLISHED") {
+      throw new BadRequestException("草稿未处于 APPROVED 或 PUBLISHED 状态，无法分发");
+    }
+
+    const targetRevision = dto.revisionId
       ? await this.db.client.contentRevision.findFirst({ where: { id: dto.revisionId, draftId } })
       : await this.latestRevision(draftId);
-    if (!latest) throw new BadRequestException("草稿无版本内容");
+    if (!targetRevision) throw new BadRequestException("草稿版本内容不存在");
 
-    // 审批闸门前置检查与自动补齐
-    let approval = await this.db.client.contentApproval.findFirst({
-      where: { draftId, revisionId: latest.id, decision: "APPROVED" },
+    const approval = await this.db.client.contentApproval.findFirst({
+      where: { draftId, revisionId: targetRevision.id, decision: "APPROVED" },
     });
-    if (!approval || draft.status !== "APPROVED") {
-      approval = await this.db.client.contentApproval.create({
-        data: {
-          draftId,
-          revisionId: latest.id,
-          decision: "APPROVED",
-          reviewerId: userId,
-          comment: "分发前一键前置审批通过",
-        },
+    if (!approval) {
+      throw new BadRequestException("分发的目标修订版本未获得 APPROVED 审批通过");
+    }
+
+    // DIST-07: 继承来源计划与排期血缘
+    let campaignId: string | null = null;
+    let scheduleItemId: string | null = null;
+    let planItemId: string | null = draft.sourcePlanItemId ?? null;
+
+    if (planItemId) {
+      const planItem = await this.db.client.contentPlanItem.findFirst({
+        where: { id: planItemId, projectId },
       });
-      await this.db.client.contentDraft.update({
-        where: { id: draftId },
-        data: { status: "APPROVED" },
-      });
+      if (planItem) {
+        const schedule = await this.db.client.contentScheduleItem.findFirst({
+          where: { planItemId, projectId },
+        });
+        if (schedule) {
+          scheduleItemId = schedule.id;
+          campaignId = schedule.campaignId;
+        }
+      } else {
+        planItemId = null;
+      }
     }
 
     const assets = await this.db.client.contentAsset.findMany({
@@ -2776,29 +2882,40 @@ export class ContentExecutionService implements OnModuleDestroy {
     const results = [];
 
     for (const item of dto.items) {
+      // DIST-05: 校验自动模式与通道支持度
+      if (item.mode === "AUTO") {
+        const autoAllowed = ["WORDPRESS", "WECHAT_OFFICIAL_ACCOUNT"];
+        if (!autoAllowed.includes(item.channel)) {
+          throw new BadRequestException(`${item.channel} 仅支持人工辅助模式 (MANUAL)，不支持自动发布`);
+        }
+      }
+
       // 1. 查找或创建渠道连接通道
       let conn = await this.db.client.channelAccountConnection.findFirst({
         where: {
           organizationId: draft.organizationId,
           channel: item.channel as any,
-          status: "CONNECTED",
         },
       });
       if (!conn) {
+        const isMockSandbox = process.env.EXTERNAL_PUBLISHING_ENABLED !== "true";
         conn = await this.db.client.channelAccountConnection.create({
           data: {
             organizationId: draft.organizationId,
             channel: item.channel as any,
-            displayName: `${item.channel} 分发通道`,
+            displayName: item.mode === "AUTO"
+              ? (isMockSandbox ? `${item.channel} 模拟发布通道 (Mock)` : `${item.channel} 自动分发通道`)
+              : `${item.channel} 人工辅助通道`,
             status: "CONNECTED",
+            credentialRef: item.mode === "AUTO" && isMockSandbox ? "mock://dev-sandbox" : null,
             createdById: userId,
           },
         });
       }
 
       const itemTitle = item.title || draft.title;
-      const itemBody = item.body || latest.body;
-      const itemTags = item.tags && item.tags.length > 0 ? item.tags : ((latest as any).tags || []);
+      const itemBody = item.body || targetRevision.body;
+      const itemTags = item.tags && item.tags.length > 0 ? item.tags : ((targetRevision as any).tags || []);
       const itemCoverUrl = item.coverUrl || normalizedAssets[0]?.url || null;
 
       const payloadObj = {
@@ -2811,27 +2928,47 @@ export class ContentExecutionService implements OnModuleDestroy {
         assets: normalizedAssets,
       };
 
-      const idempotencyKey = randomUUID();
-      const pub = await this.db.client.publication.create({
-        data: {
+      // DIST-03: 稳定幂等键，防止并发重放多创建任务
+      const itemKey = dto.idempotencyKey
+        ? `${dto.idempotencyKey}:${item.channel}`
+        : randomUUID();
+
+      let pub = await this.db.client.publication.findFirst({
+        where: {
           organizationId: draft.organizationId,
           projectId,
           draftId,
-          revisionId: latest.id,
-          connectionId: conn.id,
           channel: item.channel as any,
-          title: itemTitle,
-          payload: JSON.stringify(payloadObj),
-          status: "PENDING",
-          idempotencyKey,
-          createdById: userId,
+          idempotencyKey: itemKey,
         },
       });
 
-      await this.audit(draft.organizationId, userId, "PUBLICATION_CREATED", `channel=${item.channel} mode=${item.mode}`, {
-        projectId, draftId, publicationId: pub.id,
-      });
+      if (!pub) {
+        pub = await this.db.client.publication.create({
+          data: {
+            organizationId: draft.organizationId,
+            projectId,
+            draftId,
+            revisionId: targetRevision.id,
+            connectionId: conn.id,
+            campaignId,
+            scheduleItemId,
+            planItemId,
+            channel: item.channel as any,
+            title: itemTitle,
+            payload: JSON.stringify(payloadObj),
+            status: "PENDING",
+            idempotencyKey: itemKey,
+            createdById: userId,
+          },
+        });
 
+        await this.audit(draft.organizationId, userId, "PUBLICATION_CREATED", `channel=${item.channel} mode=${item.mode}`, {
+          projectId, draftId, publicationId: pub.id,
+        });
+      }
+
+      // DIST-06: 基于渠道最终适配/编辑内容生成发布包
       const manualPackage = generateManualPublishingPackage(item.channel as any, {
         title: itemTitle,
         body: itemBody,
@@ -2839,7 +2976,7 @@ export class ContentExecutionService implements OnModuleDestroy {
         coverUrl: itemCoverUrl,
         assets: normalizedAssets,
         metadata: {
-          script: (latest as any).metadata?.videoScript || (latest as any).metadata?.script,
+          script: (targetRevision as any).metadata?.videoScript || (targetRevision as any).metadata?.script || null,
         },
       });
 
@@ -2850,10 +2987,11 @@ export class ContentExecutionService implements OnModuleDestroy {
           await router.routeAndPublish(pub.id, {
             confirm: true,
             targetStatus: item.targetStatus || "draft",
+            idempotencyKey: itemKey,
           });
         } else {
           // 兜底 Mock 执行
-          await executePublication(this.db.client, pub.id, { idempotencyKey });
+          await executePublication(this.db.client, pub.id, { idempotencyKey: itemKey });
         }
       }
 
@@ -2873,7 +3011,7 @@ export class ContentExecutionService implements OnModuleDestroy {
 
     return {
       draftId,
-      revisionId: latest.id,
+      revisionId: targetRevision.id,
       items: results,
     };
   }
@@ -2889,83 +3027,130 @@ export class ContentExecutionService implements OnModuleDestroy {
     });
     if (!pub) throw new NotFoundException("发布记录不存在");
     await this.tenant.assertUserInOrganization(userId, pub.organizationId);
+    await this.tenant.assertUserInProject(userId, pub.projectId);
+
+    // DIST-02: 禁止已取消的任务被确认复活
+    if (pub.status === "CANCELLED") {
+      throw new BadRequestException("已取消的分发任务无法进行人工确认");
+    }
 
     if (!dto.canonicalUrl && !dto.externalAssetId) {
       throw new BadRequestException("人工发布确认必须提供真实公开链接 (canonicalUrl) 或平台内容 ID (externalAssetId)");
     }
 
-    const actualPublishedAt = dto.actualPublishedAt ? new Date(dto.actualPublishedAt) : new Date();
+    if (dto.canonicalUrl) {
+      const lower = dto.canonicalUrl.trim().toLowerCase();
+      if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+        throw new BadRequestException("canonicalUrl 必须以 http:// 或 https:// 开头");
+      }
+    }
 
-    const updatedPub = await this.db.client.publication.update({
-      where: { id: publicationId },
-      data: {
-        status: "PUBLISHED",
-        publishedAt: actualPublishedAt,
-      },
-    });
+    // DIST-02: 复用 LOC-002 真实性凭据校验
+    this.validateAuthenticExternalEvidence(
+      "MANUAL_VERIFIED",
+      dto.canonicalUrl,
+      dto.externalAssetId,
+      dto.verificationNote,
+    );
 
-    await this.db.client.contentDraft.update({
-      where: { id: pub.draftId },
-      data: { status: "PUBLISHED" },
-    });
+    // DIST-02: 校验带时区的发布时间，禁止未来时间，未知时间保持 null 绝不私造
+    const { actualPublishedAt, publicationTimeSource } = this.validateAndParseActualPublishedAt(dto.actualPublishedAt);
 
-    const attemptNo = (await this.db.client.publicationAttempt.count({ where: { publicationId } })) + 1;
-    const attempt = await this.db.client.publicationAttempt.create({
-      data: {
-        publicationId,
-        idempotencyKey: randomUUID(),
-        channel: pub.channel,
-        attemptNo,
-        status: "PUBLISHED",
-        publisher: "manual_assisted",
-        externalId: dto.externalAssetId ?? null,
-        externalUrl: dto.canonicalUrl ?? null,
-        errorMessage: null,
-        durationMs: 100,
-      },
-    });
+    return await this.db.client.$transaction(async (tx) => {
+      // DIST-02: 幂等防护：同次确认重放返回原资产，绝不追加双重资产
+      const existingAsset = await tx.publishedAsset.findFirst({
+        where: {
+          projectId: pub.projectId,
+          publicationId: pub.id,
+          ...(dto.canonicalUrl ? { canonicalUrl: dto.canonicalUrl } : {}),
+          ...(dto.externalAssetId ? { externalAssetId: dto.externalAssetId } : {}),
+        },
+      });
+      if (existingAsset) {
+        return {
+          publication: pub,
+          publishedAsset: existingAsset,
+        };
+      }
 
-    const publishedAsset = await this.db.client.publishedAsset.create({
-      data: {
-        organizationId: pub.organizationId,
+      const updatedPub = await tx.publication.update({
+        where: { id: publicationId },
+        data: {
+          status: "PUBLISHED",
+          publishedAt: actualPublishedAt,
+        },
+      });
+
+      if (pub.draft.status !== "PUBLISHED") {
+        await tx.contentDraft.update({
+          where: { id: pub.draftId },
+          data: { status: "PUBLISHED" },
+        });
+      }
+
+      const attemptNo = (await tx.publicationAttempt.count({ where: { publicationId } })) + 1;
+      const attemptKey = dto.idempotencyKey || `manual_confirm:${publicationId}:${attemptNo}`;
+      const attempt = await tx.publicationAttempt.create({
+        data: {
+          publicationId,
+          idempotencyKey: attemptKey,
+          channel: pub.channel,
+          attemptNo,
+          status: "PUBLISHED",
+          publisher: "manual_assisted",
+          externalId: dto.externalAssetId ?? null,
+          externalUrl: dto.canonicalUrl ?? null,
+          errorMessage: null,
+          durationMs: 100,
+        },
+      });
+
+      let planItemId = pub.planItemId || pub.draft.sourcePlanItemId || null;
+      let campaignId = pub.campaignId || null;
+      let scheduleItemId = pub.scheduleItemId || null;
+
+      const publishedAsset = await tx.publishedAsset.create({
+        data: {
+          organizationId: pub.organizationId,
+          projectId: pub.projectId,
+          draftId: pub.draftId,
+          revisionId: pub.revisionId,
+          publicationId: pub.id,
+          publicationAttemptId: attempt.id,
+          campaignId,
+          scheduleItemId,
+          planItemId,
+          platform: pub.channel,
+          title: dto.title || pub.title || pub.draft.title,
+          canonicalUrl: dto.canonicalUrl ?? null,
+          externalAssetId: dto.externalAssetId ?? null,
+          verificationStatus: "MANUAL_VERIFIED",
+          sourceType: "MANUAL_VERIFIED",
+          verifiedAt: new Date(),
+          verifiedById: userId,
+          verificationNote: dto.verificationNote || "人工发布后回填真实公开地址与平台ID确认",
+          publishedAt: actualPublishedAt ?? undefined,
+          actualPublishedAt: actualPublishedAt ?? null,
+          publicationTimeSource,
+          metadata: {
+            confirmedBy: userId,
+            confirmedAt: new Date().toISOString(),
+            mode: "MANUAL",
+          },
+        },
+      });
+
+      await this.audit(pub.organizationId, userId, "PUBLICATION_SUCCEEDED", `manual_confirmed channel=${pub.channel} url=${dto.canonicalUrl || dto.externalAssetId}`, {
         projectId: pub.projectId,
         draftId: pub.draftId,
-        revisionId: pub.revisionId,
         publicationId: pub.id,
-        publicationAttemptId: attempt.id,
-        campaignId: pub.campaignId,
-        scheduleItemId: pub.scheduleItemId,
-        planItemId: pub.planItemId,
-        platform: pub.channel,
-        title: dto.title || pub.title || pub.draft.title,
-        canonicalUrl: dto.canonicalUrl ?? null,
-        externalAssetId: dto.externalAssetId ?? null,
-        verificationStatus: "MANUAL_VERIFIED",
-        sourceType: "MANUAL_VERIFIED",
-        verifiedAt: new Date(),
-        verifiedById: userId,
-        verificationNote: dto.verificationNote || "人工发布后回填真实公开地址与平台ID确认",
-        publishedAt: actualPublishedAt,
-        actualPublishedAt: actualPublishedAt,
-        publicationTimeSource: "USER_REPORTED",
-        metadata: {
-          confirmedBy: userId,
-          confirmedAt: new Date().toISOString(),
-          mode: "MANUAL",
-        },
-      },
-    });
+      });
 
-    await this.audit(pub.organizationId, userId, "PUBLICATION_SUCCEEDED", `manual_confirmed channel=${pub.channel} url=${dto.canonicalUrl || dto.externalAssetId}`, {
-      projectId: pub.projectId,
-      draftId: pub.draftId,
-      publicationId: pub.id,
+      return {
+        publication: updatedPub,
+        publishedAsset,
+      };
     });
-
-    return {
-      publication: updatedPub,
-      publishedAsset,
-    };
   }
 }
 

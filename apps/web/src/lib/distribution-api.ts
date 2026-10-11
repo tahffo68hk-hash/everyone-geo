@@ -24,6 +24,7 @@ export interface ManualPublishingPackage {
   title: string;
   body: string;
   hashtags: string[];
+  tags?: string[];
   coverUrl?: string | null;
   assetManifest: Array<{
     index: number;
@@ -115,10 +116,21 @@ export interface PublicationListItem {
   connectionId: string;
   channel: string;
   title: string | null;
+  mode?: string;
+  isMock?: boolean;
   status: string;
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
+  externalUrl?: string | null;
+  externalId?: string | null;
+  publisher?: string | null;
+  accountConnection?: {
+    id: string;
+    channel: string;
+    displayName: string;
+    status: string;
+  };
   attempts: Array<{
     id: string;
     attemptNo: number;
@@ -132,6 +144,7 @@ export interface PublicationListItem {
   publishedAssets?: Array<{
     id: string;
     canonicalUrl: string | null;
+    externalAssetId?: string | null;
     verificationStatus: string;
     actualPublishedAt: string | null;
   }>;
@@ -155,7 +168,7 @@ export async function adaptContentForChannels(
 export async function batchDistribute(
   projectId: string,
   draftId: string,
-  payload: { revisionId?: string; autoApprove?: boolean; items: DistributionBatchItem[] },
+  payload: { revisionId?: string; autoApprove?: boolean; idempotencyKey?: string; items: DistributionBatchItem[] },
 ): Promise<DistributionBatchResponse> {
   return api<DistributionBatchResponse>(`/projects/${projectId}/content-drafts/${draftId}/distribution/batch`, {
     method: "POST",
@@ -171,6 +184,7 @@ export async function confirmManualPublished(
     actualPublishedAt?: string;
     verificationNote?: string;
     title?: string;
+    idempotencyKey?: string;
   },
 ): Promise<ConfirmManualPublishedResponse> {
   return api<ConfirmManualPublishedResponse>(`/publications/${publicationId}/confirm-manual-published`, {
@@ -181,15 +195,17 @@ export async function confirmManualPublished(
 
 export async function listProjectPublications(
   projectId: string,
-  query?: { limit?: number; offset?: number; channel?: string; status?: string },
-): Promise<{ items: PublicationListItem[]; total: number }> {
+  query?: { page?: number; pageSize?: number; limit?: number; offset?: number; channel?: string; status?: string },
+): Promise<{ items: PublicationListItem[]; total: number; page?: number; pageSize?: number }> {
   const sp = new URLSearchParams();
+  if (query?.page) sp.set("page", String(query.page));
+  if (query?.pageSize) sp.set("pageSize", String(query.pageSize));
   if (query?.limit) sp.set("limit", String(query.limit));
   if (query?.offset) sp.set("offset", String(query.offset));
   if (query?.channel) sp.set("channel", query.channel);
   if (query?.status) sp.set("status", query.status);
   const qStr = sp.toString() ? `?${sp.toString()}` : "";
-  return api<{ items: PublicationListItem[]; total: number }>(`/projects/${projectId}/publications${qStr}`);
+  return api<{ items: PublicationListItem[]; total: number; page?: number; pageSize?: number }>(`/projects/${projectId}/publications${qStr}`);
 }
 
 export async function getPublicationManualPackage(publicationId: string): Promise<ManualPublishingPackage> {

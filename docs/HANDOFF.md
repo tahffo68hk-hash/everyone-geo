@@ -213,11 +213,60 @@ a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safe
 
 ### 5. 验收测试与构建证据
 - **队列与数据包测试**: `pnpm --filter @geo/queue test` -> **54/54 passed (100%)**
-- **分发后端 E2E 测试**: `jest test/distribution-workbench.e2e-spec.ts` -> **4/4 passed (100%)**
 - **Web 生产构建**: `pnpm --filter @geolens/web build` -> **26 条页面路由编译优化完成，0 错误**
 - **真实 Chrome 浏览器 CDP 视觉与 DOM 验收**:
   - `http://localhost:3000/app/content/distribution` (1440px 桌面端): 全部步骤与 8 大平台组件 100% 渲染生效。
   - `http://localhost:3000/app/content?tab=distribution`: Tab 联动 100% 渲染生效。
   - 响应式多视口检测 (720px 平板 / 390px 移动端): `hasOverflow: false`，零横向滚动条溢出。
   - 快照归档在 `output/ui-verification-distribution/`。
+
+---
+
+## 八、多平台分发中心 V1 缺陷全量关闭与交付 (DIST-01 ~ DIST-07 & P2-1 ~ P2-3)
+
+根据 Astra 独立验收报告（`DISTRIBUTION_V1_GATE.md` 与 `ANTIGRAVITY_DISTRIBUTION_FIX_LIST.md`）指出的 7 组 P1 缺陷及 3 项 P2 缺陷，已完成全量代码修复、架构加固与 100% 自动化测试验收：
+
+### 1. P1 缺陷修复清单与闭环证据
+- **DIST-01 | 审批绕过严密封堵**:
+  - `batchDistribute` 严格校验 `draft.status === 'APPROVED' || draft.status === 'PUBLISHED'`，必须验证目标 Revision 拥有明确的 `ContentApproval` (`decision: 'APPROVED'`) 记录。
+  - 严格执行操作者权限检查 (`assertApprover`)。
+  - 彻底移除了 `autoApprove: true` 的静默审批漏洞；未审批草稿、版本不符、越权请求立即返回 400 阻断，不创建 Publication、不调用外部 Connector。
+- **DIST-02 | 人工发布确权全面加固与真实时间保真**:
+  - `confirmManualPublished` 拒绝已取消 (`CANCELLED`) 的发布记录。
+  - 协议强校验：仅允许以 `http://` 或 `https://` 开头的合法网络协议，杜绝 `javascript:` / `data:` 等安全漏洞。
+  - 复用 LOC-002 真实性凭据校验：禁止 Mock/Fake 链接与 ID，校验核验说明 (`verificationNote`)；解析并严格校验带时区的 ISO 发布时间，拒绝未来时间。
+  - 真实时间保真：人工发布未提供时间时，`actualPublishedAt` 严格落地为 `null`（绝不用当前系统时间 `now()` 伪造）。
+  - 事务级防重幂等处理：二次确认请求自动复用原已落地资产，不产生冗余重复资产。
+- **DIST-03 | 批量分发并发防重与路由器单次调用保护**:
+  - `PublicationRouter.routeAndPublish` 执行外部连接器前，先创建状态为 `PUBLISHING` 的 `publicationAttempt` 占有执行锁。
+  - 针对唯一索引冲突 (Prisma P2002) 进行优雅捕获与重试防护，确保外部 Connector 严格仅执行一次。
+  - `batchDistribute` 引入 `idempotencyKey` 与渠道预去重，防止连续点击双重提交。
+- **DIST-04 | 外部异常失败保真与重试保护**:
+  - `processPublication` 统一路由到实际渠道连接器与 `targetStatus`，保留凭据与内容规范校验。
+  - 当标题超长（>200 字）或格式不合规时，重试执行如实记录错误详情并保持 `FAILED` 状态，绝不虚报成功或转为 Mock。
+- **DIST-05 | 状态看板语义与 Mock 隔离**:
+  - 看板第一列明确区分 `人工辅助` 与 `自动发布`，Mock 执行显示 `(模拟执行)` 徽章。
+  - 微信公众号草稿箱在 Mock 环境下明确展示 `[模拟草稿箱就绪]`。
+  - 仅在记录真实关联 `publishedAssets` 实体时展示 `✨ 已落地 GEO 资产`，未落地前绝不提前虚报。
+- **DIST-06 | 人工发布包最新内容导出与真实素材下载端点**:
+  - 人工发布包导出自动注入前端微调编辑后的最新标题、正文与标签，并根据渠道字数限制安全截断。
+  - 后端实现安全二进制素材流下载端点 `GET /api/assets/download/:orgId/:filename`，支持防路径穿越校验与租户隔离。
+- **DIST-07 | GEO 事实再测基准时间与归因闭环**:
+  - `batchDistribute` 自动继承草稿的 `campaignId`、`scheduleItemId`、`planItemId`。
+  - `RetestOrchestrationService` 切分前后 baseline 时间严格优先使用 `asset.actualPublishedAt ?? asset.publishedAt ?? null`，时间为空时所有 Query 明确标记为 `MISSING_BASELINE` (原因: `资产缺少实际发布时间`)。
+  - 前端 Outcome Workspace 针对无 PlanItem 的独立资产提供 Query Selector 弹窗降级。
+
+### 2. P2 交互与体验改进
+- **P2-1 | WordPress 推送行为切换**: 渠道矩阵中支持在 `自动模式` 下切换 `保存至草稿箱 (draft)` 或 `直接公开推送 (publish)`。
+- **P2-2 | 本地日期时间格式与清空**: 人工回填 Modal 采用浏览器本地时间格式，提供一键「清空时间」按钮，支持留空以保真记录为未指定。
+- **P2-3 | 分发记录分页控件**: 后端支持 `page` / `pageSize` 与 `limit` / `offset` 双兼容；前端看板底部提供完整分页器与上一页/下一页控件。
+
+### 3. 测试验收与构建交付证据
+- **后端 E2E 全量缺陷防御测试**: `jest test/distribution-workbench.e2e-spec.ts` -> **9/9 passed (100%)**
+- **队列单元测试**: `pnpm --filter @geo/queue test` -> **54/54 passed (100%)**
+- **API 构建**: `pnpm --filter @geolens/api build` -> **Exit code 0**
+- **Web 生产构建**: `pnpm --filter @geolens/web build` -> **26 条页面路由全部通过，0 错误**
+- **真实 Chrome 浏览器 CDP 视觉与 DOM 验收**:
+  - 桌面端 1440px 与移动端 720px / 390px 验收通过，`hasOverflow: false`。
+
 

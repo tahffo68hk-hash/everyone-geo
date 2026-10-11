@@ -25,12 +25,44 @@ export function generateManualPublishingPackage(
   channel: Channel,
   content: NormalizedPublishContent,
 ): ManualPublishingPackage {
-  const tags = content.tags && content.tags.length > 0
+  let tags = content.tags && content.tags.length > 0
     ? content.tags.map((t) => (t.startsWith('#') ? t : `#${t}`))
     : ['#AI', '#GEO', '#内容营销'];
 
-  const title = content.title || (content.topic ? `${content.topic} 精选指南` : '精选分享');
-  const body = content.body || '';
+  let title = content.title || (content.topic ? `${content.topic} 精选指南` : '精选分享');
+  let body = content.body || '';
+
+  // 严格落实各渠道规范与字数/格式限制（对齐预览与真实导出）
+  if (channel === 'XIAOHONGSHU') {
+    title = title.slice(0, 20);
+    const tagStr = tags.map((t) => (t.startsWith('#') ? t : `#${t}`)).join(' ');
+    if (!body.includes('✨') && !body.includes('📌')) {
+      body = '✨ ' + body.replace(/\n\n+/g, '\n\n💡 ').replace(/\n/g, '\n');
+    }
+    if (tagStr && !body.includes(tags[0])) {
+      body += '\n\n' + tagStr;
+    }
+    body = body.slice(0, 1000);
+  } else if (channel === 'WEIBO') {
+    title = title.slice(0, 140);
+    body = body.slice(0, 2000);
+  } else if (channel === 'BILIBILI') {
+    title = title.slice(0, 80);
+    body = body.slice(0, 2000);
+  } else if (channel === 'DOUYIN') {
+    title = title.slice(0, 55);
+    body = body.slice(0, 1000);
+  } else if (channel === 'ZHIHU') {
+    title = title.slice(0, 100);
+    tags = tags.slice(0, 5);
+  } else if (channel === 'WORDPRESS') {
+    title = title.slice(0, 200);
+  } else if (channel === 'WECHAT_OFFICIAL_ACCOUNT') {
+    title = title.slice(0, 64);
+  } else if (channel === 'WECHAT_CHANNELS') {
+    title = title.slice(0, 60);
+    body = body.slice(0, 1000);
+  }
 
   const assets = (content.assets || []).map((a, idx) => ({
     index: idx + 1,

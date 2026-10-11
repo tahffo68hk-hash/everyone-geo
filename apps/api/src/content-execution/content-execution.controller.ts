@@ -1,6 +1,6 @@
 import {
   BadRequestException,
-  Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UploadedFile,
+  Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Res, UploadedFile,
   UseGuards, UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -352,6 +352,19 @@ export class ContentExecutionController {
     @Body() body: { type?: string; draftId?: string },
   ) {
     return this.content.createAsset(u.sub, id, file, { type: body?.type, draftId: body?.draftId });
+  }
+
+  /** 素材下载/读取（真实可访问，按 storageKey 返回带正确 Content-Type 的流） */
+  @Get(["assets/download/:orgId/:filename", "api/assets/download/:orgId/:filename"])
+  async downloadAsset(
+    @Param("orgId") orgId: string,
+    @Param("filename") filename: string,
+    @Res() res: any,
+  ) {
+    const asset = await this.content.downloadAsset(orgId, filename);
+    res.setHeader("Content-Type", asset.mimeType);
+    res.setHeader("Content-Length", String(asset.sizeBytes));
+    res.send(asset.buffer);
   }
 
   // ---- M10A 发布资产与血缘 (Published Asset & Lineage) ----

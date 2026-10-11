@@ -53,28 +53,57 @@ export class PublicationRouter {
 
     const idemKey = options.idempotencyKey ?? pub.idempotencyKey;
 
-    // 2. 幂等安全检查：相同 idempotencyKey 的 attempt 已存在时直接跳过
-    const existingAttempt = await this.db.publicationAttempt.findUnique({
-      where: { idempotencyKey: idemKey },
-    });
-    if (existingAttempt) {
-      return { executed: false, status: pub.status };
+    // 2. 幂等安全检查与原子任务抢占 (Atomic Claim)
+    // 在调用任何外部 Connector / 内容校验前先原子创建处于 PUBLISHING 的 Attempt
+    let attempt;
+    try {
+      const attemptNo = (await this.db.publicationAttempt.count({ where: { publicationId: pub.id } })) + 1;
+      attempt = await this.db.publicationAttempt.create({
+        data: {
+          publicationId: pub.id,
+          idempotencyKey: idemKey,
+          channel: pub.channel,
+          attemptNo,
+          status: 'PUBLISHING',
+          publisher: 'mock',
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002' || err?.message?.includes('Unique constraint') || err?.message?.includes('UniqueConstraint')) {
+        return { executed: false, status: pub.status };
+      }
+      throw err;
     }
 
     // 3. 审批闸门：关联 Revision 最新审批必须为 APPROVED
     const latestApproval = pub.revision.approvals[0];
     if (!latestApproval || latestApproval.decision !== 'APPROVED') {
+      await this.db.publicationAttempt.update({
+        where: { id: attempt.id },
+        data: { status: 'FAILED', errorMessage: 'LATEST_REVISION_NOT_APPROVED' },
+      });
+      await this.db.publication.update({ where: { id: pub.id }, data: { status: 'FAILED' } });
       throw new Error('LATEST_REVISION_NOT_APPROVED');
     }
 
     // 4. 连接状态拦截：仅允许 CONNECTED，其它状态一律拒绝
     if (pub.connection.status !== 'CONNECTED') {
+      await this.db.publicationAttempt.update({
+        where: { id: attempt.id },
+        data: { status: 'FAILED', errorMessage: `CONNECTION_STATUS_INVALID: ${pub.connection.status}` },
+      });
+      await this.db.publication.update({ where: { id: pub.id }, data: { status: 'FAILED' } });
       throw new Error(`CONNECTION_STATUS_INVALID: ${pub.connection.status}`);
     }
 
     // 5. 查找对应 Connector
     const connector = this.registry.getConnector(pub.channel);
     if (!connector) {
+      await this.db.publicationAttempt.update({
+        where: { id: attempt.id },
+        data: { status: 'FAILED', errorMessage: `NO_CONNECTOR_REGISTERED_FOR_CHANNEL: ${pub.channel}` },
+      });
+      await this.db.publication.update({ where: { id: pub.id }, data: { status: 'FAILED' } });
       throw new Error(`NO_CONNECTOR_REGISTERED_FOR_CHANNEL: ${pub.channel}`);
     }
 
@@ -101,13 +130,9 @@ export class PublicationRouter {
     // 7. 内容合规性预检
     const validation = await connector.validateContent(normalizedContent);
     if (!validation.valid) {
-      const attemptNo = (await this.db.publicationAttempt.count({ where: { publicationId: pub.id } })) + 1;
-      await this.db.publicationAttempt.create({
+      await this.db.publicationAttempt.update({
+        where: { id: attempt.id },
         data: {
-          publicationId: pub.id,
-          idempotencyKey: idemKey,
-          channel: pub.channel,
-          attemptNo,
           status: 'FAILED',
           publisher: 'mock',
           errorMessage: validation.errors.join('; '),
@@ -141,7 +166,23 @@ export class PublicationRouter {
     });
 
     // 10. 执行发布（受 BaseConnector 出站写闸门与 dryRun 保护）
-    const result = await connector.publish(normalizedContent, credential, options);
+    let result: PublishResult;
+    try {
+      result = await connector.publish(normalizedContent, credential, options);
+    } catch (publishErr: any) {
+      await this.db.publicationAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: 'FAILED',
+          errorMessage: publishErr?.message || String(publishErr),
+        },
+      });
+      await this.db.publication.update({
+        where: { id: pub.id },
+        data: { status: 'FAILED' },
+      });
+      throw publishErr;
+    }
 
     const isDraftExternally =
       result.ok &&
@@ -157,13 +198,9 @@ export class PublicationRouter {
         ? 'DRAFT_CREATED_EXTERNALLY'
         : 'PUBLISHED';
 
-    const attemptNo = (await this.db.publicationAttempt.count({ where: { publicationId: pub.id } })) + 1;
-    await this.db.publicationAttempt.create({
+    await this.db.publicationAttempt.update({
+      where: { id: attempt.id },
       data: {
-        publicationId: pub.id,
-        idempotencyKey: idemKey,
-        channel: pub.channel,
-        attemptNo,
         status: newStatus,
         publisher: result.publisher,
         externalId: result.externalId ?? null,
@@ -201,7 +238,7 @@ export class PublicationRouter {
         publicationId: pub.id,
         action: auditAction,
         actorId: pub.createdById,
-        detail: `channel=${pub.channel} attemptNo=${attemptNo} publisher=${result.publisher} status=${newStatus}`,
+        detail: `channel=${pub.channel} attemptNo=${attempt.attemptNo} publisher=${result.publisher} status=${newStatus}`,
       },
     });
 

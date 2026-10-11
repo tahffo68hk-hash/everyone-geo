@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateNested } from "class-validator";
+import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 const GENERATION_MODES = ["MANUAL", "AI_ASSISTED", "AI_GENERATED"] as const;
@@ -194,6 +194,19 @@ export class ListPublicationsDto {
   @Min(1)
   @Max(200)
   pageSize?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
 
 export class ListAssetsDto {
@@ -598,6 +611,11 @@ export class BatchDistributeDto {
   @IsOptional()
   autoApprove?: boolean;
 
+  @IsOptional()
+  @IsString()
+  @Length(1, 128)
+  idempotencyKey?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => BatchDistributeItemDto)
@@ -608,6 +626,7 @@ export class ConfirmManualPublishedDto {
   @IsOptional()
   @IsString()
   @Length(1, 1024)
+  @Matches(/^https?:\/\//i, { message: "canonicalUrl 必须以 http:// 或 https:// 开头" })
   canonicalUrl?: string;
 
   @IsOptional()
@@ -627,4 +646,9 @@ export class ConfirmManualPublishedDto {
   @IsOptional()
   @IsString()
   title?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 128)
+  idempotencyKey?: string;
 }

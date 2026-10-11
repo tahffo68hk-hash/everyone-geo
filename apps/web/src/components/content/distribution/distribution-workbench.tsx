@@ -107,17 +107,32 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   const [distributing, setDistributing] = useState(false);
 
   // 分发记录列表
+  // 分发记录列表与分页 (P2-3)
   const [publications, setPublications] = useState<PublicationListItem[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPubs, setTotalPubs] = useState(0);
   const [loadingPubs, setLoadingPubs] = useState(false);
+  const pageSize = 10;
 
   // 人工发布回填 Modal
   const [confirmModalPub, setConfirmModalPub] = useState<PublicationListItem | null>(null);
   const [backfillUrl, setBackfillUrl] = useState("");
   const [backfillAssetId, setBackfillAssetId] = useState("");
-  const [backfillPublishedAt, setBackfillPublishedAt] = useState(new Date().toISOString().slice(0, 16));
+  const [backfillPublishedAt, setBackfillPublishedAt] = useState("");
   const [backfillNote, setBackfillNote] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  // 本地时间格式化辅助 (P2-2)
+  function toLocalDatetimeString(date: Date = new Date()): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const y = date.getFullYear();
+    const m = pad(date.getMonth() + 1);
+    const d = pad(date.getDate());
+    const hh = pad(date.getHours());
+    const mm = pad(date.getMinutes());
+    return `${y}-${m}-${d}T${hh}:${mm}`;
+  }
 
   // 查看人工发布包详情 Modal
   const [packageModalContent, setPackageModalContent] = useState<ManualPublishingPackage | null>(null);
@@ -158,7 +173,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
         }
 
         // 加载现有分发列表
-        loadPublications();
+        loadPublications(1);
       } catch (err: any) {
         setErrorMsg(err.message || "加载多平台分发中心数据失败");
       } finally {
@@ -168,11 +183,13 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     loadData();
   }, [projectId]);
 
-  async function loadPublications() {
+  async function loadPublications(page = 1) {
     setLoadingPubs(true);
     try {
-      const res = await listProjectPublications(projectId, { limit: 50 });
-      setPublications(res.items);
+      const res = await listProjectPublications(projectId, { page, pageSize });
+      setPublications(res.items || []);
+      setTotalPubs(res.total || 0);
+      setCurrentPage(res.page || page);
     } catch {
       // ignore
     } finally {
@@ -252,6 +269,17 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     });
   }
 
+  // 切换渠道发布行为 (draft / publish) - P2-1
+  function setChannelTargetStatus(channelKey: string, targetStatus: "draft" | "publish") {
+    setChannelSelections((prev) => {
+      const curr = prev[channelKey] || { selected: true, mode: "AUTO" };
+      return {
+        ...prev,
+        [channelKey]: { ...curr, targetStatus },
+      };
+    });
+  }
+
   // 复制文本辅助
   function copyText(text: string, label: string) {
     navigator.clipboard.writeText(text);
@@ -259,16 +287,25 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     setTimeout(() => setCopyFeedback(null), 2500);
   }
 
-  // 下载人工发布包 (JSON)
-  function downloadManualPackage(pkg: ManualPublishingPackage) {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(pkg, null, 2));
+  // 下载人工发布包 (JSON) - 包含最新编辑的内容变体与素材清单 (DIST-06)
+  function downloadManualPackage(pkg: ManualPublishingPackage, chKey?: string) {
+    const channel = chKey || pkg.channel;
+    const currentEdit = editedContent[channel];
+    const exportPkg: ManualPublishingPackage = {
+      ...pkg,
+      title: currentEdit?.title !== undefined ? currentEdit.title : pkg.title,
+      body: currentEdit?.body !== undefined ? currentEdit.body : pkg.body,
+      hashtags: currentEdit?.tags !== undefined ? currentEdit.tags : pkg.hashtags,
+      tags: currentEdit?.tags !== undefined ? currentEdit.tags : pkg.tags,
+    };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportPkg, null, 2));
     const downloadAnchor = document.createElement("a");
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `geolens_${pkg.channel.toLowerCase()}_manual_package.json`);
+    downloadAnchor.setAttribute("download", `geolens_${channel.toLowerCase()}_manual_package.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-    setCopyFeedback("发布包已下载");
+    setCopyFeedback("发布包已下载（包含最新编辑）");
     setTimeout(() => setCopyFeedback(null), 2500);
   }
 
@@ -298,7 +335,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       });
 
       setActionSuccess(`已成功触发 ${res.items.length} 个渠道的分发任务！`);
-      await loadPublications();
+      await loadPublications(1);
     } catch (err: any) {
       setErrorMsg(err.message || "批量分发失败");
     } finally {
@@ -312,13 +349,13 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     try {
       await processPublicationRetry(pubId);
       setActionSuccess("已触发重试执行");
-      await loadPublications();
+      await loadPublications(currentPage);
     } catch (err: any) {
       setErrorMsg(err.message || "重试失败");
     }
   }
 
-  // 提交人工发布回填确认
+  // 提交人工发布回填确认 (DIST-02, P2-2)
   async function handleSubmitBackfill() {
     if (!confirmModalPub) return;
     if (!backfillUrl && !backfillAssetId) {
@@ -331,7 +368,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       await confirmManualPublished(confirmModalPub.id, {
         canonicalUrl: backfillUrl.trim() || undefined,
         externalAssetId: backfillAssetId.trim() || undefined,
-        actualPublishedAt: backfillPublishedAt ? new Date(backfillPublishedAt).toISOString() : new Date().toISOString(),
+        actualPublishedAt: backfillPublishedAt.trim() ? new Date(backfillPublishedAt).toISOString() : undefined,
         verificationNote: backfillNote.trim() || undefined,
       });
       setConfirmModalPub(null);
@@ -339,7 +376,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       setBackfillAssetId("");
       setBackfillNote("");
       setActionSuccess("已成功确认人工发布！该内容已直接落成 PublishedAsset，并进入 GEO 效果闭环。");
-      await loadPublications();
+      await loadPublications(currentPage);
     } catch (err: any) {
       setConfirmError(err.message || "确认失败");
     } finally {
@@ -539,45 +576,62 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                 </div>
 
                 {/* 底部模式选择切换 */}
-                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
-                  {ch.supportsAuto ? (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setChannelMode(ch.channel, "AUTO")}
-                        className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                          selection.mode === "AUTO"
-                            ? "bg-teal-700 text-white shadow-xs"
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                      >
-                        自动模式
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setChannelMode(ch.channel, "MANUAL")}
-                        className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                          selection.mode === "MANUAL"
-                            ? "bg-teal-700 text-white shadow-xs"
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                      >
-                        人工模式
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-[11px] text-slate-400">已启用标准化人工发布包</span>
-                  )}
+                <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    {ch.supportsAuto ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setChannelMode(ch.channel, "AUTO")}
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                            selection.mode === "AUTO"
+                              ? "bg-teal-700 text-white shadow-xs"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                        >
+                          自动模式
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setChannelMode(ch.channel, "MANUAL")}
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                            selection.mode === "MANUAL"
+                              ? "bg-teal-700 text-white shadow-xs"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                        >
+                          人工模式
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-slate-400">已启用标准化人工发布包</span>
+                    )}
 
-                  <a
-                    href={conf.creatorUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] text-slate-500 hover:text-teal-700 flex items-center gap-0.5"
-                    title="直达创作者后台"
-                  >
-                    后台 ↗
-                  </a>
+                    <a
+                      href={conf.creatorUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-slate-500 hover:text-teal-700 flex items-center gap-0.5"
+                      title="直达创作者后台"
+                    >
+                      后台 ↗
+                    </a>
+                  </div>
+
+                  {/* WordPress 或全量发布通道支持 draft/publish 切换 (P2-1) */}
+                  {ch.supportsAuto && selection.mode === "AUTO" && ch.autoCapability !== "DRAFT_ONLY" && (
+                    <div className="flex items-center justify-between text-[11px] bg-slate-50 p-1.5 rounded border border-slate-200">
+                      <span className="text-slate-600 font-medium">推送行为:</span>
+                      <select
+                        value={selection.targetStatus || "draft"}
+                        onChange={(e) => setChannelTargetStatus(ch.channel, e.target.value as "draft" | "publish")}
+                        className="text-[11px] bg-white border border-slate-300 rounded px-1.5 py-0.5 font-medium text-slate-800"
+                      >
+                        <option value="draft">保存至草稿箱 (draft)</option>
+                        <option value="publish">直接公开推送 (publish)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -710,7 +764,8 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                       type="button"
                       onClick={() =>
                         downloadManualPackage(
-                          adaptedResults.find((r) => r.channel === activePreviewChannel)!.manualPackage
+                          adaptedResults.find((r) => r.channel === activePreviewChannel)!.manualPackage,
+                          activePreviewChannel
                         )
                       }
                       className="text-xs text-teal-700 hover:underline font-semibold"
@@ -820,7 +875,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
           </div>
           <button
             type="button"
-            onClick={loadPublications}
+            onClick={() => loadPublications(currentPage)}
             disabled={loadingPubs}
             className="ui-button secondary text-xs"
           >
@@ -858,6 +913,8 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                   const isFailed = pub.status === "FAILED";
                   const latestAttempt = pub.attempts?.[pub.attempts.length - 1];
                   const asset = pub.publishedAssets?.[0];
+                  const isManualMode = pub.mode === "MANUAL" || pub.attempts?.some((a) => a.publisher === "manual_assisted");
+                  const isMockRun = Boolean(pub.isMock || pub.attempts?.some((a: any) => a.isMock || a.metadata?.isMock));
 
                   return (
                     <tr key={pub.id} className="hover:bg-slate-50/50 transition">
@@ -866,8 +923,15 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                           <span className="text-base">{conf.icon}</span>
                           <div>
                             <div className="font-semibold text-slate-900">{conf.label}</div>
-                            <div className="text-[10px] text-slate-400">
-                              {pub.attempts?.some((a) => a.publisher === "manual_assisted") ? "人工辅助" : "自动发布"}
+                            <div className="text-[10px] flex items-center gap-1">
+                              <span className={isManualMode ? "text-amber-700 font-medium" : "text-teal-700 font-medium"}>
+                                {isManualMode ? "人工辅助" : "自动发布"}
+                              </span>
+                              {isMockRun && (
+                                <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                                  (模拟执行)
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -884,18 +948,20 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                         <div className="space-y-1">
                           <StatusBadge status={pub.status} />
                           {isExternalDraft && (
-                            <span className="block text-[10px] text-blue-600 font-medium">草稿箱就绪</span>
+                            <span className="block text-[10px] text-blue-600 font-medium">
+                              {isMockRun ? "[模拟草稿箱就绪]" : "[官方草稿箱就绪]"}
+                            </span>
                           )}
                         </div>
                       </td>
 
                       <td className="py-3 px-3 max-w-xs">
-                        {isPublished ? (
+                        {asset ? (
                           <div className="space-y-0.5">
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
                               ✨ 已落地 GEO 资产
                             </span>
-                            {asset?.canonicalUrl && (
+                            {asset.canonicalUrl && (
                               <a
                                 href={asset.canonicalUrl}
                                 target="_blank"
@@ -907,9 +973,13 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                               </a>
                             )}
                           </div>
+                        ) : isPublished ? (
+                          <div className="text-[11px] text-slate-600">
+                            已发布至平台（未关联独立落地资产）
+                          </div>
                         ) : isExternalDraft ? (
                           <div className="text-[11px] text-slate-600">
-                            已安全存放至官方草稿箱，绝不私自群发
+                            {isMockRun ? "已在模拟沙箱中存放至草稿箱" : "已安全存放至官方草稿箱，绝不私自群发"}
                           </div>
                         ) : isFailed ? (
                           <div className="text-[11px] text-rose-600 truncate" title={latestAttempt?.errorMessage || ""}>
@@ -936,6 +1006,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                                 setConfirmModalPub(pub);
                                 setBackfillUrl("");
                                 setBackfillAssetId("");
+                                setBackfillPublishedAt(toLocalDatetimeString());
                                 setConfirmError(null);
                               }}
                               className="ui-button primary text-[11px] py-1 px-2.5 font-semibold"
@@ -966,7 +1037,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                             直达 ↗
                           </a>
 
-                          {/* 已发布则提供进入 GEO 验证工作台的闭环跳转 */}
+                          {/* 已发布且存在落地资产时提供进入 GEO 验证工作台的闭环跳转 */}
                           {isPublished && (
                             <Link
                               href="/app/content/verification"
@@ -983,6 +1054,31 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                 })}
               </tbody>
             </table>
+
+            {/* 分页控制栏 (P2-3) */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <div>
+                第 {currentPage} 页 / 共 {Math.max(1, Math.ceil(totalPubs / pageSize))} 页 (共 {totalPubs} 条记录)
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1 || loadingPubs}
+                  onClick={() => loadPublications(currentPage - 1)}
+                  className="ui-button secondary text-xs py-1 px-3 disabled:opacity-50"
+                >
+                  上一页
+                </button>
+                <button
+                  type="button"
+                  disabled={currentPage >= Math.ceil(totalPubs / pageSize) || loadingPubs}
+                  onClick={() => loadPublications(currentPage + 1)}
+                  className="ui-button secondary text-xs py-1 px-3 disabled:opacity-50"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </section>
@@ -1042,13 +1138,23 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-700 block">实际发布时间</label>
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-700 block">实际发布时间</label>
+                  <button
+                    type="button"
+                    onClick={() => setBackfillPublishedAt("")}
+                    className="text-[11px] text-slate-400 hover:text-slate-700 underline"
+                  >
+                    清空时间（记录为未指定）
+                  </button>
+                </div>
                 <input
                   type="datetime-local"
                   className="ui-input w-full text-xs"
                   value={backfillPublishedAt}
                   onChange={(e) => setBackfillPublishedAt(e.target.value)}
                 />
+                <span className="text-[10px] text-slate-400">采用本地时间格式，若不清空将作为 GEO 事实再测基准时间。</span>
               </div>
 
               <div className="space-y-1">
