@@ -804,7 +804,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
           )}
           {aiUseReal && (
             <p className="text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded px-2 py-1">
-              已选择真实模型。点击生成会调用已配置的 Provider，并记录 token 与费用。
+              已选择真实模型。服务端固定使用 deepseek-flash、关闭思考、限制输出，并且本进程只允许一次请求。确认前不会提交或发布。
             </p>
           )}
           {aiResult && (
@@ -814,12 +814,18 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                   {aiResult.realAi ? `真实模型 ${aiResult.provider}/${aiResult.model}` : "模拟结果，不是真实 AI"}
                 </span>
                 <span className="text-slate-500">
-                  {aiResult.promptVersion} · token {aiResult.totalTokens ?? "—"} · 费用 {aiResult.estimatedCost ?? "—"} · {aiResult.latencyMs}ms
+                  {aiResult.promptVersion} · token {aiResult.totalTokens ?? "—"} · 估算费用 {aiResult.estimatedCost ?? "—"} · {aiResult.latencyMs}ms
                   {aiResult.replayed ? " · 已复用，未再次调用" : ""}
                 </span>
               </div>
               {aiResult.channels
-                .filter((item) => item.channel === (activePreviewChannel || selectedChannelsList[0]))
+                .filter((item) => {
+                  const preferred = aiResult.channels.some((channel) => channel.channel === activePreviewChannel)
+                    ? activePreviewChannel
+                    : selectedChannelsList.find((channel) => aiResult.channels.some((item) => item.channel === channel))
+                      || aiResult.channels[0]?.channel;
+                  return item.channel === preferred;
+                })
                 .map((item) => {
                   const draft = aiDrafts[item.channel];
                   const originalBody = currentDraft?.latestRevision?.body || "";

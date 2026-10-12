@@ -48,6 +48,25 @@ export interface AdaptationChannelDraft {
 }
 
 const UNSOURCED_RISK = /(\d+(?:\.\d+)?%|https?:\/\/\S+|\[\d+\])/g;
+const PROMPT_LABEL_ECHOES: Array<{ label: string; pattern: RegExp }> = [
+  { label: "补充说明", pattern: /补充说明[:：][^。\n]*。?/g },
+  { label: "人工要求", pattern: /人工要求[:：][^。\n]*。?/g },
+];
+
+function stripPromptLabelEcho(body: string, sourceText: string, adjustments: string[]): string {
+  let next = body;
+  let removed = false;
+  for (const rule of PROMPT_LABEL_ECHOES) {
+    if (sourceText.includes(rule.label)) continue;
+    const cleaned = next.replace(rule.pattern, "");
+    if (cleaned !== next) {
+      next = cleaned;
+      removed = true;
+    }
+  }
+  if (removed) adjustments.push("已去掉模型回写的提示词标签");
+  return next.replace(/\s+/g, " ").trim();
+}
 
 /**
  * 把模型输出收进渠道限制。超长标题、正文和多余标签会被截断并记入 adjustments，
@@ -68,7 +87,7 @@ export function constrainAdaptationChannel(
 ): AdaptationChannelDraft {
   const adjustments: string[] = [];
   let title = (raw.title || "").trim();
-  let body = (raw.body || "").trim();
+  let body = stripPromptLabelEcho((raw.body || "").trim(), sourceText, adjustments);
   const seen = new Set<string>();
   let tags = (raw.hashtags || [])
     .map((tag) => tag.replace(/#/g, "").trim())

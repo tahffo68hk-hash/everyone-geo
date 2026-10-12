@@ -32,6 +32,10 @@ export interface InteractiveRequest {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  /** 本次请求的重试次数。0 表示失败或超时后不再请求。 */
+  maxRetries?: number;
+  thinking?: "disabled" | "enabled";
+  jsonObject?: boolean;
 }
 
 export interface InteractiveResponse {
@@ -185,20 +189,23 @@ export class InteractiveRuntime {
     }
 
     const requestedModel = request.model || defaultModel;
-    const body = {
+    const body: Record<string, unknown> = {
       model: requestedModel,
       messages: [
         { role: 'system', content: request.systemPrompt },
         { role: 'user', content: request.userPrompt }
       ],
       temperature: request.temperature ?? 0.7,
-      max_tokens: request.maxTokens
     };
+    if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
+    if (request.thinking) body.thinking = { type: request.thinking };
+    if (request.jsonObject) body.response_format = { type: "json_object" };
 
     const start = Date.now();
     let attempt = 0;
+    const retryBudget = request.maxRetries ?? this.maxRetries;
     
-    while (attempt <= this.maxRetries) {
+    while (attempt <= retryBudget) {
       try {
         const abortController = new AbortController();
         const timeout = setTimeout(() => abortController.abort(), request.timeoutMs || 30000);
@@ -237,7 +244,10 @@ export class InteractiveRuntime {
         const usage = data.usage ? {
           promptTokens: data.usage.prompt_tokens || 0,
           completionTokens: data.usage.completion_tokens || 0,
-          totalTokens: data.usage.total_tokens || 0
+          totalTokens: data.usage.total_tokens || 0,
+          promptCacheHitTokens: data.usage.prompt_cache_hit_tokens ?? data.usage.prompt_tokens_details?.cached_tokens ?? null,
+          promptCacheMissTokens: data.usage.prompt_cache_miss_tokens ?? null,
+          reasoningTokens: data.usage.completion_tokens_details?.reasoning_tokens ?? null,
         } : null;
         
         const estimatedCost = usage ? calculateEstimatedCost(actualModel, usage.promptTokens, usage.completionTokens) : null;
@@ -267,7 +277,7 @@ export class InteractiveRuntime {
           (error instanceof ProviderNetworkError) ||
           (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT');
 
-        if (!isRetryable || attempt >= this.maxRetries) {
+        if (!isRetryable || attempt >= retryBudget) {
           throw error;
         }
 

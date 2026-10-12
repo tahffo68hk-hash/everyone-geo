@@ -30,6 +30,10 @@ export interface AiGatewayRequest<T = any> {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  maxRetries?: number;
+  disableRepair?: boolean;
+  thinking?: "disabled" | "enabled";
+  jsonObject?: boolean;
 
   idempotencyKey?: string;
   parseJson?: boolean;
@@ -50,6 +54,9 @@ export interface AiGatewayResponse<T = any> {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  promptCacheHitTokens?: number | null;
+  promptCacheMissTokens?: number | null;
+  reasoningTokens?: number | null;
 
   estimatedCost: number | null;
   latencyMs: number;
@@ -193,6 +200,9 @@ export class AiGatewayService {
         inputTokens: number | null;
         outputTokens: number | null;
         totalTokens: number | null;
+        promptCacheHitTokens?: number | null;
+        promptCacheMissTokens?: number | null;
+        reasoningTokens?: number | null;
         estimatedCost: number | null;
         requestId: string | null;
       };
@@ -217,6 +227,9 @@ export class AiGatewayService {
               temperature: req.temperature,
               maxTokens: req.maxTokens,
               timeoutMs: req.timeoutMs,
+              maxRetries: req.maxRetries,
+              thinking: req.thinking,
+              jsonObject: req.jsonObject,
             });
             activeProvider = runtimeRes.provider as any;
             response = {
@@ -226,6 +239,9 @@ export class AiGatewayService {
               inputTokens: runtimeRes.usage?.promptTokens ?? null,
               outputTokens: runtimeRes.usage?.completionTokens ?? null,
               totalTokens: runtimeRes.usage?.totalTokens ?? null,
+              promptCacheHitTokens: runtimeRes.usage?.promptCacheHitTokens ?? null,
+              promptCacheMissTokens: runtimeRes.usage?.promptCacheMissTokens ?? null,
+              reasoningTokens: runtimeRes.usage?.reasoningTokens ?? null,
               estimatedCost: runtimeRes.estimatedCost,
               requestId: runtimeRes.requestId,
             };
@@ -272,7 +288,7 @@ export class AiGatewayService {
 
       // 3. 结构化 JSON 解析与有限修复策略 (MAX_STRUCTURED_OUTPUT_REPAIR = 1)
       let parsedData: T | undefined = undefined;
-      const MAX_STRUCTURED_OUTPUT_REPAIR = 1;
+      const MAX_STRUCTURED_OUTPUT_REPAIR = req.disableRepair ? 0 : 1;
       let repairAttempts = 0;
       let wasRepaired = false;
 
@@ -293,7 +309,7 @@ export class AiGatewayService {
           } catch (err: any) {
             lastParseOrValError = err;
             // 仅对真实 Provider 执行有限修复，Mock 模式无需网络修复
-            if (attempt < MAX_STRUCTURED_OUTPUT_REPAIR && targetProvider !== "mock") {
+            if (!req.disableRepair && attempt < MAX_STRUCTURED_OUTPUT_REPAIR && targetProvider !== "mock") {
               repairAttempts++;
               this.logger.warn(`[AiGateway] Structured output invalid for ${req.feature} (${err.message}), executing repair attempt ${repairAttempts}/${MAX_STRUCTURED_OUTPUT_REPAIR}...`);
               try {
@@ -403,6 +419,9 @@ Please return ONLY the corrected, valid JSON conforming to the original schema. 
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
         totalTokens: response.totalTokens,
+        promptCacheHitTokens: response.promptCacheHitTokens ?? null,
+        promptCacheMissTokens: response.promptCacheMissTokens ?? null,
+        reasoningTokens: response.reasoningTokens ?? null,
         estimatedCost: response.estimatedCost,
         latencyMs,
         requestId: response.requestId,

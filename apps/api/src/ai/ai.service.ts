@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -7,7 +8,7 @@ import {
 import { PrismaService } from "../prisma.service";
 import { TenantService } from "../common/tenant.service";
 import { AiGatewayService } from "./ai-gateway.service";
-import { PROMPT_VERSIONS } from "./ai-prompt-registry";
+import { AI_PROMPTS, PROMPT_VERSIONS } from "./ai-prompt-registry";
 import {
   AnalyzeKeywordGapDto,
   ClusterAiItemsDto,
@@ -49,6 +50,16 @@ import {
   limitsForChannel,
   stripHtml,
 } from "./content-adaptation";
+import {
+  ADAPTATION_MAX_OUTPUT_TOKENS,
+  ADAPTATION_REAL_MODEL,
+  type AdaptationBudget,
+  adaptationBudgetAllowsCall,
+  assessAdaptationBudget,
+} from "./adaptation-budget";
+
+/** 本进程真实适配请求次数。失败或超时也不回退，避免第二次付费请求。 */
+let realAdaptationAttempts = 0;
 
 
 @Injectable()
@@ -940,6 +951,41 @@ export class AiService {
       }
     }
 
+    const requestedProvider = dto.provider || "mock";
+    const useReal = requestedProvider !== "mock";
+    const gatewayInput = {
+      idempotencyKey,
+      title: sourceTitle,
+      body: sourceBody,
+      summary: revision.summary,
+      instructions: dto.instructions || "",
+      channels: channels.map((channel) => ({
+        channel,
+        requiresVideo: VIDEO_SCRIPT_CHANNELS.has(channel),
+        limits: limitsForChannel(channel),
+      })),
+    };
+    let budget: AdaptationBudget | null = null;
+    if (useReal) {
+      if (requestedProvider !== "auto" && requestedProvider !== "deepseek") {
+        throw new BadRequestException("本次只允许 DeepSeek Flash。其他付费模型已拒绝，未发出请求。");
+      }
+      const promptDef = AI_PROMPTS[promptVersion];
+      budget = assessAdaptationBudget(promptDef.systemPrompt, promptDef.buildUserPrompt(gatewayInput));
+      if (!adaptationBudgetAllowsCall(budget)) {
+        throw new BadRequestException(
+          `真实调用已拦截：最坏费用 $${budget.worstCaseUsd} 超过 $${budget.ceilingUsd}。未发出请求。`,
+        );
+      }
+      if (realAdaptationAttempts >= 1) {
+        throw new ConflictException("本进程已用掉唯一一次真实适配请求。未再次调用模型。");
+      }
+      realAdaptationAttempts += 1;
+      this.logger.log(
+        `adaptation real gate model=${ADAPTATION_REAL_MODEL} worstCaseUsd=${budget.worstCaseUsd} inputTokensUpper=${budget.inputTokensUpper} maxOutputTokens=${budget.maxOutputTokens} attempt=1`,
+      );
+    }
+
     const generated = await this.gateway.generateStructured<{ channels: Array<Record<string, unknown>> }>({
       organizationId: project.organizationId,
       projectId: project.id,
@@ -947,45 +993,45 @@ export class AiService {
       feature: CONTENT_ADAPTATION_FEATURE,
       entityType: "ContentDraft",
       entityId: draftId,
-      provider: dto.provider || "mock",
-      model: dto.model,
+      provider: useReal ? "deepseek" : "mock",
+      model: useReal ? ADAPTATION_REAL_MODEL : dto.model,
       temperature: dto.temperature ?? 0.2,
-      maxTokens: dto.maxTokens,
+      maxTokens: useReal ? ADAPTATION_MAX_OUTPUT_TOKENS : dto.maxTokens,
+      maxRetries: useReal ? 0 : undefined,
+      disableRepair: useReal,
+      thinking: useReal ? "disabled" : undefined,
+      jsonObject: useReal,
+      timeoutMs: useReal ? 60_000 : undefined,
       promptVersion,
       idempotencyKey: dto.force ? `${idempotencyKey}:${randomUUID()}` : idempotencyKey,
-      input: {
-        idempotencyKey,
-        title: sourceTitle,
-        body: sourceBody,
-        summary: revision.summary,
-        instructions: dto.instructions || "",
-        channels: channels.map((channel) => ({
-          channel,
-          requiresVideo: VIDEO_SCRIPT_CHANNELS.has(channel),
-          limits: limitsForChannel(channel),
-        })),
-      },
+      input: gatewayInput,
     });
 
-    return this.presentAdaptation({
-      draftId,
-      revisionId: revision.id,
-      promptVersion: generated.promptVersion,
-      provider: generated.provider,
-      model: generated.model,
-      inputTokens: generated.inputTokens,
-      outputTokens: generated.outputTokens,
-      totalTokens: generated.totalTokens,
-      estimatedCost: generated.estimatedCost,
-      latencyMs: generated.latencyMs,
-      generationId: generated.generationId ?? null,
-      replayed: false,
-      rawChannels: generated.data?.channels,
-      requestedChannels: channels,
-      sourceTitle,
-      sourceBody,
-      sourceText,
-    });
+    return {
+      ...this.presentAdaptation({
+        draftId,
+        revisionId: revision.id,
+        promptVersion: generated.promptVersion,
+        provider: generated.provider,
+        model: generated.actualModel || generated.model,
+        inputTokens: generated.inputTokens,
+        outputTokens: generated.outputTokens,
+        totalTokens: generated.totalTokens,
+        estimatedCost: generated.estimatedCost,
+        latencyMs: generated.latencyMs,
+        generationId: generated.generationId ?? null,
+        replayed: false,
+        rawChannels: generated.data?.channels,
+        requestedChannels: channels,
+        sourceTitle,
+        sourceBody,
+        sourceText,
+      }),
+      promptCacheHitTokens: generated.promptCacheHitTokens ?? null,
+      promptCacheMissTokens: generated.promptCacheMissTokens ?? null,
+      reasoningTokens: generated.reasoningTokens ?? null,
+      budget,
+    };
   }
 
   private async findAdaptationReplay(organizationId: string, draftId: string, promptVersion: string, idempotencyKey: string) {

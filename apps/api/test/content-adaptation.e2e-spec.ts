@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@geo/database";
 import { AppModule } from "../src/app.module";
 import { constrainAdaptationChannel, adaptationIdempotencyKey } from "../src/ai/content-adaptation";
+import { adaptationBudgetAllowsCall, assessAdaptationBudget } from "../src/ai/adaptation-budget";
 
 process.env.ENABLE_REAL_PROVIDERS = "false";
 process.env.EXTERNAL_PUBLISHING_ENABLED = "false";
@@ -33,6 +34,25 @@ describe("content adaptation constraints", () => {
     expect(result.riskNotes.join(" ")).toContain("80%");
   });
 
+  it("removes prompt labels that are not part of the source", () => {
+    const result = constrainAdaptationChannel(
+      {
+        channel: "XIAOHONGSHU",
+        title: "标题",
+        body: "原文事实。补充说明：门禁复验。人工要求：无。",
+        hashtags: ["原文"],
+        videoScript: "",
+        omittedClaims: [],
+      },
+      "原文事实",
+      { title: 20, body: 1000, maxTags: 10 },
+      false,
+    );
+    expect(result.body).toBe("原文事实。");
+    expect(result.adjustments.join(" ")).toContain("提示词标签");
+    expect(result.videoScript).toBeNull();
+  });
+
   it("keeps the same key when channel order changes", () => {
     const left = adaptationIdempotencyKey({
       promptVersion: "content-channel-adaptation-v1",
@@ -49,6 +69,20 @@ describe("content adaptation constraints", () => {
       channels: ["XIAOHONGSHU", "WORDPRESS"],
     });
     expect(left).toBe(right);
+  });
+
+  it("blocks a real adaptation whose worst-case cost exceeds the ceiling", () => {
+    const budget = assessAdaptationBudget("系统", "x".repeat(400_000));
+    expect(adaptationBudgetAllowsCall(budget)).toBe(false);
+    expect(budget.worstCaseUsd).toBeGreaterThan(0.08);
+  });
+
+  it("allows the short channel prompt under the peak price ceiling", () => {
+    const budget = assessAdaptationBudget("你是编辑", "原文标题：门禁\n原文正文：隔离正文");
+    expect(adaptationBudgetAllowsCall(budget)).toBe(true);
+    expect(budget.model).toBe("deepseek-flash");
+    expect(budget.maxOutputTokens).toBe(1536);
+    expect(budget.worstCaseUsd).toBeLessThan(0.01);
   });
 });
 
@@ -154,6 +188,10 @@ describe("AI content channel adaptation e2e", () => {
     await client
       .post(`/projects/${projectId}/content-drafts/${draftId}/ai/channel-adaptation`)
       .send({ provider: "mock", channels: ["NOT_A_CHANNEL"] })
+      .expect(400);
+    await client
+      .post(`/projects/${projectId}/content-drafts/${draftId}/ai/channel-adaptation`)
+      .send({ provider: "qwen", channels: ["XIAOHONGSHU"] })
       .expect(400);
   });
 

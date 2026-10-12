@@ -70,6 +70,9 @@ export interface ProviderUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  promptCacheHitTokens?: number | null;
+  promptCacheMissTokens?: number | null;
+  reasoningTokens?: number | null;
 }
 
 export interface StructuredCitation {
