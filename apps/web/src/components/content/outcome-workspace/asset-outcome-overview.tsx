@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  formatAssetPublicationTime,
   formatPlatform,
   formatRetestStatus,
   formatVerificationStatus,
@@ -165,7 +166,7 @@ export function AssetOutcomeOverview({
             <div>
               <dt className="text-slate-400">发布时间</dt>
               <dd className="font-medium text-slate-800 mt-0.5">
-                {asset.publishedAt ? new Date(asset.publishedAt).toLocaleString("zh-CN", { hour12: false }) : "未知"}
+                {formatAssetPublicationTime(asset, true)}
               </dd>
             </div>
             <div>

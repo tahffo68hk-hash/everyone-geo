@@ -292,10 +292,29 @@ a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safe
 - content / connectors / publication-lineage 等 8 个相关 e2e -> **80/80**
 - API、Web `tsc --noEmit` 0 错误；`pnpm --filter @geolens/web build` 通过
 
-遗留：
-- 未提供 idempotencyKey 的 API 直接调用仍按“每次新任务”处理（工作台已始终携带）。
-- `PublishedAsset.publishedAt` 列仍为非空默认 now()；API 响应中该字段对未知时间资产仍是落库时刻，权威字段为 `actualPublishedAt` + `publicationTimeSource`。如需彻底置空需迁移该列并复核 Outcome 展示。
-- 素材 URL 仍硬编码 `http://localhost:3001`；本轮未做浏览器复验（本地 Web/API 未运行），需按 Gate 最小复验集合补跑。
-- 真实平台授权/发布仍为 BLOCKED_EXTERNAL；所有自动回执为 Mock。
+本节代码修复之后的浏览器门禁见第十节。当时尚未在浏览器复验的四项，结论也记在第十节。
+
+## 十、Distribution V1 浏览器门禁 (2026-10-12)
+
+真实浏览器复验项目 `Distribution Gate mv589yny`（隔离夹具，不是平台发布）。证据目录：`geolens-distribution-independent-review/gate-20261012/`。
+
+结论：**PASS**。`FINAL_FREEZE=YES`。真实平台授权仍是 V1 范围外的 BLOCKED_EXTERNAL，不把模拟回执或夹具链接当成公开资产。
+
+浏览器已核对：
+- 微信公众号模拟草稿状态为「外部草稿」，文案为草稿箱，没有落成 PublishedAsset。
+- WordPress 模拟发布状态为「已发布」且带模拟执行标记，结果文案为「模拟回执，未生成真实公开资产」，无 GEO 验证入口，无 PublishedAsset。
+- 小红书人工包可预览、编辑、下载；回填 `https://` 被拒绝。夹具地址 `https://gate-fixture.invalid/geolens-gate/mv589yny` 只确认一次，重复确认返回同一资产 `ef7bc87d-403e-4a4e-8749-070f34db2912`，改链接返回 409。核验备注写明不是真实小红书发布。
+- 同一提交键连点两次，界面提示已复用原任务。改标题后再提交生成新任务「门禁改稿」。超限时提交与下载被拦住。
+- 已确认任务的 `GET /publications/:id/manual-package` 与入库 payload 一致：标题「门禁复验笔记」，正文「最终编辑正文 GATE-XHS」。
+- 素材拥有者下载 200，另一组织登录用户下载 404。
+- 效果验证工作台对未知时间显示「发布时间未知」。API 仍返回 `publishedAt=2026-10-12T12:35:41.401Z`，`publicationAnchor=null`，页面没有把该列展示成发布时间。历史语义夹具（`publicationTimeSource` 为空，`publishedAt=2020-01-15`）显示 `2020/1/15`。
+
+已接受限制：
+- 不带 idempotencyKey 的 API 调用仍会新建任务。工作台始终带键，这是调用方契约，不阻塞冻结。
+- `publishedAt` 列保持非空默认 now()。复测、归因和效果验证改读 `publicationAnchor`，不把该列迁移为空。
+- 发布包素材地址仍是 `http://localhost:3001`，只适用于本地开发。
+- 真实平台授权与出站发布保持关闭。
+
+本轮浏览器发现并已修：待人工任务不再标成模拟执行；模拟已发布不提供 GEO 验证入口；外部草稿有独立状态文案；成功下载清掉残留超限提示；效果验证改用发布时间锚点。
 
 

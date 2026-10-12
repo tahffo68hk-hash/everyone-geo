@@ -332,6 +332,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    setErrorMsg(null);
     setCopyFeedback("发布包已下载（包含最新编辑）");
     setTimeout(() => setCopyFeedback(null), 2500);
   }
@@ -1045,7 +1046,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                           </div>
                         ) : isPublished ? (
                           <div className="text-[11px] text-slate-600">
-                            已发布至平台（未关联独立落地资产）
+                            {isMockRun ? "模拟回执，未生成真实公开资产" : "已发布至平台（未关联独立落地资产）"}
                           </div>
                         ) : isExternalDraft ? (
                           <div className="text-[11px] text-slate-600">
@@ -1108,7 +1109,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                           </a>
 
                           {/* 已发布且存在落地资产时提供进入 GEO 验证工作台的闭环跳转 */}
-                          {isPublished && (
+                          {isPublished && asset && (
                             <Link
                               href="/app/content/verification"
                               className="ui-button secondary text-[11px] py-1 px-2 text-teal-700 font-semibold"

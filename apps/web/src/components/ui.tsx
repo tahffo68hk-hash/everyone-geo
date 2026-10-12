@@ -81,6 +81,8 @@ export function StatusBadge({ status }: { status: string }) {
     ENABLED: "已启用",
     DISABLED: "已停用",
     PUBLISHED: "已发布",
+    DRAFT_CREATED_EXTERNALLY: "外部草稿",
+    PUBLISHING: "发布中",
     DRAFT: "草稿",
     SCHEDULED: "已排期",
     PRODUCING: "生产中",

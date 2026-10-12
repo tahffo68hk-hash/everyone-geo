@@ -22,6 +22,10 @@ export interface VerificationAssetListItem {
   externalAssetId: string | null;
   canonicalUrl: string | null;
   publishedAt: string;
+  actualPublishedAt?: string | null;
+  publicationTimeSource?: string | null;
+  /** 可当作发布时间的锚点。未知时间时为 null，不能用 publishedAt 列代替。 */
+  publicationAnchor?: string | null;
   verificationStatus: string;
   verificationNote: string | null;
   createdAt: string;
@@ -48,6 +52,16 @@ export interface VerificationAssetListItem {
     noObservedChange: number;
     total: number;
   };
+}
+
+/** 展示对外发布时间。publicationAnchor 为空表示时间未知，不回退到默认的 publishedAt。 */
+export function formatAssetPublicationTime(
+  asset: { publishedAt?: string | null; publicationAnchor?: string | null },
+  withTime = false,
+): string {
+  const anchor = "publicationAnchor" in asset ? asset.publicationAnchor : asset.publishedAt;
+  if (!anchor) return "发布时间未知";
+  return new Date(anchor).toLocaleString("zh-CN", withTime ? { hour12: false } : { year: "numeric", month: "numeric", day: "numeric" });
 }
 
 export interface VerificationAssetsResponse {
@@ -119,6 +133,9 @@ export interface AssetOutcomeWorkspace {
     canonicalUrl: string | null;
     externalAssetId: string | null;
     publishedAt: string;
+    actualPublishedAt?: string | null;
+    publicationTimeSource?: string | null;
+    publicationAnchor?: string | null;
     verificationStatus: string;
     verificationNote: string | null;
     draft: { id: string; title: string; topic: string | null } | null;

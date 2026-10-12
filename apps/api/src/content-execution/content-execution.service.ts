@@ -897,7 +897,7 @@ export class ContentExecutionService implements OnModuleDestroy {
           externalUrl: last?.externalUrl ?? null,
           externalId: last?.externalId ?? null,
           publisher: last?.publisher ?? null,
-          isMock: last ? last.publisher === "mock" : true,
+          isMock: last?.publisher === "mock",
           attempts: p.attempts.map((a) => ({
             id: a.id,
             attemptNo: a.attemptNo,

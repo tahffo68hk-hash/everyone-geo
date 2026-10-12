@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  formatAssetPublicationTime,
   formatPlatform,
   formatRetestStatus,
   formatVerificationStatus,
@@ -130,8 +131,7 @@ export function PublishedAssetsTable({
                   <td>
                     <div className="font-semibold text-slate-900 line-clamp-1">{asset.title}</div>
                     <small>
-                      战役: {asset.campaign?.name || "常规生产"} · 发布于{" "}
-                      {asset.publishedAt ? new Date(asset.publishedAt).toLocaleDateString("zh-CN") : "-"}
+                      战役: {asset.campaign?.name || "常规生产"} · {formatAssetPublicationTime(asset)}
                     </small>
                   </td>
 
