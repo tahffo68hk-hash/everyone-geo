@@ -1,5 +1,5 @@
 import {
-  BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy,
+  BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy,
 } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
 import type { Prisma } from "@geo/database";
@@ -17,6 +17,7 @@ import {
 import {
   createPublicationQueue, defaultConnectorRegistry, defaultCredentialVault, defaultOAuthStateSecurity,
   enqueuePublication, executePublication, generateManualPublishingPackage, transformContentForChannel, PublicationRouter,
+  finalizeChannelContent, validateChannelContentLimits, CHANNEL_CONTENT_LIMITS,
   generatePlatformVariant as generatePlatformVariantHelper,
   rewriteContent as rewriteContentHelper,
   extractSafeFactCheckNotes,
@@ -28,6 +29,20 @@ import {
   type CnPlatform, type ImageBrief,
 } from "@geo/queue";
 import { DevLocalStorageAdapter } from "./storage/local-storage.adapter";
+
+function isUniqueViolation(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "P2002";
+}
+
+/** 仅接受可解析、带主机名的 http(s) 公开地址。 */
+function isHttpUrlWithHost(raw: string): boolean {
+  try {
+    const url = new URL(raw.trim());
+    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 内容执行领域服务（M9 / PHASE 2-16）。
@@ -994,19 +1009,24 @@ export class ContentExecutionService implements OnModuleDestroy {
   }
 
   /** 素材物理下载（真实从 DevLocalStorageAdapter 流式读取并校验租户隔离） */
-  async downloadAsset(orgId: string, filename: string) {
+  async downloadAsset(userId: string, orgId: string, filename: string) {
     const key = `${orgId}/${filename}`;
-    const buf = await this.storage.get(key);
-    if (!buf) {
+    const asset = await this.db.client.contentAsset.findFirst({
+      where: { storageKey: key, organizationId: orgId },
+    });
+    if (!asset) throw new NotFoundException("素材文件不存在");
+    // 非成员与存在性探测统一返回 404，不泄露素材是否存在
+    try {
+      await this.tenant.assertUserInProject(userId, asset.projectId);
+    } catch {
       throw new NotFoundException("素材文件不存在");
     }
-    const asset = await this.db.client.contentAsset.findFirst({
-      where: { storageKey: key },
-    });
+    const buf = await this.storage.get(key);
+    if (!buf) throw new NotFoundException("素材文件不存在");
     return {
       buffer: buf,
-      mimeType: asset?.mimeType || "application/octet-stream",
-      sizeBytes: asset?.sizeBytes || buf.length,
+      mimeType: asset.mimeType || "application/octet-stream",
+      sizeBytes: buf.length,
     };
   }
 
@@ -2740,6 +2760,7 @@ export class ContentExecutionService implements OnModuleDestroy {
       const conn = connMap.get(item.channel);
       return {
         ...item,
+        limits: CHANNEL_CONTENT_LIMITS[item.channel as keyof typeof CHANNEL_CONTENT_LIMITS] ?? null,
         connected: !!conn,
         connectionId: conn?.id || null,
         connectionName: conn?.displayName || null,
@@ -2879,43 +2900,60 @@ export class ContentExecutionService implements OnModuleDestroy {
       notes: idx === 0 ? "主图/封面候选" : `附图/素材 ${idx + 1}`,
     }));
 
+    // 所有渠道先完成校验，任一不合规则整批不产生任何 Publication / Connector 副作用
+    const autoAllowed = ["WORDPRESS", "WECHAT_OFFICIAL_ACCOUNT"];
+    const preparedItems = dto.items.map((item) => {
+      if (item.mode === "AUTO" && !autoAllowed.includes(item.channel)) {
+        throw new BadRequestException(`${item.channel} 仅支持人工辅助模式 (MANUAL)，不支持自动发布`);
+      }
+      const rawContent = {
+        title: item.title || draft.title,
+        body: item.body || targetRevision.body,
+        tags: item.tags && item.tags.length > 0 ? item.tags : ((targetRevision as any).tags || []),
+      };
+      // 人工渠道的最终内容由人确认，超限直接拒绝，不静默截断；自动渠道交由 Connector 校验并如实记录 FAILED
+      if (item.mode === "MANUAL") {
+        const violations = validateChannelContentLimits(item.channel as any, rawContent);
+        if (violations.length > 0) {
+          throw new BadRequestException(`${item.channel} 最终内容超出平台限制：${violations.join("，")}`);
+        }
+      }
+      const finalContent = item.mode === "MANUAL"
+        ? finalizeChannelContent(item.channel as any, rawContent)
+        : { title: rawContent.title, body: rawContent.body, hashtags: rawContent.tags };
+      return { item, finalContent };
+    });
+
     const results = [];
 
-    for (const item of dto.items) {
-      // DIST-05: 校验自动模式与通道支持度
-      if (item.mode === "AUTO") {
-        const autoAllowed = ["WORDPRESS", "WECHAT_OFFICIAL_ACCOUNT"];
-        if (!autoAllowed.includes(item.channel)) {
-          throw new BadRequestException(`${item.channel} 仅支持人工辅助模式 (MANUAL)，不支持自动发布`);
+    for (const { item, finalContent } of preparedItems) {
+      // 1. 查找或创建渠道连接通道
+      const connWhere = { organizationId: draft.organizationId, channel: item.channel as any };
+      let conn = await this.db.client.channelAccountConnection.findFirst({ where: connWhere });
+      if (!conn) {
+        const isMockSandbox = process.env.EXTERNAL_PUBLISHING_ENABLED !== "true";
+        try {
+          conn = await this.db.client.channelAccountConnection.create({
+            data: {
+              ...connWhere,
+              displayName: item.mode === "AUTO"
+                ? (isMockSandbox ? `${item.channel} 模拟发布通道 (Mock)` : `${item.channel} 自动分发通道`)
+                : `${item.channel} 人工辅助通道`,
+              status: "CONNECTED",
+              credentialRef: item.mode === "AUTO" && isMockSandbox ? "mock://dev-sandbox" : null,
+              createdById: userId,
+            },
+          });
+        } catch (err) {
+          if (!isUniqueViolation(err)) throw err;
+          conn = await this.db.client.channelAccountConnection.findFirst({ where: connWhere });
+          if (!conn) throw err;
         }
       }
 
-      // 1. 查找或创建渠道连接通道
-      let conn = await this.db.client.channelAccountConnection.findFirst({
-        where: {
-          organizationId: draft.organizationId,
-          channel: item.channel as any,
-        },
-      });
-      if (!conn) {
-        const isMockSandbox = process.env.EXTERNAL_PUBLISHING_ENABLED !== "true";
-        conn = await this.db.client.channelAccountConnection.create({
-          data: {
-            organizationId: draft.organizationId,
-            channel: item.channel as any,
-            displayName: item.mode === "AUTO"
-              ? (isMockSandbox ? `${item.channel} 模拟发布通道 (Mock)` : `${item.channel} 自动分发通道`)
-              : `${item.channel} 人工辅助通道`,
-            status: "CONNECTED",
-            credentialRef: item.mode === "AUTO" && isMockSandbox ? "mock://dev-sandbox" : null,
-            createdById: userId,
-          },
-        });
-      }
-
-      const itemTitle = item.title || draft.title;
-      const itemBody = item.body || targetRevision.body;
-      const itemTags = item.tags && item.tags.length > 0 ? item.tags : ((targetRevision as any).tags || []);
+      const itemTitle = finalContent.title;
+      const itemBody = finalContent.body;
+      const itemTags = finalContent.hashtags;
       const itemCoverUrl = item.coverUrl || normalizedAssets[0]?.url || null;
 
       const payloadObj = {
@@ -2933,54 +2971,70 @@ export class ContentExecutionService implements OnModuleDestroy {
         ? `${dto.idempotencyKey}:${item.channel}`
         : randomUUID();
 
-      let pub = await this.db.client.publication.findFirst({
-        where: {
-          organizationId: draft.organizationId,
-          projectId,
-          draftId,
-          channel: item.channel as any,
-          idempotencyKey: itemKey,
-        },
-      });
+      const pubWhere = {
+        organizationId: draft.organizationId,
+        projectId,
+        draftId,
+        channel: item.channel as any,
+        idempotencyKey: itemKey,
+      };
+      let pub = await this.db.client.publication.findFirst({ where: pubWhere });
+      let created = false;
 
       if (!pub) {
-        pub = await this.db.client.publication.create({
-          data: {
-            organizationId: draft.organizationId,
-            projectId,
-            draftId,
-            revisionId: targetRevision.id,
-            connectionId: conn.id,
-            campaignId,
-            scheduleItemId,
-            planItemId,
-            channel: item.channel as any,
-            title: itemTitle,
-            payload: JSON.stringify(payloadObj),
-            status: "PENDING",
-            idempotencyKey: itemKey,
-            createdById: userId,
-          },
-        });
+        try {
+          pub = await this.db.client.publication.create({
+            data: {
+              organizationId: draft.organizationId,
+              projectId,
+              draftId,
+              revisionId: targetRevision.id,
+              connectionId: conn.id,
+              campaignId,
+              scheduleItemId,
+              planItemId,
+              channel: item.channel as any,
+              title: itemTitle,
+              payload: JSON.stringify(payloadObj),
+              status: "PENDING",
+              idempotencyKey: itemKey,
+              createdById: userId,
+            },
+          });
+          created = true;
+        } catch (err) {
+          if (!isUniqueViolation(err)) throw err;
+          // 并发重放：同一稳定键已由另一请求创建，复用该任务；键被其他草稿/租户占用则拒绝
+          pub = await this.db.client.publication.findFirst({ where: pubWhere });
+          if (!pub) throw new ConflictException("idempotencyKey 已被其他分发任务占用，请更换后重试");
+        }
 
-        await this.audit(draft.organizationId, userId, "PUBLICATION_CREATED", `channel=${item.channel} mode=${item.mode}`, {
-          projectId, draftId, publicationId: pub.id,
-        });
+        if (created) {
+          await this.audit(draft.organizationId, userId, "PUBLICATION_CREATED", `channel=${item.channel} mode=${item.mode}`, {
+            projectId, draftId, publicationId: pub.id,
+          });
+        }
       }
+
+      // 发布包始终来自已持久化的任务内容，重放请求携带的新内容不会覆盖原任务
+      let storedPayload: { body?: string; tags?: string[]; coverUrl?: string | null; mode?: string } = {};
+      try {
+        storedPayload = JSON.parse(pub.payload);
+      } catch {}
 
       // DIST-06: 基于渠道最终适配/编辑内容生成发布包
       const manualPackage = generateManualPublishingPackage(item.channel as any, {
-        title: itemTitle,
-        body: itemBody,
-        tags: itemTags,
-        coverUrl: itemCoverUrl,
+        title: pub.title ?? itemTitle,
+        body: storedPayload.body ?? itemBody,
+        tags: storedPayload.tags ?? itemTags,
+        coverUrl: storedPayload.coverUrl ?? itemCoverUrl,
         assets: normalizedAssets,
         metadata: {
           script: (targetRevision as any).metadata?.videoScript || (targetRevision as any).metadata?.script || null,
         },
       });
 
-      if (item.mode === "AUTO") {
+      if (created && item.mode === "AUTO") {
         const connector = defaultConnectorRegistry.getConnector(item.channel as any);
         if (connector) {
           const router = new PublicationRouter(this.db.client);
@@ -3000,10 +3054,11 @@ export class ContentExecutionService implements OnModuleDestroy {
       results.push({
         id: updatedPub.id,
         channel: item.channel,
-        mode: item.mode,
-        title: itemTitle,
+        mode: storedPayload.mode ?? item.mode,
+        title: pub.title ?? itemTitle,
         status: updatedPub.status,
         publishedAt: (updatedPub as any).publishedAt || null,
+        replayed: !created,
         manualPackage,
         attempts: updatedPub.attempts,
       });
@@ -3038,11 +3093,8 @@ export class ContentExecutionService implements OnModuleDestroy {
       throw new BadRequestException("人工发布确认必须提供真实公开链接 (canonicalUrl) 或平台内容 ID (externalAssetId)");
     }
 
-    if (dto.canonicalUrl) {
-      const lower = dto.canonicalUrl.trim().toLowerCase();
-      if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
-        throw new BadRequestException("canonicalUrl 必须以 http:// 或 https:// 开头");
-      }
+    if (dto.canonicalUrl && !isHttpUrlWithHost(dto.canonicalUrl)) {
+      throw new BadRequestException("canonicalUrl 必须是带有效域名的 http:// 或 https:// 公开地址");
     }
 
     // DIST-02: 复用 LOC-002 真实性凭据校验
@@ -3057,18 +3109,28 @@ export class ContentExecutionService implements OnModuleDestroy {
     const { actualPublishedAt, publicationTimeSource } = this.validateAndParseActualPublishedAt(dto.actualPublishedAt);
 
     return await this.db.client.$transaction(async (tx) => {
+      // 行锁串行化同一任务的并发确认，保证一个 Publication 只落地一个 PublishedAsset
+      // NO KEY UPDATE：与并发确认互斥，但不阻塞事务外审计日志对该行的外键 KEY SHARE 检查
+      await tx.$queryRaw`SELECT id FROM "Publication" WHERE id = ${publicationId}::uuid FOR NO KEY UPDATE`;
+      const locked = await tx.publication.findUnique({ where: { id: publicationId } });
+      if (!locked || locked.status === "CANCELLED") {
+        throw new BadRequestException("已取消的分发任务无法进行人工确认");
+      }
+
       // DIST-02: 幂等防护：同次确认重放返回原资产，绝不追加双重资产
       const existingAsset = await tx.publishedAsset.findFirst({
-        where: {
-          projectId: pub.projectId,
-          publicationId: pub.id,
-          ...(dto.canonicalUrl ? { canonicalUrl: dto.canonicalUrl } : {}),
-          ...(dto.externalAssetId ? { externalAssetId: dto.externalAssetId } : {}),
-        },
+        where: { projectId: pub.projectId, publicationId: pub.id },
+        orderBy: { createdAt: "asc" },
       });
       if (existingAsset) {
+        const sameIdentity =
+          (dto.canonicalUrl ?? null) === existingAsset.canonicalUrl &&
+          (dto.externalAssetId ?? null) === existingAsset.externalAssetId;
+        if (!sameIdentity) {
+          throw new ConflictException("该分发任务已确认落地为 GEO 资产，不能以不同的链接或平台 ID 重复确认");
+        }
         return {
-          publication: pub,
+          publication: locked,
           publishedAsset: existingAsset,
         };
       }

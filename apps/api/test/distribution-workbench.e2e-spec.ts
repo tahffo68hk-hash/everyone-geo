@@ -372,4 +372,190 @@ describe("多平台内容分发中心 (Distribution Center) e2e", () => {
 
     expect(confirmRes.body.publishedAsset.actualPublishedAt).toBe(confirmDate);
   });
+
+  describe("10. V1 Gate 复验残留缺陷", () => {
+    const batchUrl = () => `/projects/${projectId}/content-drafts/${draftId}/distribution/batch`;
+
+    it("10.1 预览、提交与发布包为同一份最终内容；人工渠道超限整批拒绝且零副作用", async () => {
+      const adapt = await client
+        .post(`/projects/${projectId}/content-drafts/${draftId}/distribution/adapt`)
+        .send({ revisionId, channels: ["XIAOHONGSHU", "ZHIHU", "WEIBO", "DOUYIN", "WECHAT_CHANNELS", "BILIBILI"] })
+        .expect(200);
+      for (const c of adapt.body.channels) {
+        expect(c.manualPackage.title).toBe(c.title);
+        expect(c.manualPackage.body).toBe(c.body);
+        expect(c.manualPackage.hashtags).not.toContain("#内容营销");
+      }
+
+      const before = await prisma.publication.count({ where: { draftId } });
+      const over = await client
+        .post(batchUrl())
+        .send({
+          revisionId,
+          items: [
+            { channel: "ZHIHU", mode: "MANUAL", title: "合法知乎稿" },
+            { channel: "XIAOHONGSHU", mode: "MANUAL", title: "长".repeat(25), body: "文".repeat(1100) },
+          ],
+        });
+      expect(over.status).toBe(400);
+      expect(over.body.message).toContain("标题 25/20 字");
+      expect(await prisma.publication.count({ where: { draftId } })).toBe(before);
+
+      const edited = { title: "最终编辑版", body: "最终编辑正文 FINAL\n#独立复验 #门店内容" };
+      const ok = await client
+        .post(batchUrl())
+        .send({ revisionId, items: [{ channel: "XIAOHONGSHU", mode: "MANUAL", ...edited, tags: [] }] })
+        .expect(201);
+      const pubId = ok.body.items[0].id;
+      const pkg = await client.get(`/publications/${pubId}/manual-package`).expect(200);
+      expect(pkg.body.title).toBe(edited.title);
+      expect(pkg.body.body).toBe(edited.body);
+      expect(pkg.body.hashtags).toEqual(["#独立复验", "#门店内容"]);
+      expect(ok.body.items[0].manualPackage.body).toBe(edited.body);
+      const stored = await prisma.publication.findUniqueOrThrow({ where: { id: pubId } });
+      expect(stored.title).toBe(edited.title);
+      expect(JSON.parse(stored.payload).body).toBe(edited.body);
+    });
+
+    it("10.2 同一稳定键并发提交全部成功且只产生一个任务，重放不覆盖原任务内容", async () => {
+      const key = `dist-concurrent-${randomUUID()}`;
+      const payload = {
+        revisionId,
+        idempotencyKey: key,
+        items: [{ channel: "XIAOHONGSHU", mode: "MANUAL", title: "并发提交" }],
+      };
+      const responses = await Promise.all(Array.from({ length: 6 }, () => client.post(batchUrl()).send(payload)));
+      expect(responses.map((r) => r.status)).toEqual(Array(6).fill(201));
+      expect(new Set(responses.map((r) => r.body.items[0].id)).size).toBe(1);
+      expect(await prisma.publication.count({ where: { idempotencyKey: `${key}:XIAOHONGSHU` } })).toBe(1);
+
+      const replay = await client
+        .post(batchUrl())
+        .send({ ...payload, items: [{ channel: "XIAOHONGSHU", mode: "MANUAL", title: "重放改标题" }] })
+        .expect(201);
+      expect(replay.body.items[0].replayed).toBe(true);
+      expect(replay.body.items[0].title).toBe("并发提交");
+      expect(replay.body.items[0].manualPackage.title).toBe("并发提交");
+    });
+
+    it("10.3 人工确认：非法 URL 被拒、并发确认只落一个资产、不同身份重复确认 409", async () => {
+      const res = await client
+        .post(batchUrl())
+        .send({ revisionId, items: [{ channel: "WEIBO", mode: "MANUAL", title: "并发确认" }] })
+        .expect(201);
+      const pubId = res.body.items[0].id;
+
+      for (const bad of ["https://", "http://", "https:///path-only"]) {
+        await client.post(`/publications/${pubId}/confirm-manual-published`).send({ canonicalUrl: bad }).expect(400);
+      }
+
+      const body = {
+        canonicalUrl: "https://weibo.com/1234567890/concurrent",
+        actualPublishedAt: new Date(Date.now() - 7200000).toISOString(),
+        verificationNote: "e2e 人工核验",
+      };
+      const confirms = await Promise.all(
+        Array.from({ length: 4 }, () => client.post(`/publications/${pubId}/confirm-manual-published`).send(body)),
+      );
+      expect(confirms.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+      expect(new Set(confirms.map((r) => r.body.publishedAsset.id)).size).toBe(1);
+      expect(await prisma.publishedAsset.count({ where: { publicationId: pubId } })).toBe(1);
+      expect(await prisma.publicationAttempt.count({ where: { publicationId: pubId } })).toBe(1);
+
+      await client
+        .post(`/publications/${pubId}/confirm-manual-published`)
+        .send({ ...body, canonicalUrl: "https://weibo.com/1234567890/other" })
+        .expect(409);
+    });
+
+    it("10.4 素材下载按项目成员隔离：本人可下载，非成员 404", async () => {
+      const png = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+        "base64",
+      );
+      const upload = await client
+        .post(`/projects/${projectId}/content-assets`)
+        .field("type", "IMAGE")
+        .field("draftId", draftId)
+        .attach("file", png, { filename: "e2e.png", contentType: "image/png" })
+        .expect(201);
+      const adapt = await client
+        .post(`/projects/${projectId}/content-drafts/${draftId}/distribution/adapt`)
+        .send({ revisionId, channels: ["XIAOHONGSHU"] })
+        .expect(200);
+      const storageKey = String(upload.body.storageRef).replace("dev-local://", "");
+      const manifestUrl: string = adapt.body.channels[0].manualPackage.assetManifest
+        .map((a: { url: string }) => a.url)
+        .find((u: string) => u.endsWith(storageKey));
+      expect(manifestUrl).toBeDefined();
+      const url = new URL(manifestUrl).pathname;
+
+      const owner = await client.get(url).buffer(true).parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on("data", (c: Buffer) => chunks.push(c));
+        r.on("end", () => cb(null, Buffer.concat(chunks)));
+      });
+      expect(owner.status).toBe(200);
+      expect(Buffer.compare(owner.body as Buffer, png)).toBe(0);
+
+      const outsider = request.agent(app.getHttpServer());
+      const outsiderEmail = `dist-outsider-${suffix}@geolens.test`;
+      await outsider.post("/auth/register").send({ email: outsiderEmail, name: "Outsider", password }).expect(201);
+      await outsider.post("/auth/login").send({ email: outsiderEmail, password }).expect(200);
+      await outsider.get(url).expect(404);
+    });
+
+    it("10.5 未知发布时间的资产复测一律 MISSING_BASELINE，不以落库时间 publishedAt 冒充锚点", async () => {
+      const query = await prisma.query.create({ data: { projectId, text: `分发复测锚点 ${suffix}` } });
+      const engine =
+        (await prisma.engine.findFirst({ where: { provider: "mock" } })) ??
+        (await prisma.engine.create({ data: { key: `mock-dist-${suffix}`, name: "Mock", provider: "mock", config: {} } }));
+      const task = await prisma.monitorTask.create({
+        data: { organizationId: orgId, projectId, totalRuns: 1, status: "SUCCEEDED", completedRuns: 1 },
+      });
+      const run = await prisma.run.create({
+        data: { monitorTaskId: task.id, queryId: query.id, engineId: engine.id, status: "SUCCEEDED" },
+      });
+      await prisma.evidence.create({
+        data: {
+          runId: run.id,
+          queryText: query.text,
+          rawPrompt: `Query: ${query.text}`,
+          rawResponse: "发布前基线",
+          provider: "mock",
+          engineKey: engine.key,
+          engineName: engine.name,
+          model: "mock-model",
+          retrievalMode: "api_plain",
+          sourceType: "mock",
+          metadata: {},
+          entitySnapshot: {},
+          createdAt: new Date(Date.now() - 86400000),
+        },
+      });
+
+      const res = await client
+        .post(batchUrl())
+        .send({ revisionId, items: [{ channel: "BILIBILI", mode: "MANUAL", title: "未知时间资产" }] })
+        .expect(201);
+      const confirm = await client
+        .post(`/publications/${res.body.items[0].id}/confirm-manual-published`)
+        .send({ canonicalUrl: "https://www.bilibili.com/read/cv-unknown-time", verificationNote: "e2e 人工核验" })
+        .expect(200);
+      const asset = confirm.body.publishedAsset;
+      expect(asset.actualPublishedAt).toBeNull();
+      expect(asset.publicationTimeSource).toBe("UNKNOWN");
+
+      const retest = await client
+        .post(`/published-assets/${asset.id}/retests`)
+        .send({ queryIds: [query.id], provider: "mock", sourceType: "mock", autoExecute: false })
+        .expect(201);
+      const items = await prisma.retestItem.findMany({ where: { retestRunId: retest.body.id } });
+      expect(items).toHaveLength(1);
+      expect(items[0].baselineStatus).toBe("MISSING_BASELINE");
+      expect(items[0].baselineEvidenceId).toBeNull();
+      const stored = await prisma.retestRun.findUniqueOrThrow({ where: { id: retest.body.id } });
+      expect((stored.inputSnapshot as any).publishedAsset.publishedAt).toBeNull();
+    });
+  });
 });

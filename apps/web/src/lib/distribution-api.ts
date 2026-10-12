@@ -14,9 +14,39 @@ export interface DistributionChannel {
   requiresVideo: boolean;
   description: string;
   tips: string;
+  limits: ChannelContentLimits | null;
   connected: boolean;
   connectionId: string | null;
   connectionName: string | null;
+}
+
+export interface ChannelContentLimits {
+  title: number;
+  body: number | null;
+  maxTags: number | null;
+}
+
+/** 与服务端 validateChannelContentLimits 同一规则：人工渠道超限时服务端拒绝提交。 */
+export function channelLimitViolations(
+  limits: ChannelContentLimits | null | undefined,
+  content: { title?: string; body?: string; tags?: string[] } | undefined,
+): string[] {
+  if (!limits || !content) return [];
+  const violations: string[] = [];
+  const titleLength = (content.title || "").length;
+  const bodyLength = (content.body || "").length;
+  const tagCount = (content.tags || []).map((t) => t.replace(/#/g, "").trim()).filter(Boolean).length;
+  if (titleLength > limits.title) violations.push(`标题 ${titleLength}/${limits.title} 字`);
+  if (limits.body !== null && bodyLength > limits.body) violations.push(`正文 ${bodyLength}/${limits.body} 字`);
+  if (limits.maxTags !== null && tagCount > limits.maxTags) violations.push(`话题 ${tagCount}/${limits.maxTags} 个`);
+  return violations;
+}
+
+/** 与服务端发布包一致：未单独维护标签时，导出正文中实际使用的 #话题。 */
+export function resolvePackageHashtags(tags: string[] | undefined, body: string): string[] {
+  const explicit = (tags || []).map((t) => t.replace(/#/g, "").trim()).filter(Boolean);
+  const source = explicit.length > 0 ? explicit : Array.from(body.matchAll(/#([^\s#]+)#?/g), (m) => m[1].replace(/#/g, "").trim());
+  return Array.from(new Set(source.filter(Boolean))).map((t) => `#${t}`);
 }
 
 export interface ManualPublishingPackage {
@@ -75,6 +105,7 @@ export interface DistributionResultItem {
   title: string;
   status: string;
   publishedAt?: string | null;
+  replayed?: boolean;
   manualPackage?: ManualPublishingPackage;
   attempts?: Array<{
     id: string;

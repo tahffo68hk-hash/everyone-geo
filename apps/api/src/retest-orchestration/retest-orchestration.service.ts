@@ -7,6 +7,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma.service";
 import { TenantService } from "../common/tenant.service";
+import { resolvePublicationAnchor } from "../common/published-asset-time";
 import { CreateRetestRunDto, RetestQuerySnapshotItem } from "./dto/retest-orchestration.dto";
 import { RetrievalMode, SourceType, Prisma } from "@geo/database";
 import { analyzeResponse, ANALYSIS_VERSION, type Entity } from "@geo/core";
@@ -323,7 +324,7 @@ export class RetestOrchestrationService {
 
     // 发布时间锚点：严格以真实 actualPublishedAt（或 publishedAt）划定发布前基线；
     // 缺发布时间时明确缺基线，绝不用核验时间 (verifiedAt) 或创建时间替代（避免晚回填把发布后证据错算为基线）
-    const publishedAnchor: Date | null = asset.actualPublishedAt ?? asset.publishedAt ?? null;
+    const publishedAnchor: Date | null = resolvePublicationAnchor(asset);
 
     // 确定每条 Query 的基线选择与匹配兼容性
     const targetConfig = { provider, retrievalMode, sourceType, model, requestedModel };

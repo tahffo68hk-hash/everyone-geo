@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { TenantService } from "../common/tenant.service";
+import { resolvePublicationAnchor } from "../common/published-asset-time";
 import {
   AttributionStatus,
   CitationMatchStatus,
@@ -142,7 +143,8 @@ export class OutcomeAttributionService {
     afterSnapshot: any,
   ): { status: TemporalOrderingStatus; baselineAt: string | null; publishedAt: string | null; retestAt: string | null } {
     const baselineAt = beforeSnapshot?.capturedAt || null;
-    const publishedAt = publishedAsset?.publishedAt ? new Date(publishedAsset.publishedAt).toISOString() : null;
+    const anchor = publishedAsset ? resolvePublicationAnchor(publishedAsset) : null;
+    const publishedAt = anchor ? anchor.toISOString() : null;
     const retestAt = afterSnapshot?.capturedAt || null;
 
     if (!publishedAt) {

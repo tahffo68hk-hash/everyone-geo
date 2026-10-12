@@ -269,4 +269,33 @@ a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safe
 - **真实 Chrome 浏览器 CDP 视觉与 DOM 验收**:
   - 桌面端 1440px 与移动端 720px / 390px 验收通过，`hasOverflow: false`。
 
+---
+
+## 九、分发中心 V1 复验残留缺陷关闭 (2026-10-12)
+
+`6a5ac86` 之后的独立复验探针（`geolens-distribution-independent-review/final-evidence/*checks.json`）仍有失败项，Gate 报告未出。本轮只关闭这些残留，不扩展新渠道、不接真实平台。
+
+| 残留 | 根因 | 修复 |
+| :--- | :--- | :--- |
+| 素材下载非成员可下载 | 端点只按 storageKey 读文件，未校验用户 | 先查 `ContentAsset`，再 `assertUserInProject`；非成员/不存在统一 404 |
+| 同键并发提交 5/6 返回 500 | `findFirst` → `create` 竞争触发 P2002 未捕获（连接创建同理） | 捕获 P2002 回放已有任务；键被他处占用返回 409；重放不覆盖原任务内容、不重复派发自动渠道，响应带 `replayed` |
+| UI 重复提交生成两个任务 | 前端不传 idempotencyKey | 工作台按“草稿+渠道+编辑内容”持有稳定提交键并加同步提交锁；内容变化才换键 |
+| 并发确认生成 4 个资产 | 事务内先查后插，读已提交隔离下并发穿透 | `FOR NO KEY UPDATE` 行锁串行化；一个 Publication 只落一个资产，不同链接/ID 再确认返回 409 |
+| `https://` 被接受 | 仅前缀判断 | `new URL()` 解析，要求 http(s) 且有主机名 |
+| 未知发布时间仍得到 EXACT_MATCH 基线 | `PublishedAsset.publishedAt` 非空默认 now()，Retest 以其兜底 | 新增 `resolvePublicationAnchor`：`publicationTimeSource=UNKNOWN` 时锚点为空；Retest 基线与 Attribution 时间序共用。LOC-002 前历史资产（来源为空）保留原兜底 |
+| 预览/提交/下载内容不一致、超限、通用标签 | 发布包生成器对已适配内容再次加 ✨ 与 `#AI #GEO #内容营销` | `finalizeChannelContent` 只落实限制不装饰；无标签时导出正文内联 #话题；人工渠道超限整批 400 且零副作用；限制经渠道矩阵 `limits` 下发，前端计数并禁止提交/下载 |
+
+验证：
+- `pnpm --filter @geo/queue test` -> **56/56**（新增发布包一致性与限制校验 2 例）
+- `jest test/distribution-workbench.e2e-spec.ts` -> **14/14**（新增 10.1–10.5 覆盖上表）
+- 冻结语义回归 retest-orchestration / outcome-attribution / outcome-comparison / outcome-workspace / loc002-loc003 / loc004-loc005 / m10-full-loop / learning-signal -> **8 suites 104/104**
+- content / connectors / publication-lineage 等 8 个相关 e2e -> **80/80**
+- API、Web `tsc --noEmit` 0 错误；`pnpm --filter @geolens/web build` 通过
+
+遗留：
+- 未提供 idempotencyKey 的 API 直接调用仍按“每次新任务”处理（工作台已始终携带）。
+- `PublishedAsset.publishedAt` 列仍为非空默认 now()；API 响应中该字段对未知时间资产仍是落库时刻，权威字段为 `actualPublishedAt` + `publicationTimeSource`。如需彻底置空需迁移该列并复核 Outcome 展示。
+- 素材 URL 仍硬编码 `http://localhost:3001`；本轮未做浏览器复验（本地 Web/API 未运行），需按 Gate 最小复验集合补跑。
+- 真实平台授权/发布仍为 BLOCKED_EXTERNAL；所有自动回执为 Mock。
+
 

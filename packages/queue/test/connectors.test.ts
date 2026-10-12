@@ -8,6 +8,10 @@ import {
   S3CompatibleStorageAdapter,
   WordPressConnector,
   generateManualPublishingPackage,
+  finalizeChannelContent,
+  validateChannelContentLimits,
+  CHANNEL_CONTENT_LIMITS,
+  transformContentForChannel,
   normalizeHttpError,
   sanitizeErrorPayload,
 } from '../src/index';
@@ -218,6 +222,46 @@ test('F. ManualPublishingPackage: 人工发布包生成', () => {
   assert.equal(pkg.assetManifest.length, 1);
   assert.ok(pkg.checklist.length >= 3);
   assert.ok(pkg.callToAction.includes('小红书'));
+});
+
+test('F2. ManualPublishingPackage: 包内容与适配预览一致，不追加装饰或默认标签', () => {
+  const variant = transformContentForChannel(
+    { title: '门店指南', body: '第一段\n\n第二段' },
+    'XIAOHONGSHU' as any,
+  );
+  const pkg = generateManualPublishingPackage('XIAOHONGSHU' as any, {
+    title: variant.title,
+    body: variant.body,
+    tags: variant.tags,
+  });
+  assert.equal(pkg.title, variant.title);
+  assert.equal(pkg.body, variant.body);
+  assert.deepEqual(pkg.hashtags, []);
+
+  const edited = generateManualPublishingPackage('XIAOHONGSHU' as any, {
+    title: '编辑版',
+    body: '最终编辑正文\n#独立复验 #门店内容',
+    tags: [],
+  });
+  assert.equal(edited.body, '最终编辑正文\n#独立复验 #门店内容');
+  assert.deepEqual(edited.hashtags, ['#独立复验', '#门店内容']);
+
+  const weibo = generateManualPublishingPackage('WEIBO' as any, { title: 't', body: '正文 #双井号# 结尾' });
+  assert.deepEqual(weibo.hashtags, ['#双井号']);
+});
+
+test('F3. Channel limits: 人工最终内容超限可被识别，finalize 结果始终在限制内', () => {
+  const over = { title: '长'.repeat(25), body: '文'.repeat(1100), tags: ['自定'] };
+  assert.deepEqual(validateChannelContentLimits('XIAOHONGSHU' as any, over), ['标题 25/20 字', '正文 1100/1000 字']);
+  assert.deepEqual(validateChannelContentLimits('XIAOHONGSHU' as any, { title: '短', body: '短' }), []);
+  assert.deepEqual(
+    validateChannelContentLimits('ZHIHU' as any, { title: 'a', body: 'b', tags: ['1', '2', '3', '4', '5', '6'] }),
+    ['话题 6/5 个'],
+  );
+  const fin = finalizeChannelContent('XIAOHONGSHU' as any, over);
+  assert.equal(fin.title.length, CHANNEL_CONTENT_LIMITS.XIAOHONGSHU!.title);
+  assert.equal(fin.body.length, CHANNEL_CONTENT_LIMITS.XIAOHONGSHU!.body);
+  assert.deepEqual(fin.hashtags, ['自定']);
 });
 
 test('G. Error Normalization: 错误码映射与敏感字段脱敏', () => {

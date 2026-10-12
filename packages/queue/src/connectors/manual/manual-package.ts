@@ -21,48 +21,91 @@ export interface ManualPublishingPackage {
   generatedAt: string;
 }
 
+export interface ChannelContentLimits {
+  title: number;
+  body: number | null;
+  maxTags: number | null;
+}
+
+/** 预览、编辑、提交与导出共用的唯一渠道限制来源。 */
+export const CHANNEL_CONTENT_LIMITS: Partial<Record<Channel, ChannelContentLimits>> = {
+  XIAOHONGSHU: { title: 20, body: 1000, maxTags: 10 },
+  WEIBO: { title: 140, body: 2000, maxTags: null },
+  BILIBILI: { title: 80, body: 2000, maxTags: 12 },
+  DOUYIN: { title: 55, body: 1000, maxTags: null },
+  ZHIHU: { title: 100, body: null, maxTags: 5 },
+  WORDPRESS: { title: 200, body: null, maxTags: null },
+  WECHAT_OFFICIAL_ACCOUNT: { title: 64, body: null, maxTags: null },
+  WECHAT_CHANNELS: { title: 60, body: 1000, maxTags: null },
+};
+
+export interface FinalChannelContent {
+  title: string;
+  body: string;
+  hashtags: string[];
+}
+
+function normalizeTag(tag: string): string {
+  return tag.replace(/#/g, '').trim();
+}
+
+/** 正文中内联的 #话题 / #话题#，用于在未单独维护标签时导出真实使用的标签。 */
+export function extractInlineHashtags(body: string): string[] {
+  const found: string[] = [];
+  for (const match of body.matchAll(/#([^\s#]+)#?/g)) {
+    const tag = normalizeTag(match[1]);
+    if (tag && !found.includes(tag)) found.push(tag);
+  }
+  return found;
+}
+
+/**
+ * 返回超出渠道限制的说明；空数组表示内容可以原样作为最终发布内容。
+ * 人工渠道的最终内容由人确认，超限时应拒绝而非静默截断。
+ */
+export function validateChannelContentLimits(
+  channel: Channel,
+  content: { title?: string | null; body?: string | null; tags?: string[] | null },
+): string[] {
+  const limits = CHANNEL_CONTENT_LIMITS[channel];
+  if (!limits) return [];
+  const violations: string[] = [];
+  const titleLength = (content.title || '').length;
+  const bodyLength = (content.body || '').length;
+  const tagCount = (content.tags || []).map(normalizeTag).filter(Boolean).length;
+  if (titleLength > limits.title) violations.push(`标题 ${titleLength}/${limits.title} 字`);
+  if (limits.body !== null && bodyLength > limits.body) violations.push(`正文 ${bodyLength}/${limits.body} 字`);
+  if (limits.maxTags !== null && tagCount > limits.maxTags) violations.push(`话题 ${tagCount}/${limits.maxTags} 个`);
+  return violations;
+}
+
+/**
+ * 将已适配/人工编辑的渠道内容收敛为最终发布内容：只落实限制，不再追加排版装饰或默认标签。
+ */
+export function finalizeChannelContent(
+  channel: Channel,
+  content: { title?: string | null; body?: string | null; tags?: string[] | null },
+): FinalChannelContent {
+  const limits = CHANNEL_CONTENT_LIMITS[channel];
+  let title = content.title || '';
+  let body = content.body || '';
+  const explicitTags = (content.tags || []).map(normalizeTag).filter(Boolean);
+  let hashtags = explicitTags.length > 0 ? Array.from(new Set(explicitTags)) : extractInlineHashtags(body);
+  if (limits) {
+    title = title.slice(0, limits.title);
+    if (limits.body !== null) body = body.slice(0, limits.body);
+    if (limits.maxTags !== null) hashtags = hashtags.slice(0, limits.maxTags);
+  }
+  return { title, body, hashtags };
+}
+
 export function generateManualPublishingPackage(
   channel: Channel,
   content: NormalizedPublishContent,
 ): ManualPublishingPackage {
-  let tags = content.tags && content.tags.length > 0
-    ? content.tags.map((t) => (t.startsWith('#') ? t : `#${t}`))
-    : ['#AI', '#GEO', '#内容营销'];
-
-  let title = content.title || (content.topic ? `${content.topic} 精选指南` : '精选分享');
-  let body = content.body || '';
-
-  // 严格落实各渠道规范与字数/格式限制（对齐预览与真实导出）
-  if (channel === 'XIAOHONGSHU') {
-    title = title.slice(0, 20);
-    const tagStr = tags.map((t) => (t.startsWith('#') ? t : `#${t}`)).join(' ');
-    if (!body.includes('✨') && !body.includes('📌')) {
-      body = '✨ ' + body.replace(/\n\n+/g, '\n\n💡 ').replace(/\n/g, '\n');
-    }
-    if (tagStr && !body.includes(tags[0])) {
-      body += '\n\n' + tagStr;
-    }
-    body = body.slice(0, 1000);
-  } else if (channel === 'WEIBO') {
-    title = title.slice(0, 140);
-    body = body.slice(0, 2000);
-  } else if (channel === 'BILIBILI') {
-    title = title.slice(0, 80);
-    body = body.slice(0, 2000);
-  } else if (channel === 'DOUYIN') {
-    title = title.slice(0, 55);
-    body = body.slice(0, 1000);
-  } else if (channel === 'ZHIHU') {
-    title = title.slice(0, 100);
-    tags = tags.slice(0, 5);
-  } else if (channel === 'WORDPRESS') {
-    title = title.slice(0, 200);
-  } else if (channel === 'WECHAT_OFFICIAL_ACCOUNT') {
-    title = title.slice(0, 64);
-  } else if (channel === 'WECHAT_CHANNELS') {
-    title = title.slice(0, 60);
-    body = body.slice(0, 1000);
-  }
+  const finalContent = finalizeChannelContent(channel, content);
+  const { title, body } = finalContent;
+  const tags = finalContent.hashtags.map((t) => `#${t}`);
 
   const assets = (content.assets || []).map((a, idx) => ({
     index: idx + 1,

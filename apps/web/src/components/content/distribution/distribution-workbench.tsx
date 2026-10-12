@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getDistributionChannels,
   adaptContentForChannels,
@@ -9,6 +9,8 @@ import {
   confirmManualPublished,
   listProjectPublications,
   processPublicationRetry,
+  channelLimitViolations,
+  resolvePackageHashtags,
   type DistributionChannel,
   type AdaptedChannelContent,
   type PublicationListItem,
@@ -105,6 +107,9 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
 
   // 批量分发触发中
   const [distributing, setDistributing] = useState(false);
+  // 同一份提交内容复用同一个幂等键：双击、网络重试都只会回放原任务；内容或渠道变化后才换新键
+  const submissionKeyRef = useRef<string | null>(null);
+  const submitLockRef = useRef(false);
 
   // 分发记录列表
   // 分发记录列表与分页 (P2-3)
@@ -209,6 +214,22 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       .map(([ch]) => ch);
   }, [channelSelections]);
 
+  useEffect(() => {
+    submissionKeyRef.current = null;
+  }, [selectedDraftId, channelSelections, editedContent]);
+
+  const channelLimitsMap = useMemo(() => {
+    return Object.fromEntries(channels.map((ch) => [ch.channel, ch.limits ?? null]));
+  }, [channels]);
+
+  // 人工渠道的最终内容超限时服务端会拒绝整批提交，这里提前阻止并指出具体渠道
+  const manualLimitViolations = useMemo(() => {
+    return selectedChannelsList
+      .filter((ch) => channelSelections[ch]?.mode === "MANUAL")
+      .map((ch) => ({ channel: ch, violations: channelLimitViolations(channelLimitsMap[ch], editedContent[ch]) }))
+      .filter((v) => v.violations.length > 0);
+  }, [selectedChannelsList, channelSelections, channelLimitsMap, editedContent]);
+
   // 当草稿改变或点击重新适配时，自动拉取渠道变体与人工发布包
   async function handleAdaptPreview() {
     if (!selectedDraftId || !projectId || selectedChannelsList.length === 0) return;
@@ -291,12 +312,18 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   function downloadManualPackage(pkg: ManualPublishingPackage, chKey?: string) {
     const channel = chKey || pkg.channel;
     const currentEdit = editedContent[channel];
+    const violations = channelLimitViolations(channelLimitsMap[channel], currentEdit);
+    if (violations.length > 0) {
+      setErrorMsg(`当前内容超出平台限制（${violations.join("，")}），请调整后再下载发布包`);
+      return;
+    }
+    const title = currentEdit?.title ?? pkg.title;
+    const body = currentEdit?.body ?? pkg.body;
     const exportPkg: ManualPublishingPackage = {
       ...pkg,
-      title: currentEdit?.title !== undefined ? currentEdit.title : pkg.title,
-      body: currentEdit?.body !== undefined ? currentEdit.body : pkg.body,
-      hashtags: currentEdit?.tags !== undefined ? currentEdit.tags : pkg.hashtags,
-      tags: currentEdit?.tags !== undefined ? currentEdit.tags : pkg.tags,
+      title,
+      body,
+      hashtags: currentEdit ? resolvePackageHashtags(currentEdit.tags, body) : pkg.hashtags,
     };
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportPkg, null, 2));
     const downloadAnchor = document.createElement("a");
@@ -312,6 +339,20 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   // 触发一键批量分发
   async function handleBatchDistribute() {
     if (!selectedDraftId || selectedChannelsList.length === 0) return;
+    if (submitLockRef.current) return;
+    if (manualLimitViolations.length > 0) {
+      setErrorMsg(
+        "以下人工渠道内容超出平台限制：" +
+          manualLimitViolations
+            .map((v) => `${CHANNEL_PLATFORM_CONFIG[v.channel]?.label || v.channel}（${v.violations.join("，")}）`)
+            .join("；"),
+      );
+      return;
+    }
+    submitLockRef.current = true;
+    if (!submissionKeyRef.current) {
+      submissionKeyRef.current = `ui-${crypto.randomUUID()}`;
+    }
     setDistributing(true);
     setErrorMsg(null);
     setActionSuccess(null);
@@ -331,14 +372,20 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
 
       const res = await batchDistribute(projectId, selectedDraftId, {
         items: itemsToSubmit,
-        autoApprove: true,
+        idempotencyKey: submissionKeyRef.current,
       });
 
-      setActionSuccess(`已成功触发 ${res.items.length} 个渠道的分发任务！`);
+      const replayedCount = res.items.filter((i) => i.replayed).length;
+      setActionSuccess(
+        replayedCount === res.items.length
+          ? `该内容已提交过，已复用原有 ${res.items.length} 个分发任务，未重复创建。`
+          : `已创建 ${res.items.length - replayedCount} 个渠道的分发任务${replayedCount > 0 ? `，${replayedCount} 个复用原任务` : ""}。`,
+      );
       await loadPublications(1);
     } catch (err: any) {
       setErrorMsg(err.message || "批量分发失败");
     } finally {
+      submitLockRef.current = false;
       setDistributing(false);
     }
   }
@@ -693,11 +740,13 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
                     <label className="font-semibold text-slate-700">标题</label>
-                    {activePreviewChannel === "XIAOHONGSHU" && (
+                    {channelLimitsMap[activePreviewChannel] && (
                       <span className={`text-[11px] ${
-                        (editedContent[activePreviewChannel]?.title?.length || 0) > 20 ? "text-rose-600 font-bold" : "text-slate-400"
+                        (editedContent[activePreviewChannel]?.title?.length || 0) > channelLimitsMap[activePreviewChannel]!.title
+                          ? "text-rose-600 font-bold"
+                          : "text-slate-400"
                       }`}>
-                        {editedContent[activePreviewChannel]?.title?.length || 0}/20 字
+                        {editedContent[activePreviewChannel]?.title?.length || 0}/{channelLimitsMap[activePreviewChannel]!.title} 字
                       </span>
                     )}
                   </div>
@@ -718,7 +767,18 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">正文与话题</label>
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="font-semibold text-slate-700">正文与话题</label>
+                    {channelLimitsMap[activePreviewChannel]?.body != null && (
+                      <span className={`text-[11px] ${
+                        (editedContent[activePreviewChannel]?.body?.length || 0) > channelLimitsMap[activePreviewChannel]!.body!
+                          ? "text-rose-600 font-bold"
+                          : "text-slate-400"
+                      }`}>
+                        {editedContent[activePreviewChannel]?.body?.length || 0}/{channelLimitsMap[activePreviewChannel]!.body} 字
+                      </span>
+                    )}
+                  </div>
                   <textarea
                     rows={8}
                     className="ui-input w-full text-xs font-mono leading-relaxed"
@@ -847,12 +907,22 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
 
           {/* 底部一键批量分发按钮 */}
           <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
-            <div className="text-xs text-slate-500">
-              将同时向 <strong className="text-slate-900">{selectedChannelsList.length}</strong> 个渠道提交分发任务。自动模式将同步至平台/草稿箱，人工模式将生成待发布清单。
+            <div className="text-xs text-slate-500 space-y-1">
+              <div>
+                将同时向 <strong className="text-slate-900">{selectedChannelsList.length}</strong> 个渠道提交分发任务。自动模式将同步至平台/草稿箱，人工模式将生成待发布清单；人工发布后需回填真实链接才会落地为 GEO 资产。
+              </div>
+              {manualLimitViolations.length > 0 && (
+                <div role="alert" className="text-rose-600 font-medium">
+                  超出平台限制，需调整后提交：
+                  {manualLimitViolations
+                    .map((v) => `${CHANNEL_PLATFORM_CONFIG[v.channel]?.label || v.channel}（${v.violations.join("，")}）`)
+                    .join("；")}
+                </div>
+              )}
             </div>
             <button
               type="button"
-              disabled={distributing || selectedChannelsList.length === 0}
+              disabled={distributing || selectedChannelsList.length === 0 || manualLimitViolations.length > 0}
               onClick={handleBatchDistribute}
               className="ui-button primary text-xs px-6 py-2.5 font-bold shadow-md"
             >

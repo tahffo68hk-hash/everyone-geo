@@ -357,11 +357,12 @@ export class ContentExecutionController {
   /** 素材下载/读取（真实可访问，按 storageKey 返回带正确 Content-Type 的流） */
   @Get(["assets/download/:orgId/:filename", "api/assets/download/:orgId/:filename"])
   async downloadAsset(
+    @CurrentUser() u: JwtUserPayload,
     @Param("orgId") orgId: string,
     @Param("filename") filename: string,
     @Res() res: any,
   ) {
-    const asset = await this.content.downloadAsset(orgId, filename);
+    const asset = await this.content.downloadAsset(u.sub, orgId, filename);
     res.setHeader("Content-Type", asset.mimeType);
     res.setHeader("Content-Length", String(asset.sizeBytes));
     res.send(asset.buffer);
