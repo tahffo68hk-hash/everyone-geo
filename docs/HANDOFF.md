@@ -317,4 +317,10 @@ a7f210a feat(web,docs): integrate WEB-004, WEB-007, WEB-008, WEB-013 within safe
 
 本轮浏览器发现并已修：待人工任务不再标成模拟执行；模拟已发布不提供 GEO 验证入口；外部草稿有独立状态文案；成功下载清掉残留超限提示；效果验证改用发布时间锚点。
 
+## 十一、AI 内容适配 V1
+
+`POST /projects/:id/content-drafts/:draftId/ai/channel-adaptation` 复用 AI Gateway。未显式选择真实模型时传 `provider=mock`，响应 `realAi=false`、`generationSource=mock`。相同原文、版本、渠道和说明会复用已有 `AiGeneration`，`force=true` 才再次调用。结果只进入分发工作台的预览；确认后写入现有编辑区，再沿用 Distribution V1 的提交、下载和幂等。确认前不创建 Publication 或 PublishedAsset。
+
+渠道字数和话题上限沿用 `CHANNEL_CONTENT_LIMITS`。超限会截断并记入 `adjustments`。原文没有的百分比、链接和文献编号记入 `riskNotes`。抖音、视频号、哔哩哔哩才保留视频脚本，并随确认后的 `videoScript` 进入现有发布包。
+
 

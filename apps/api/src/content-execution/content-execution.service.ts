@@ -2964,6 +2964,7 @@ export class ContentExecutionService implements OnModuleDestroy {
         mode: item.mode,
         targetStatus: item.targetStatus || "draft",
         assets: normalizedAssets,
+        videoScript: item.videoScript ?? null,
       };
 
       // DIST-03: 稳定幂等键，防止并发重放多创建任务
@@ -3017,7 +3018,7 @@ export class ContentExecutionService implements OnModuleDestroy {
       }
 
       // 发布包始终来自已持久化的任务内容，重放请求携带的新内容不会覆盖原任务
-      let storedPayload: { body?: string; tags?: string[]; coverUrl?: string | null; mode?: string } = {};
+      let storedPayload: { body?: string; tags?: string[]; coverUrl?: string | null; mode?: string; videoScript?: string | null } = {};
       try {
         storedPayload = JSON.parse(pub.payload);
       } catch {}
@@ -3030,7 +3031,7 @@ export class ContentExecutionService implements OnModuleDestroy {
         coverUrl: storedPayload.coverUrl ?? itemCoverUrl,
         assets: normalizedAssets,
         metadata: {
-          script: (targetRevision as any).metadata?.videoScript || (targetRevision as any).metadata?.script || null,
+          script: storedPayload.videoScript || (targetRevision as any).metadata?.videoScript || (targetRevision as any).metadata?.script || null,
         },
       });
 

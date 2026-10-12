@@ -96,6 +96,54 @@ export interface DistributionBatchItem {
   tags?: string[];
   coverUrl?: string;
   targetStatus?: "draft" | "publish";
+  videoScript?: string;
+}
+
+export interface ChannelAdaptationDraft {
+  channel: string;
+  title: string;
+  body: string;
+  hashtags: string[];
+  videoScript: string | null;
+  omittedClaims: string[];
+  riskNotes: string[];
+  adjustments: string[];
+}
+
+export interface ChannelAdaptationResult {
+  draftId: string;
+  revisionId: string;
+  promptVersion: string;
+  provider: string;
+  model: string;
+  realAi: boolean;
+  generationSource: "mock" | "provider";
+  replayed: boolean;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  estimatedCost: number | null;
+  latencyMs: number;
+  generationId: string | null;
+  channels: ChannelAdaptationDraft[];
+}
+
+export async function adaptContentWithAi(
+  projectId: string,
+  draftId: string,
+  payload: { channels: string[]; revisionId?: string; instructions?: string; force?: boolean; provider?: "mock" | "auto" },
+): Promise<ChannelAdaptationResult> {
+  return api<ChannelAdaptationResult>(`/projects/${projectId}/content-drafts/${draftId}/ai/channel-adaptation`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAiProviderStatus(): Promise<{
+  realProvidersEnabled: boolean;
+  providers: Array<{ provider: string; enabled: boolean; realModeAllowed: boolean }>;
+}> {
+  return api(`/ai/status`);
 }
 
 export interface DistributionResultItem {

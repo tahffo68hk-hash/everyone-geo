@@ -601,6 +601,11 @@ export class BatchDistributeItemDto {
   @IsOptional()
   @IsIn(['draft', 'publish'])
   targetStatus?: 'draft' | 'publish';
+
+  /** 人工确认后的视频口播。缺省时仍使用草稿上原有脚本。 */
+  @IsOptional()
+  @IsString()
+  videoScript?: string;
 }
 
 export class BatchDistributeDto {

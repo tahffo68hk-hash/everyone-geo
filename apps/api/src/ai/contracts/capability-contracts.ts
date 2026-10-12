@@ -325,6 +325,26 @@ export const CAPABILITY_SCHEMAS: Record<string, DeepSchema> = {
     },
   },
 
+  content_channel_adaptation: {
+    type: 'object',
+    properties: {
+      channels: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            channel: { type: 'string', minLength: 1 },
+            title: { type: 'string' },
+            body: { type: 'string' },
+            hashtags: { type: 'array', items: { type: 'string' } },
+            videoScript: { type: 'string', required: false },
+            omittedClaims: { type: 'array', items: { type: 'string' }, required: false },
+          },
+        },
+      },
+    },
+  },
+
   // Video Script Domain
   video_script: {
     type: 'object',

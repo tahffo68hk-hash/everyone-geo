@@ -37,7 +37,18 @@ import {
   SummarizeReportDto,
   ResolveBrandDto,
   GenerateVideoScriptDto,
+  AdaptContentChannelsDto,
 } from "./dto/ai.dto";
+import { randomUUID } from "node:crypto";
+import {
+  CONTENT_ADAPTATION_FEATURE,
+  VIDEO_SCRIPT_CHANNELS,
+  adaptationIdempotencyKey,
+  constrainAdaptationChannel,
+  knownAdaptationChannels,
+  limitsForChannel,
+  stripHtml,
+} from "./content-adaptation";
 
 
 @Injectable()
@@ -864,6 +875,197 @@ export class AiService {
       promptVersion: PROMPT_VERSIONS.VIDEO_SCRIPT,
       input: dto,
     });
+  }
+
+  /**
+   * 把已有草稿适配到选定渠道。相同原文默认复用已有生成，force 才再次调用模型。
+   * 结果不会创建分发任务；调用方确认后才写入现有分发预览。
+   */
+  async adaptContentChannels(userId: string, projectId: string, draftId: string, dto: AdaptContentChannelsDto) {
+    const project = await this.tenant.assertUserInProject(userId, projectId);
+    const draft = await this.prisma.client.contentDraft.findFirst({
+      where: { id: draftId, projectId },
+    });
+    if (!draft) throw new NotFoundException("草稿不存在");
+
+    const revision = dto.revisionId
+      ? await this.prisma.client.contentRevision.findFirst({ where: { id: dto.revisionId, draftId } })
+      : await this.prisma.client.contentRevision.findFirst({
+          where: { draftId },
+          orderBy: { version: "desc" },
+        });
+    if (!revision) throw new NotFoundException("草稿版本不存在");
+
+    const channels = [...new Set(dto.channels.map((item) => item.trim()).filter(Boolean))];
+    if (!channels.length) throw new BadRequestException("至少选择一个渠道");
+    const allowed = new Set(knownAdaptationChannels());
+    const unknown = channels.filter((channel) => !allowed.has(channel));
+    if (unknown.length) throw new BadRequestException(`不支持的渠道: ${unknown.join(", ")}`);
+
+    const sourceTitle = draft.title;
+    const sourceBody = stripHtml(revision.body);
+    const sourceText = `${sourceTitle}\n${sourceBody}\n${revision.summary || ""}`;
+    const promptVersion = PROMPT_VERSIONS.CONTENT_CHANNEL_ADAPTATION;
+    const idempotencyKey = adaptationIdempotencyKey({
+      promptVersion,
+      revisionId: revision.id,
+      title: sourceTitle,
+      body: sourceBody,
+      channels,
+      instructions: dto.instructions,
+    });
+
+    if (!dto.force) {
+      const replay = await this.findAdaptationReplay(project.organizationId, draftId, promptVersion, idempotencyKey);
+      if (replay) {
+        return this.presentAdaptation({
+          draftId,
+          revisionId: revision.id,
+          promptVersion,
+          provider: replay.provider,
+          model: replay.model,
+          inputTokens: replay.inputTokens,
+          outputTokens: replay.outputTokens,
+          totalTokens: replay.totalTokens,
+          estimatedCost: replay.estimatedCost == null ? null : Number(replay.estimatedCost),
+          latencyMs: replay.latencyMs ?? 0,
+          generationId: replay.id,
+          replayed: true,
+          rawChannels: (replay.outputSnapshot as { channels?: unknown[] } | null)?.channels,
+          requestedChannels: channels,
+          sourceTitle,
+          sourceBody,
+          sourceText,
+        });
+      }
+    }
+
+    const generated = await this.gateway.generateStructured<{ channels: Array<Record<string, unknown>> }>({
+      organizationId: project.organizationId,
+      projectId: project.id,
+      userId,
+      feature: CONTENT_ADAPTATION_FEATURE,
+      entityType: "ContentDraft",
+      entityId: draftId,
+      provider: dto.provider || "mock",
+      model: dto.model,
+      temperature: dto.temperature ?? 0.2,
+      maxTokens: dto.maxTokens,
+      promptVersion,
+      idempotencyKey: dto.force ? `${idempotencyKey}:${randomUUID()}` : idempotencyKey,
+      input: {
+        idempotencyKey,
+        title: sourceTitle,
+        body: sourceBody,
+        summary: revision.summary,
+        instructions: dto.instructions || "",
+        channels: channels.map((channel) => ({
+          channel,
+          requiresVideo: VIDEO_SCRIPT_CHANNELS.has(channel),
+          limits: limitsForChannel(channel),
+        })),
+      },
+    });
+
+    return this.presentAdaptation({
+      draftId,
+      revisionId: revision.id,
+      promptVersion: generated.promptVersion,
+      provider: generated.provider,
+      model: generated.model,
+      inputTokens: generated.inputTokens,
+      outputTokens: generated.outputTokens,
+      totalTokens: generated.totalTokens,
+      estimatedCost: generated.estimatedCost,
+      latencyMs: generated.latencyMs,
+      generationId: generated.generationId ?? null,
+      replayed: false,
+      rawChannels: generated.data?.channels,
+      requestedChannels: channels,
+      sourceTitle,
+      sourceBody,
+      sourceText,
+    });
+  }
+
+  private async findAdaptationReplay(organizationId: string, draftId: string, promptVersion: string, idempotencyKey: string) {
+    const rows = await this.prisma.client.aiGeneration.findMany({
+      where: {
+        organizationId,
+        feature: CONTENT_ADAPTATION_FEATURE,
+        entityId: draftId,
+        status: "SUCCESS",
+        promptVersion,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+    return rows.find((row) => (row.inputSnapshot as { idempotencyKey?: string } | null)?.idempotencyKey === idempotencyKey) ?? null;
+  }
+
+  private presentAdaptation(input: {
+    draftId: string;
+    revisionId: string;
+    promptVersion: string;
+    provider: string;
+    model: string;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+    estimatedCost: number | null;
+    latencyMs: number;
+    generationId: string | null;
+    replayed: boolean;
+    rawChannels: unknown[] | undefined;
+    requestedChannels: string[];
+    sourceTitle: string;
+    sourceBody: string;
+    sourceText: string;
+  }) {
+    const byChannel = new Map<string, Record<string, unknown>>();
+    for (const item of input.rawChannels || []) {
+      if (item && typeof item === "object" && "channel" in item) {
+        byChannel.set(String((item as { channel: unknown }).channel), item as Record<string, unknown>);
+      }
+    }
+    const channels = input.requestedChannels.map((channel) => {
+      const raw = byChannel.get(channel);
+      return constrainAdaptationChannel(
+        {
+          channel,
+          title: typeof raw?.title === "string" ? raw.title : input.sourceTitle,
+          body: typeof raw?.body === "string" ? raw.body : input.sourceBody,
+          hashtags: Array.isArray(raw?.hashtags) ? raw.hashtags.filter((tag): tag is string => typeof tag === "string") : [],
+          videoScript: typeof raw?.videoScript === "string" ? raw.videoScript : null,
+          omittedClaims: Array.isArray(raw?.omittedClaims)
+            ? raw.omittedClaims.filter((item): item is string => typeof item === "string")
+            : raw
+              ? []
+              : ["模型未返回该渠道，已回退为原文"],
+        },
+        input.sourceText,
+        limitsForChannel(channel),
+        VIDEO_SCRIPT_CHANNELS.has(channel),
+      );
+    });
+
+    return {
+      draftId: input.draftId,
+      revisionId: input.revisionId,
+      promptVersion: input.promptVersion,
+      provider: input.provider,
+      model: input.model,
+      realAi: input.provider !== "mock",
+      generationSource: input.provider === "mock" ? "mock" : "provider",
+      replayed: input.replayed,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens,
+      totalTokens: input.totalTokens,
+      estimatedCost: input.estimatedCost,
+      latencyMs: input.latencyMs,
+      generationId: input.generationId,
+      channels,
+    };
   }
 }
 

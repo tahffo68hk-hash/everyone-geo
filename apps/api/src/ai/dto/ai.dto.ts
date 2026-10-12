@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsIn,
   IsInt,
@@ -8,7 +9,9 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
+  MaxLength,
   Min,
 } from "class-validator";
 
@@ -582,5 +585,26 @@ export class GenerateVideoScriptDto extends BaseAiOptionsDto {
   @Min(15)
   @Max(180)
   targetDurationSeconds?: number;
+}
+
+/** 将已有草稿适配到选定渠道。默认应传 provider=mock；只有明确选择真实模型时才传 auto。 */
+export class AdaptContentChannelsDto extends BaseAiOptionsDto {
+  @IsOptional()
+  @IsUUID()
+  revisionId?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  channels!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  instructions?: string;
+
+  /** 为 true 时忽略相同原文的已有结果，重新调用模型。 */
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
 

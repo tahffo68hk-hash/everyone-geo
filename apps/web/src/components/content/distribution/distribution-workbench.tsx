@@ -11,13 +11,18 @@ import {
   processPublicationRetry,
   channelLimitViolations,
   resolvePackageHashtags,
+  adaptContentWithAi,
+  getAiProviderStatus,
   type DistributionChannel,
   type AdaptedChannelContent,
   type PublicationListItem,
   type ManualPublishingPackage,
+  type ChannelAdaptationResult,
 } from "@/lib/distribution-api";
 import { listContentDrafts, type Draft } from "@/lib/content-api";
 import { StatusBadge, LoadingSkeleton, EmptyState } from "@/components/ui";
+
+const VIDEO_SCRIPT_CHANNELS = new Set(["DOUYIN", "WECHAT_CHANNELS", "BILIBILI"]);
 
 const CHANNEL_PLATFORM_CONFIG: Record<
   string,
@@ -104,6 +109,15 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   const [editedContent, setEditedContent] = useState<
     Record<string, { title: string; body: string; tags: string[] }>
   >({});
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiUseReal, setAiUseReal] = useState(false);
+  const [realAiAvailable, setRealAiAvailable] = useState(false);
+  const [aiResult, setAiResult] = useState<ChannelAdaptationResult | null>(null);
+  const [aiDrafts, setAiDrafts] = useState<
+    Record<string, { title: string; body: string; tags: string; videoScript: string }>
+  >({});
+  const [confirmedScripts, setConfirmedScripts] = useState<Record<string, string>>({});
+  const [confirmedChannels, setConfirmedChannels] = useState<Record<string, boolean>>({});
 
   // 批量分发触发中
   const [distributing, setDistributing] = useState(false);
@@ -261,6 +275,60 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     }
   }
 
+  useEffect(() => {
+    getAiProviderStatus()
+      .then((status) => setRealAiAvailable(status.providers.some((item) => item.realModeAllowed)))
+      .catch(() => setRealAiAvailable(false));
+  }, []);
+
+  async function handleAiAdapt(force = false) {
+    if (!selectedDraftId || selectedChannelsList.length === 0 || aiRunning) return;
+    setAiRunning(true);
+    setErrorMsg(null);
+    try {
+      const res = await adaptContentWithAi(projectId, selectedDraftId, {
+        channels: selectedChannelsList,
+        provider: aiUseReal ? "auto" : "mock",
+        force,
+      });
+      setAiResult(res);
+      const drafts: Record<string, { title: string; body: string; tags: string; videoScript: string }> = {};
+      for (const item of res.channels) {
+        drafts[item.channel] = {
+          title: item.title,
+          body: item.body,
+          tags: item.hashtags.join(" "),
+          videoScript: item.videoScript || "",
+        };
+      }
+      setAiDrafts(drafts);
+      setActionSuccess(
+        res.replayed
+          ? "已复用相同原文的上次适配结果，未再次调用模型。确认前不会提交或发布。"
+          : res.realAi
+            ? "真实模型已生成渠道适配。请对照原文并确认，确认前不会提交或发布。"
+            : "这是模拟适配，不是真实模型结果。请对照原文并确认，确认前不会提交或发布。",
+      );
+    } catch (err: any) {
+      setErrorMsg(err.message || "AI 渠道适配失败");
+    } finally {
+      setAiRunning(false);
+    }
+  }
+
+  function confirmAiDraft(channel: string) {
+    const draft = aiDrafts[channel];
+    if (!draft) return;
+    const tags = draft.tags.split(/\s+/).map((tag) => tag.replace(/#/g, "").trim()).filter(Boolean);
+    setEditedContent((prev) => ({
+      ...prev,
+      [channel]: { title: draft.title, body: draft.body, tags },
+    }));
+    setConfirmedScripts((prev) => ({ ...prev, [channel]: draft.videoScript }));
+    setConfirmedChannels((prev) => ({ ...prev, [channel]: true }));
+    setActionSuccess(`${CHANNEL_PLATFORM_CONFIG[channel]?.label || channel} 的适配稿已写入预览。仍需手动提交，不会自动发布。`);
+  }
+
   // 草稿切换时自动触发展开预览
   useEffect(() => {
     if (selectedDraftId && selectedChannelsList.length > 0) {
@@ -324,6 +392,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       title,
       body,
       hashtags: currentEdit ? resolvePackageHashtags(currentEdit.tags, body) : pkg.hashtags,
+      videoScript: confirmedScripts[channel] !== undefined ? confirmedScripts[channel] || null : pkg.videoScript,
     };
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportPkg, null, 2));
     const downloadAnchor = document.createElement("a");
@@ -368,6 +437,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
           body: edit?.body,
           tags: edit?.tags,
           targetStatus: sel.targetStatus || "draft",
+          videoScript: confirmedScripts[ch] || undefined,
         };
       });
 
@@ -696,10 +766,117 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                 <span>🎨</span> 步骤 3：多端变体预览与排版微调
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                针对小红书字数限制、微信图文排版、知乎 Markdown、短视频口播脚本进行了自动合规转换。
+                规则预览会立即填入编辑区。AI 适配需要单独生成，并在确认后才写入编辑区。
               </p>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1 text-[11px] text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={aiUseReal}
+                  disabled={!realAiAvailable || aiRunning}
+                  onChange={(e) => setAiUseReal(e.target.checked)}
+                />
+                使用真实模型
+              </label>
+              <button
+                type="button"
+                onClick={() => handleAiAdapt(false)}
+                disabled={aiRunning}
+                className="ui-button primary text-xs py-1.5 px-3"
+              >
+                {aiRunning ? "正在生成渠道适配..." : "AI 生成"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiAdapt(true)}
+                disabled={aiRunning || !aiResult}
+                className="ui-button secondary text-xs py-1.5 px-3 disabled:opacity-50"
+              >
+                重新生成
+              </button>
+            </div>
           </div>
+          {!realAiAvailable && (
+            <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              未启用真实模型。AI 生成将返回模拟结果，并明确标为模拟，不会产生模型费用。
+            </p>
+          )}
+          {aiUseReal && (
+            <p className="text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+              已选择真实模型。点击生成会调用已配置的 Provider，并记录 token 与费用。
+            </p>
+          )}
+          {aiResult && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded px-1.5 py-0.5 font-semibold ${aiResult.realAi ? "bg-teal-100 text-teal-800" : "bg-amber-100 text-amber-900"}`}>
+                  {aiResult.realAi ? `真实模型 ${aiResult.provider}/${aiResult.model}` : "模拟结果，不是真实 AI"}
+                </span>
+                <span className="text-slate-500">
+                  {aiResult.promptVersion} · token {aiResult.totalTokens ?? "—"} · 费用 {aiResult.estimatedCost ?? "—"} · {aiResult.latencyMs}ms
+                  {aiResult.replayed ? " · 已复用，未再次调用" : ""}
+                </span>
+              </div>
+              {aiResult.channels
+                .filter((item) => item.channel === (activePreviewChannel || selectedChannelsList[0]))
+                .map((item) => {
+                  const draft = aiDrafts[item.channel];
+                  const originalBody = currentDraft?.latestRevision?.body || "";
+                  return (
+                    <div key={item.channel} className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <div className="font-semibold text-slate-700">原文</div>
+                        <p className="text-slate-800">{currentDraft?.title}</p>
+                        <p className="max-h-28 overflow-auto whitespace-pre-wrap text-slate-600">{originalBody}</p>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="font-semibold text-slate-700">适配稿（确认前不会进入提交）</div>
+                        <input
+                          value={draft?.title || ""}
+                          onChange={(e) => setAiDrafts((prev) => ({ ...prev, [item.channel]: { ...prev[item.channel], title: e.target.value } }))}
+                          className="w-full rounded border border-slate-300 px-2 py-1"
+                          aria-label="AI 适配标题"
+                        />
+                        <textarea
+                          value={draft?.body || ""}
+                          onChange={(e) => setAiDrafts((prev) => ({ ...prev, [item.channel]: { ...prev[item.channel], body: e.target.value } }))}
+                          className="w-full min-h-20 rounded border border-slate-300 px-2 py-1"
+                          aria-label="AI 适配正文"
+                        />
+                        <input
+                          value={draft?.tags || ""}
+                          onChange={(e) => setAiDrafts((prev) => ({ ...prev, [item.channel]: { ...prev[item.channel], tags: e.target.value } }))}
+                          className="w-full rounded border border-slate-300 px-2 py-1"
+                          aria-label="AI 适配话题"
+                          placeholder="话题以空格分隔"
+                        />
+                        {(VIDEO_SCRIPT_CHANNELS.has(item.channel) || item.videoScript) && (
+                          <textarea
+                            value={draft?.videoScript || ""}
+                            onChange={(e) => setAiDrafts((prev) => ({ ...prev, [item.channel]: { ...prev[item.channel], videoScript: e.target.value } }))}
+                            className="w-full min-h-16 rounded border border-slate-300 px-2 py-1"
+                            aria-label="AI 视频脚本"
+                          />
+                        )}
+                        {item.adjustments.map((note) => (
+                          <p key={note} className="text-slate-500">{note}</p>
+                        ))}
+                        {item.riskNotes.map((note) => (
+                          <p key={note} className="text-rose-700">{note}</p>
+                        ))}
+                        {item.omittedClaims.map((note) => (
+                          <p key={note} className="text-slate-500">{note}</p>
+                        ))}
+                        <button type="button" onClick={() => confirmAiDraft(item.channel)} className="ui-button primary text-xs py-1 px-2">
+                          {confirmedChannels[item.channel] ? "已确认，再次写入预览" : "确认采用到当前渠道"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
 
           {/* 渠道标签切换 */}
           <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">

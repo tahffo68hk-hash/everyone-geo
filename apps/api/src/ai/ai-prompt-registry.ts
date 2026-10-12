@@ -35,6 +35,7 @@ export const PROMPT_VERSIONS = {
   LEARNING_ACTIONS: 'learning-actions-v1',
   BRAND_RESOLUTION: 'brand-resolution-v1',
   VIDEO_SCRIPT: 'video-script-v1',
+  CONTENT_CHANNEL_ADAPTATION: 'content-channel-adaptation-v1',
 } as const;
 
 
@@ -667,6 +668,35 @@ JSON 结构要求：
 品牌名称：${input.brandName}
 行业提示（可选）：${input.industryHint || '自动识别'}
 区域提示（可选）：${input.regionHint || '自动识别'}`,
+  },
+  [PROMPT_VERSIONS.CONTENT_CHANNEL_ADAPTATION]: {
+    version: PROMPT_VERSIONS.CONTENT_CHANNEL_ADAPTATION,
+    systemPrompt: `你是内容渠道适配编辑。任务是把用户给出的原文改写成各渠道可用的标题、正文、话题标签，以及仅在需要时提供的视频口播脚本。
+必须遵守：
+1. 只使用原文中已经出现的事实。不得新增数据、百分比、排名、客户引言、文献编号、外部链接，也不得承诺效果、销量或权威认证。
+2. 原文没有依据的句子不要写进标题或正文，把省略原因写入 omittedClaims。
+3. 每个渠道严格遵守输入中的 limits：title 为最大字数，body 为最大字数（null 表示不限制），maxTags 为话题个数上限（null 表示不限制）。
+4. hashtags 不带 #，且不得重复。
+5. requiresVideo 为 false 时 videoScript 必须是空字符串。requiresVideo 为 true 时，videoScript 只复述原文，不新增卖点。
+6. 只输出 JSON，不要 Markdown。
+{
+  "channels": [
+    {
+      "channel": "string",
+      "title": "string",
+      "body": "string",
+      "hashtags": ["string"],
+      "videoScript": "string",
+      "omittedClaims": ["string"]
+    }
+  ]
+}`,
+    buildUserPrompt: (input: any) => `原文标题：${input.title || ""}
+原文正文：${input.body || ""}
+补充说明：${input.summary || "无"}
+人工要求：${input.instructions || "无"}
+请为以下渠道各生成一条结果：
+${JSON.stringify(input.channels || [])}`,
   },
   [PROMPT_VERSIONS.VIDEO_SCRIPT]: {
     version: PROMPT_VERSIONS.VIDEO_SCRIPT,

@@ -550,6 +550,30 @@ export function generateMockFixture(
       break;
     }
 
+    case "content_channel_adaptation": {
+      const sourceTitle = String(input?.title || "未命名草稿");
+      const sourceBody = String(input?.body || "").replace(/\s+/g, " ").trim();
+      const requested = Array.isArray(input?.channels) ? input.channels : [];
+      mockContent = JSON.stringify({
+        channels: requested.map((item: any) => {
+          const limits = item?.limits || {};
+          const titleMax = Number(limits.title) > 0 ? Number(limits.title) : sourceTitle.length;
+          const bodyMax = limits.body == null ? sourceBody.length : Number(limits.body);
+          const tagMax = limits.maxTags == null ? 1 : Number(limits.maxTags);
+          const hashtags = tagMax > 0 ? ["原文适配"] : [];
+          return {
+            channel: item.channel,
+            title: sourceTitle.slice(0, titleMax),
+            body: sourceBody.slice(0, Math.max(0, bodyMax)),
+            hashtags,
+            videoScript: item.requiresVideo ? `口播沿用原文：${sourceBody.slice(0, 80)}` : "",
+            omittedClaims: ["模拟适配只复述原文，不补充事实"],
+          };
+        }),
+      });
+      break;
+    }
+
     case "video_script": {
       const topic = input?.topic || "企业GEO优化与AI搜索收录指南";
       const brand = input?.brandName || "品牌方";

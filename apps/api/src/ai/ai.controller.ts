@@ -42,6 +42,7 @@ import {
   SummarizeReportDto,
   ResolveBrandDto,
   GenerateVideoScriptDto,
+  AdaptContentChannelsDto,
 } from "./dto/ai.dto";
 
 
@@ -405,6 +406,21 @@ export class AiController {
     @Body() dto: GenerateVideoScriptDto,
   ) {
     return this.aiService.generateVideoScript(u.sub, id, dto);
+  }
+
+  /**
+   * 按渠道适配已有草稿。默认由调用方指定 mock；确认前不创建分发任务。
+   * POST /projects/:id/content-drafts/:draftId/ai/channel-adaptation
+   */
+  @Post("projects/:id/content-drafts/:draftId/ai/channel-adaptation")
+  @HttpCode(200)
+  adaptContentChannels(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("draftId", ParseUUIDPipe) draftId: string,
+    @Body() dto: AdaptContentChannelsDto,
+  ) {
+    return this.aiService.adaptContentChannels(u.sub, id, draftId, dto);
   }
 }
 
