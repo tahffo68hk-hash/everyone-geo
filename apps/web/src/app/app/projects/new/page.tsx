@@ -46,6 +46,7 @@ function NewProjectInner() {
   const [importText, setImportText] = useState("");
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiUseReal, setAiUseReal] = useState(false);
   const [undoRows, setUndoRows] = useState<PreviewRow[] | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
@@ -237,7 +238,7 @@ function NewProjectInner() {
           scenarios: form.industry.trim() || category,
           competitors: competitors.length > 0 ? competitors : undefined,
           queryCount: 8,
-          provider: "auto",
+          provider: aiUseReal ? "auto" : "mock",
         }),
       });
 
@@ -579,6 +580,15 @@ function NewProjectInner() {
                     撤销本次导入
                   </button>
                 )}
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aiUseReal}
+                    disabled={aiGenerating || busy}
+                    onChange={(e) => setAiUseReal(e.target.checked)}
+                  />
+                  <span>使用真实 AI（产生 API 费用）</span>
+                </label>
                 <button
                   type="button"
                   onClick={() => void generateAiQuerySet()}
@@ -594,7 +604,7 @@ function NewProjectInner() {
                       <span>AI 正在构思业务问题…</span>
                     </>
                   ) : (
-                    <span>AI 一键生成并导入</span>
+                    <span>{aiUseReal ? "真实 AI 推荐并导入" : "AI 一键生成并导入（模拟）"}</span>
                   )}
                 </button>
               </div>

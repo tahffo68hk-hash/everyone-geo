@@ -423,9 +423,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       .then((status) => {
         const available = status.providers.some((item) => item.realModeAllowed);
         setRealAiAvailable(available);
-        if (available) {
-          setAiUseReal(true);
-        }
       })
       .catch(() => setRealAiAvailable(false));
   }, []);
@@ -1695,14 +1692,14 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-1 text-[11px] text-slate-600">
+                    <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
                       <input
                         type="checkbox"
                         checked={aiUseReal}
                         disabled={!realAiAvailable || aiRunning}
                         onChange={(e) => setAiUseReal(e.target.checked)}
                       />
-                      使用真实模型
+                      <span>{realAiAvailable ? "启用真实模型（产生 API 费用）" : "真实模型未配置（仅模拟）"}</span>
                     </label>
                     <button
                       type="button"
@@ -1710,7 +1707,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                       disabled={aiRunning}
                       className="ui-button primary text-xs py-1.5 px-3"
                     >
-                      {aiRunning ? "正在生成渠道适配..." : "AI 生成"}
+                      {aiRunning ? "正在生成渠道适配..." : aiUseReal ? "AI 生成（真实付费）" : "AI 生成（本地模拟）"}
                     </button>
                   </div>
                 </div>

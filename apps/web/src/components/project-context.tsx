@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 
 export type ProjectOption = { id: string; name: string };
-type Identity = { user: { id: string; name: string | null; email: string }; organizations: { id: string; name: string }[] };
+type Identity = { user: { id: string; name: string | null; email: string }; organizations: { id: string; name: string; slug?: string; role?: string }[] };
 type Context = { projects: ProjectOption[]; projectId: string; project?: ProjectOption; setProjectId: (id: string) => void; target: { canonicalName: string; productCategory: string | null } | null; me: Identity | null; loading: boolean; error: string; resourceName: string; refresh: () => void };
 const ProjectContext = createContext<Context | null>(null);
 
@@ -49,7 +49,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     async function load() {
       try {
         const [identity, options] = await Promise.all([api<Identity>("/auth/me", {signal:controller.signal}), api<{ projects: ProjectOption[] }>("/monitor-tasks/options", {signal:controller.signal})]);
-        const validProjects = options.projects.filter(p => !p.name.toLowerCase().includes("astra") && !p.name.includes("独立验收"));
+        const validProjects = options.projects;
         setMe(identity); setProjects(validProjects);
         const segments = pathname.split("/").filter(Boolean);
         const staticSubpages = ["new", "compare", "verification", "publications", "distribution"];

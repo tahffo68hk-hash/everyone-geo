@@ -457,25 +457,21 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* 用户租户信息与退出 */}
             <div className="flex items-center gap-2 text-xs">
               <div className="w-7 h-7 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
-                {(context.me?.user.name && !context.me.user.name.toLowerCase().includes("astra") ? context.me.user.name[0] : "用").toUpperCase()}
+                {(() => {
+                  const initial = context.me?.user.name?.trim()?.[0] || context.me?.user.email?.[0];
+                  return initial ? initial.toUpperCase() : "—";
+                })()}
               </div>
               <div className="hidden sm:flex flex-col text-left">
                 <span className="font-semibold text-slate-800 leading-tight">
-                  {(() => {
-                    const raw = context.me?.user.name;
-                    if (!raw || raw.toLowerCase().includes("astra") || raw.includes("QA owner") || raw.includes("QA outsider")) {
-                      return "产品管理员";
-                    }
-                    return raw;
-                  })()}
+                  {context.me?.user.name?.trim() || context.me?.user.email || "—"}
                 </span>
                 <span className="text-[10px] text-slate-400 leading-tight">
                   {(() => {
-                    const raw = context.me?.organizations[0]?.name;
-                    if (!raw || raw.toLowerCase().includes("astra") || raw.includes("QA owner") || raw.includes("QA outsider")) {
-                      return "企业工作台";
-                    }
-                    return raw;
+                    const org = context.me?.organizations[0];
+                    if (!org) return "—";
+                    const roleLabel = org.role === "OWNER" ? "所有者" : org.role === "ADMIN" ? "管理员" : org.role === "MEMBER" ? "成员" : "";
+                    return roleLabel ? `${org.name} · ${roleLabel}` : org.name;
                   })()}
                 </span>
               </div>

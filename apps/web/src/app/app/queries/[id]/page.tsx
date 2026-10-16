@@ -91,14 +91,14 @@ function SuiteInner() {
   // 运行前确认
   const [runOpen, setRunOpen] = useState(false);
   const [engineId, setEngineId] = useState("");
-  const [runType, setRunType] = useState<"demo" | "real">("real");
+  const [runType, setRunType] = useState<"demo" | "real">("demo");
   const [preflight, setPreflight] = useState<RunPreflightResponse | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [preflightError, setPreflightError] = useState("");
   // M8C-R0：人工 Web UI 检测
   const [manualOpen, setManualOpen] = useState(false);
   const [manualProduct, setManualProduct] = useState("qwen-web");
-  const [manualRunType, setManualRunType] = useState<"demo" | "real">("real");
+  const [manualRunType, setManualRunType] = useState<"demo" | "real">("demo");
   const [manualDisplayedModel, setManualDisplayedModel] = useState("");
 
   const load = useCallback(async () => {
@@ -126,8 +126,8 @@ function SuiteInner() {
     api<{ projects: Project[]; engines: Engine[] }>("/monitor-tasks/options")
       .then(d => {
         setEngines(d.engines);
-        const firstReal = d.engines.find(e => e.provider !== "mock" && e.configured) || d.engines.find(e => e.configured) || d.engines[0];
-        if (firstReal) setEngineId(firstReal.id);
+        const defaultEngine = d.engines.find(e => e.provider === "mock") || d.engines[0];
+        if (defaultEngine) setEngineId(defaultEngine.id);
       })
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -518,18 +518,18 @@ function SuiteInner() {
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-slate-500">模式</dt>
                 <select value={runType} onChange={e => setRunType(e.target.value as "demo" | "real")} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" aria-label="模式">
-                  <option value="real">真实（调用真实 AI 模型）</option>
-                  <option value="demo">开发模拟（仅用于离线测试）</option>
+                  <option value="demo">开发模拟（离线测试，零费用）</option>
+                  <option value="real">真实（调用真实 AI 模型，产生 API 费用）</option>
                 </select>
               </div>
-              <div className="flex justify-between"><dt className="text-slate-500">运行类型</dt><dd className="font-medium">{runType === "demo" ? "演示" : "真实"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">运行类型</dt><dd className="font-medium">{runType === "demo" ? "演示模拟" : "真实付费"}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">问题数</dt><dd className="font-medium">{preflight?.queryCount ?? "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">引擎数</dt><dd className="font-medium">{preflight?.engineCount ?? "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">预计调用次数</dt><dd className="font-medium">{preflight?.estimatedCalls ?? "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">预计费用</dt><dd className="font-medium">{preflight ? formatPreflightCost(preflight).replace("预计费用：", "") : "—"}</dd></div>
             </dl>
             <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${runType === "demo" ? "bg-teal-50 text-teal-800" : "bg-amber-50 text-amber-800"}`}>
-              {runType === "demo" ? "演示运行不会产生真实 Provider 调用。" : "真实运行将调用已启用 Provider。"}
+              {runType === "demo" ? "演示运行使用本地 Mock，不会产生任何真实外部 API 调用或费用。" : "⚠️ 真实运行将向所选已启用 Provider 发起实际 API 请求并计费，请确认授权。"}
             </p>
             {preflightLoading && <div className="mt-3"><LoadingSkeleton rows={3} /></div>}
             {preflightError && <div className="mt-3"><ErrorState title="运行预检失败" error={preflightError} retry={() => { setRunOpen(false); queueMicrotask(() => setRunOpen(true)); }} /></div>}
@@ -537,7 +537,9 @@ function SuiteInner() {
             <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">{QUERY_WORKSPACE_NAV.preflightNote}</p>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setRunOpen(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">取消</button>
-              <button type="button" disabled={busy || !engineId || preflightLoading || !preflight || preflight.blocked} onClick={() => void startRun()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">开始 GEO 检测</button>
+              <button type="button" disabled={busy || !engineId || preflightLoading || !preflight || preflight.blocked} onClick={() => void startRun()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-40">
+                {runType === "real" ? "授权并开始真实 GEO 检测" : "开始 GEO 检测（模拟运行）"}
+              </button>
             </div>
           </div>
         </div>

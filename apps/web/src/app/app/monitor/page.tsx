@@ -84,8 +84,8 @@ export default function MonitorPage() {
         setProjectId(preferredId);
         const preferredProject = data.projects.find((p) => p.id === preferredId);
         setQueryIds(preferredProject?.queries.slice(0, 5).map((query) => query.id) ?? []);
-        const realEngines = data.engines.filter((engine) => engine.provider !== "mock" && engine.configured);
-        setEngineIds(realEngines.length > 0 ? realEngines.map((engine) => engine.id) : data.engines.slice(0, 2).map((engine) => engine.id));
+        const mockEngines = data.engines.filter((engine) => engine.provider === "mock");
+        setEngineIds(mockEngines.slice(0, 2).map((engine) => engine.id));
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setOptionsError(errorText(error));
@@ -227,9 +227,26 @@ export default function MonitorPage() {
                   </div>
                 )}
               </fieldset>
+              {(() => {
+                const selectedReal = (options?.engines || []).filter(e => engineIds.includes(e.id) && e.provider !== "mock");
+                if (selectedReal.length === 0) return null;
+                return (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                    <p className="font-semibold">⚠️ 真实付费调用授权提示</p>
+                    <p className="mt-0.5">您已勾选真实引擎（{selectedReal.map(e => e.name).join("、")}）。创建任务将向第三方大模型 API 发起实际付费调用，请确认您已获得授权并同意产生相应费用。</p>
+                  </div>
+                );
+              })()}
               <p className="text-sm text-slate-500">本次共 {queryIds.length * engineIds.length} 次运行。</p>
               {createError && <p role="alert" className="text-sm text-red-700">{createError}</p>}
-              <button type="submit" disabled={!canCreate} className="ui-button primary">{creating ? "正在创建…" : "创建监测任务"}</button>
+              {(() => {
+                const selectedReal = (options?.engines || []).filter(e => engineIds.includes(e.id) && e.provider !== "mock");
+                return (
+                  <button type="submit" disabled={!canCreate} className="ui-button primary">
+                    {creating ? "正在创建…" : selectedReal.length > 0 ? `创建监测任务（含 ${selectedReal.length} 个真实付费引擎）` : "创建监测任务（演示模拟）"}
+                  </button>
+                );
+              })()}
             </form>
           )}
         </section>
