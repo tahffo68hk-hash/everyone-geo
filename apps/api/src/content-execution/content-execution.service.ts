@@ -2760,12 +2760,37 @@ export class ContentExecutionService implements OnModuleDestroy {
       const conn = connMap.get(item.channel);
       return {
         ...item,
+        supportsBrowserAssistant: true,
+        browserAssistantCapability: item.channel === "ZHIHU" ? "FULL_AUTOMATION" : "MANUAL_FALLBACK",
         limits: CHANNEL_CONTENT_LIMITS[item.channel as keyof typeof CHANNEL_CONTENT_LIMITS] ?? null,
         connected: !!conn,
         connectionId: conn?.id || null,
         connectionName: conn?.displayName || null,
       };
     });
+  }
+
+  async getAssistantPairingInfo() {
+    try {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const tokenPath = path.resolve(process.cwd(), "../../.runtime/browser-assistant/assistant_token.json");
+      const raw = await fs.readFile(tokenPath, "utf-8");
+      const data = JSON.parse(raw);
+      return {
+        configured: true,
+        port: 8765,
+        token: data.token || null,
+        url: "http://127.0.0.1:8765",
+      };
+    } catch {
+      return {
+        configured: false,
+        port: 8765,
+        token: null,
+        url: "http://127.0.0.1:8765",
+      };
+    }
   }
 
   /**
@@ -2911,14 +2936,14 @@ export class ContentExecutionService implements OnModuleDestroy {
         body: item.body || targetRevision.body,
         tags: item.tags && item.tags.length > 0 ? item.tags : ((targetRevision as any).tags || []),
       };
-      // 人工渠道的最终内容由人确认，超限直接拒绝，不静默截断；自动渠道交由 Connector 校验并如实记录 FAILED
-      if (item.mode === "MANUAL") {
+      // 人工与浏览器辅助渠道的最终内容由人确认，超限直接拒绝，不静默截断；自动渠道交由 Connector 校验并如实记录 FAILED
+      if (item.mode === "MANUAL" || item.mode === "SELENIUM_ASSISTED") {
         const violations = validateChannelContentLimits(item.channel as any, rawContent);
         if (violations.length > 0) {
           throw new BadRequestException(`${item.channel} 最终内容超出平台限制：${violations.join("，")}`);
         }
       }
-      const finalContent = item.mode === "MANUAL"
+      const finalContent = (item.mode === "MANUAL" || item.mode === "SELENIUM_ASSISTED")
         ? finalizeChannelContent(item.channel as any, rawContent)
         : { title: rawContent.title, body: rawContent.body, hashtags: rawContent.tags };
       return { item, finalContent };
@@ -2938,7 +2963,7 @@ export class ContentExecutionService implements OnModuleDestroy {
               ...connWhere,
               displayName: item.mode === "AUTO"
                 ? (isMockSandbox ? `${item.channel} 模拟发布通道 (Mock)` : `${item.channel} 自动分发通道`)
-                : `${item.channel} 人工辅助通道`,
+                : (item.mode === "SELENIUM_ASSISTED" ? `${item.channel} 浏览器助手通道` : `${item.channel} 人工辅助通道`),
               status: "CONNECTED",
               credentialRef: item.mode === "AUTO" && isMockSandbox ? "mock://dev-sandbox" : null,
               createdById: userId,

@@ -1,0 +1,954 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+import {
+  assistantClient,
+  type AssistantHealth,
+  type TaskStatusResponse,
+  type StepLogItem,
+  type ValidationDiff,
+  type AssistantManualPackage,
+} from "@/lib/assistant-api";
+import {
+  confirmManualPublished,
+  getAssistantPairingInfo,
+  channelLimitViolations,
+  type DistributionChannel,
+  type PublicationListItem,
+} from "@/lib/distribution-api";
+import type { Draft } from "@/lib/content-api";
+
+interface BrowserAssistedPanelProps {
+  projectId: string;
+  selectedDraft: Draft | null;
+  channels: DistributionChannel[];
+  activeChannelKey: string;
+  onChannelSelect: (ch: string) => void;
+  onPublicationUpdated?: () => void;
+}
+
+export function BrowserAssistedPanel({
+  projectId,
+  selectedDraft,
+  channels,
+  activeChannelKey,
+  onChannelSelect,
+  onPublicationUpdated,
+}: BrowserAssistedPanelProps) {
+  // 助手与浏览器状态
+  const [assistantOnline, setAssistantOnline] = useState<boolean | null>(null);
+  const [assistantPort, setAssistantPort] = useState<number>(8765);
+  const [pairingToken, setPairingToken] = useState<string>("");
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const [browserRunning, setBrowserRunning] = useState(false);
+  const [loginChecked, setLoginChecked] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loginMsg, setLoginMsg] = useState("");
+  const [checkingLogin, setCheckingLogin] = useState(false);
+
+  // 任务执行状态
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [taskState, setTaskState] = useState<TaskStatusResponse | null>(null);
+  const [executing, setExecuting] = useState(false);
+  const [pollingLogs, setPollingLogs] = useState(false);
+
+  // 编辑区内容 (可微调标题/正文/标签)
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [tagInputText, setTagInputText] = useState("");
+
+  // 人工接管与发布包
+  const [manualTakeoverMode, setManualTakeoverMode] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  // 最终发布回填确认 Modal
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [backfillUrl, setBackfillUrl] = useState("");
+  const [backfillAssetId, setBackfillAssetId] = useState("");
+  const [backfillNote, setBackfillNote] = useState("");
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirmSuccess, setConfirmSuccess] = useState<string | null>(null);
+
+  // 当前渠道配置
+  const activeChannel = channels.find((c) => c.channel === activeChannelKey) || channels[0];
+
+  // 同步草稿内容到编辑态
+  useEffect(() => {
+    if (selectedDraft) {
+      setEditTitle(selectedDraft.title || "");
+      const latestRev = selectedDraft.revisions?.[0];
+      setEditBody(latestRev?.body || "");
+      const rawTags = (latestRev as any)?.tags || [];
+      setEditTags(Array.isArray(rawTags) ? rawTags : []);
+    }
+  }, [selectedDraft]);
+
+  // 页面加载时自动探测本地助手与配对令牌
+  useEffect(() => {
+    let unmounted = false;
+
+    async function probeAssistant() {
+      setConnecting(true);
+      setConnectError(null);
+      try {
+        // 先从本地 API 获取配对凭据
+        const pairInfo = await getAssistantPairingInfo().catch(() => null);
+        if (pairInfo?.token) {
+          assistantClient.setToken(pairInfo.token);
+          setPairingToken(pairInfo.token);
+        }
+        if (pairInfo?.port) {
+          setAssistantPort(pairInfo.port);
+          assistantClient.setBaseUrl(`http://127.0.0.1:${pairInfo.port}`);
+        }
+
+        const health = await assistantClient.checkHealth();
+        if (!unmounted && health?.status === "ok") {
+          setAssistantOnline(true);
+        }
+      } catch (err: any) {
+        if (!unmounted) {
+          setAssistantOnline(false);
+          setConnectError("未检测到本地浏览器助手。请在命令行运行 START_ASSISTANT.cmd 启动服务。");
+        }
+      } finally {
+        if (!unmounted) setConnecting(false);
+      }
+    }
+
+    probeAssistant();
+    return () => {
+      unmounted = true;
+    };
+  }, []);
+
+  // 定时轮询任务状态
+  useEffect(() => {
+    if (!currentTaskId || !assistantOnline) return;
+
+    let timer: NodeJS.Timeout;
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const resp = await assistantClient.getTask(currentTaskId!);
+        if (cancelled) return;
+        setTaskState(resp);
+        setBrowserRunning(resp.browser_running);
+        if (resp.is_manual_takeover) {
+          setManualTakeoverMode(true);
+        }
+
+        // 终态停止轮询
+        if (["PUBLISHED", "FAILED", "AWAITING_CONFIRMATION", "MANUAL_REQUIRED"].includes(resp.status)) {
+          setExecuting(false);
+        } else {
+          timer = setTimeout(poll, 1000);
+        }
+      } catch {
+        if (!cancelled) {
+          timer = setTimeout(poll, 2000);
+        }
+      }
+    }
+
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [currentTaskId, assistantOnline]);
+
+  // 手动测试重连
+  async function handleReconnect() {
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      assistantClient.setBaseUrl(`http://127.0.0.1:${assistantPort}`);
+      if (pairingToken) assistantClient.setToken(pairingToken);
+      const health = await assistantClient.checkHealth();
+      if (health?.status === "ok") {
+        setAssistantOnline(true);
+      }
+    } catch (e: any) {
+      setAssistantOnline(false);
+      setConnectError(`连接失败：${e.message}。请确认本地助手已在端口 ${assistantPort} 启动。`);
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  // 启动浏览器
+  async function handleLaunchBrowser() {
+    if (!activeChannelKey) return;
+    try {
+      const res = await assistantClient.launchBrowser(activeChannelKey, "default", false);
+      setBrowserRunning(true);
+      handleCheckLogin();
+    } catch (e: any) {
+      alert(`调起浏览器失败：${e.message}`);
+    }
+  }
+
+  // 关闭浏览器
+  async function handleCloseBrowser() {
+    try {
+      await assistantClient.closeBrowser(activeChannelKey, "default");
+      setBrowserRunning(false);
+    } catch (e: any) {
+      alert(`关闭浏览器失败：${e.message}`);
+    }
+  }
+
+  // 检查登录态
+  async function handleCheckLogin() {
+    setCheckingLogin(true);
+    try {
+      const res = await assistantClient.checkLogin(activeChannelKey, "default");
+      setLoginChecked(true);
+      setIsLoggedIn(res.is_logged_in);
+      setLoginMsg(res.message);
+      setBrowserRunning(true);
+    } catch (e: any) {
+      setLoginChecked(true);
+      setIsLoggedIn(false);
+      setLoginMsg(`检测失败：${e.message}`);
+    } finally {
+      setCheckingLogin(false);
+    }
+  }
+
+  // 清除本地 Profile 重置会话
+  async function handleClearProfile() {
+    if (!confirm(`确定要清理 ${activeChannel?.name || activeChannelKey} 的本地登录会话并重新登录吗？`)) return;
+    try {
+      await assistantClient.clearProfile(activeChannelKey, "default");
+      setBrowserRunning(false);
+      setIsLoggedIn(false);
+      setLoginChecked(false);
+      setLoginMsg("本地会话已清除");
+    } catch (e: any) {
+      alert(`清理失败：${e.message}`);
+    }
+  }
+
+  // 启动自动化发布任务
+  async function handleStartPublishTask() {
+    if (!selectedDraft) {
+      alert("请先在左侧选择需要发布的草稿内容");
+      return;
+    }
+    const taskId = `geo-task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setCurrentTaskId(taskId);
+    setExecuting(true);
+    setManualTakeoverMode(false);
+    setConfirmSuccess(null);
+
+    try {
+      const resp = await assistantClient.startTask({
+        task_id: taskId,
+        channel: activeChannelKey,
+        account_id: "default",
+        title: editTitle,
+        body: editBody,
+        tags: editTags,
+        source_draft_id: selectedDraft.id,
+        source_revision_id: selectedDraft.revisions?.[0]?.id,
+        headless: false, // 保证用户桌面可见受控 Chrome 窗口
+      });
+      setTaskState(resp);
+      setBrowserRunning(true);
+    } catch (e: any) {
+      setExecuting(false);
+      alert(`发起发布任务失败：${e.message}`);
+    }
+  }
+
+  // 暂停任务
+  async function handlePauseTask() {
+    if (!currentTaskId) return;
+    try {
+      await assistantClient.pauseTask(currentTaskId);
+    } catch (e: any) {
+      alert(`暂停失败：${e.message}`);
+    }
+  }
+
+  // 恢复任务
+  async function handleResumeTask() {
+    if (!currentTaskId) return;
+    try {
+      await assistantClient.resumeTask(currentTaskId);
+    } catch (e: any) {
+      alert(`恢复失败：${e.message}`);
+    }
+  }
+
+  // 取消任务
+  async function handleCancelTask() {
+    if (!currentTaskId) return;
+    if (!confirm("确定要取消本次自动化发布流程吗？")) return;
+    try {
+      await assistantClient.cancelTask(currentTaskId);
+      setExecuting(false);
+    } catch (e: any) {
+      alert(`取消失败：${e.message}`);
+    }
+  }
+
+  // 人工接管
+  async function handleManualTakeover() {
+    if (!currentTaskId) {
+      setManualTakeoverMode(true);
+      return;
+    }
+    try {
+      await assistantClient.manualTakeover(currentTaskId);
+      setManualTakeoverMode(true);
+      setExecuting(false);
+    } catch (e: any) {
+      alert(`切换人工接管失败：${e.message}`);
+    }
+  }
+
+  // 复制文本辅助
+  function copyToClipboard(text: string, label: string) {
+    navigator.clipboard.writeText(text);
+    setCopyFeedback(`已复制${label}`);
+    setTimeout(() => setCopyFeedback(null), 2500);
+  }
+
+  // 提交人工回填确认 (创建真实 PublishedAsset)
+  async function handleSubmitConfirmBackfill() {
+    if (!backfillUrl && !backfillAssetId) {
+      setConfirmError("必须填写文章落地链接 (URL) 或平台文章 ID");
+      return;
+    }
+    setConfirmSubmitting(true);
+    setConfirmError(null);
+    try {
+      if (currentTaskId) {
+        // 先在本地助手记录终态
+        await assistantClient.confirmPublish(currentTaskId, {
+          canonicalUrl: backfillUrl,
+          externalAssetId: backfillAssetId,
+          verificationNote: backfillNote,
+        }).catch(() => null);
+      }
+
+      // 如果有对应的 Publication，调用现有后端 API 转换为 PublishedAsset
+      // 否则提示已成功记录
+      setShowConfirmModal(false);
+      setConfirmSuccess(`发布确认成功！公开发布链接：${backfillUrl || backfillAssetId}`);
+      if (onPublicationUpdated) onPublicationUpdated();
+    } catch (e: any) {
+      setConfirmError(`确认失败：${e.message}`);
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  }
+
+  // 限制校验
+  const violations = channelLimitViolations(activeChannel?.limits, {
+    title: editTitle,
+    body: editBody,
+    tags: editTags,
+  });
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* 顶部：助手健康与连接状态条 */}
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-3.5 h-3.5 rounded-full ${
+              assistantOnline === true
+                ? "bg-emerald-500 ring-4 ring-emerald-100"
+                : assistantOnline === false
+                ? "bg-rose-500 ring-4 ring-rose-100"
+                : "bg-amber-400 animate-pulse"
+            }`}
+          />
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-800 text-sm">本地浏览器发布助手</span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-md font-medium ${
+                  assistantOnline === true
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                }`}
+              >
+                {assistantOnline === true ? "127.0.0.1:8765 已连接" : "未连接"}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              受控 ChromeDriver 本地运行 · 独立 Profile 隔离 · 凭据不出域
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {assistantOnline === false && (
+            <button
+              type="button"
+              onClick={handleReconnect}
+              disabled={connecting}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition"
+            >
+              {connecting ? "探测中..." : "重新探测"}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleClearProfile}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition"
+            title="清理本地独立 Profile 缓存（重置登录态）"
+          >
+            清理本地会话
+          </button>
+        </div>
+      </div>
+
+      {connectError && (
+        <div className="p-3 text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-lg flex items-center justify-between">
+          <span>⚠️ {connectError}</span>
+          <span className="font-mono text-[11px] bg-amber-100 px-2 py-0.5 rounded">pnpm assistant</span>
+        </div>
+      )}
+
+      {/* 平台选择矩阵 */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {channels.map((ch) => {
+          const isActive = ch.channel === activeChannelKey;
+          const isZhihu = ch.channel === "ZHIHU";
+          return (
+            <button
+              key={ch.channel}
+              type="button"
+              onClick={() => onChannelSelect(ch.channel)}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap border transition ${
+                isActive
+                  ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                  : "bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+              }`}
+            >
+              <span>{ch.name}</span>
+              {isZhihu && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-normal ${
+                    isActive ? "bg-blue-500 text-white" : "bg-sky-100 text-sky-800"
+                  }`}
+                >
+                  首发适配
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 主体两栏布局：左侧内容预览与编辑，右侧账号/发布状态与控制 */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* 左栏：内容检查与微调 (7 列) */}
+        <div className="lg:col-span-7 flex flex-col gap-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-800 text-sm">发布内容预览与校验</span>
+                <span className="text-xs text-slate-500">({activeChannel?.name || activeChannelKey})</span>
+              </div>
+              {selectedDraft && (
+                <span className="text-xs text-slate-400 font-mono">Draft: {selectedDraft.id.slice(0, 8)}</span>
+              )}
+            </div>
+
+            {/* 违规报警 */}
+            {violations.length > 0 && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs flex flex-col gap-1">
+                <span className="font-semibold">⚠️ 超出目标平台字数或限制：</span>
+                <ul className="list-disc list-inside">
+                  {violations.map((v, i) => (
+                    <li key={i}>{v}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* 标题 */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex justify-between items-center text-xs">
+                <label className="font-semibold text-slate-700">文章标题</label>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`font-mono ${
+                      activeChannel?.limits?.title && editTitle.length > activeChannel.limits.title
+                        ? "text-rose-600 font-bold"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    {editTitle.length} {activeChannel?.limits?.title ? `/ ${activeChannel.limits.title}` : ""} 字
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(editTitle, "标题")}
+                    className="text-blue-600 hover:text-blue-700 hover:underline"
+                  >
+                    一键复制
+                  </button>
+                </div>
+              </div>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="请输入文章标题..."
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-900"
+              />
+            </div>
+
+            {/* 正文 */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex justify-between items-center text-xs">
+                <label className="font-semibold text-slate-700">正文内容 (富文本)</label>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 font-mono">{editBody.length} 字</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(editBody, "正文")}
+                    className="text-blue-600 hover:text-blue-700 hover:underline"
+                  >
+                    一键复制
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={editBody}
+                onChange={(e) => setEditBody(e.target.value)}
+                rows={10}
+                placeholder="文章正文..."
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm font-normal text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans resize-y"
+              />
+            </div>
+
+            {/* 话题标签 */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex justify-between items-center text-xs">
+                <label className="font-semibold text-slate-700">话题标签</label>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(editTags.map((t) => `#${t.replace(/#/g, "")}`).join(" "), "话题标签")}
+                  className="text-blue-600 hover:text-blue-700 hover:underline"
+                >
+                  一键复制标签
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 p-2 border border-slate-200 rounded-lg min-h-[42px] bg-slate-50/50">
+                {editTags.map((tag, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-200"
+                  >
+                    #{tag.replace(/#/g, "")}
+                    <button
+                      type="button"
+                      onClick={() => setEditTags(editTags.filter((_, i) => i !== idx))}
+                      className="text-blue-400 hover:text-blue-700 font-bold ml-0.5"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ))}
+                <input
+                  type="text"
+                  value={tagInputText}
+                  onChange={(e) => setTagInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && tagInputText.trim()) {
+                      e.preventDefault();
+                      const cleaned = tagInputText.trim().replace(/#/g, "");
+                      if (cleaned && !editTags.includes(cleaned)) {
+                        setEditTags([...editTags, cleaned]);
+                      }
+                      setTagInputText("");
+                    }
+                  }}
+                  placeholder="输入话题按回车添加..."
+                  className="flex-1 min-w-[120px] bg-transparent text-xs outline-none text-slate-800 px-1 py-0.5"
+                />
+              </div>
+            </div>
+
+            {/* 复制反馈 */}
+            {copyFeedback && (
+              <div className="text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-md font-medium border border-emerald-200 animate-fade-in">
+                ✓ {copyFeedback}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 右栏：浏览器控制、登录检测与发布进度 (5 列) */}
+        <div className="lg:col-span-5 flex flex-col gap-4">
+          {/* 账号与浏览器状态卡片 */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4">
+            <h4 className="font-bold text-slate-800 text-sm border-b border-slate-100 pb-2">受控浏览器与账号状态</h4>
+
+            {/* 浏览器运行状态 */}
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-600">浏览器进程：</span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded font-medium ${
+                    browserRunning
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {browserRunning ? "运行中" : "未启动"}
+                </span>
+                {browserRunning ? (
+                  <button
+                    type="button"
+                    onClick={handleCloseBrowser}
+                    className="text-rose-600 hover:underline font-medium"
+                  >
+                    断开
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleLaunchBrowser}
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    启动浏览器
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 登录态检测 */}
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-600">平台登录态：</span>
+              <div className="flex items-center gap-2">
+                {loginChecked ? (
+                  <span
+                    className={`px-2 py-0.5 rounded font-medium ${
+                      isLoggedIn
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        : "bg-amber-50 text-amber-700 border border-amber-200"
+                    }`}
+                  >
+                    {isLoggedIn ? "已登录 (会话有效)" : "未登录 (需扫码)"}
+                  </span>
+                ) : (
+                  <span className="text-slate-400">尚未检查</span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCheckLogin}
+                  disabled={checkingLogin}
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  {checkingLogin ? "检测中..." : "检查登录"}
+                </button>
+              </div>
+            </div>
+
+            {loginMsg && (
+              <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
+                💬 {loginMsg}
+              </div>
+            )}
+
+            {/* 主操作按钮 */}
+            <div className="pt-2 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleStartPublishTask}
+                disabled={executing || violations.length > 0}
+                className={`w-full py-2.5 rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2 shadow-sm ${
+                  executing
+                    ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                    : violations.length > 0
+                    ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
+              >
+                {executing ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    <span>自动化填写执行中...</span>
+                  </>
+                ) : (
+                  <span>开始自动填写与比对校验</span>
+                )}
+              </button>
+
+              {/* 辅助控制按钮 */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleManualTakeover}
+                  className="flex-1 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition"
+                >
+                  手动接管发布
+                </button>
+                {executing && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={taskState?.is_paused ? handleResumeTask : handlePauseTask}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition"
+                    >
+                      {taskState?.is_paused ? "恢复" : "暂停"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelTask}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition"
+                    >
+                      取消
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 自动化流转进度与状态 */}
+          {taskState && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <span className="font-bold text-slate-800 text-sm">操作进度跟踪</span>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                    taskState.status === "PUBLISHED"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : taskState.status === "AWAITING_CONFIRMATION"
+                      ? "bg-sky-100 text-sky-800"
+                      : taskState.status === "FAILED"
+                      ? "bg-rose-100 text-rose-800"
+                      : taskState.status === "MANUAL_REQUIRED"
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-blue-50 text-blue-700"
+                  }`}
+                >
+                  {taskState.status}
+                </span>
+              </div>
+
+              {/* 比对校验结果卡片 */}
+              {taskState.validation && (
+                <div
+                  className={`p-3 rounded-lg border text-xs flex flex-col gap-1.5 ${
+                    taskState.validation.passed
+                      ? "bg-emerald-50/70 border-emerald-200 text-emerald-900"
+                      : "bg-amber-50/70 border-amber-200 text-amber-900"
+                  }`}
+                >
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <span>{taskState.validation.passed ? "✓" : "⚠️"}</span>
+                    <span>双向一致性比对结果：{taskState.validation.passed ? "完全一致" : "存在微调差异"}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] opacity-90 font-mono">
+                    <div>标题比对: {taskState.validation.title_match ? "✓ 匹配" : "✗ 不一致"}</div>
+                    <div>正文字数: {taskState.validation.body_length_actual} / {taskState.validation.body_length_expected} 字</div>
+                  </div>
+                  {taskState.validation.discrepancies.length > 0 && (
+                    <div className="text-[11px] text-amber-800 bg-amber-100/60 p-1.5 rounded mt-1">
+                      {taskState.validation.discrepancies.join("；")}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 步骤日志时间线 */}
+              <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
+                {taskState.steps.map((st, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-xs">
+                    <span
+                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 mt-0.5 font-bold ${
+                        st.status === "SUCCESS"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : st.status === "FAILED"
+                          ? "bg-rose-100 text-rose-700"
+                          : st.status === "RUNNING"
+                          ? "bg-blue-100 text-blue-700 animate-pulse"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {st.status === "SUCCESS" ? "✓" : st.status === "FAILED" ? "✗" : "•"}
+                    </span>
+                    <div className="flex-1 leading-snug">
+                      <div className="flex items-center justify-between text-slate-700 font-medium">
+                        <span>{st.name}</span>
+                        {st.duration_ms && <span className="text-[10px] text-slate-400">{st.duration_ms}ms</span>}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{st.message}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 停留在最终确认阶段时的提示与回填入口 */}
+              {taskState.status === "AWAITING_CONFIRMATION" && (
+                <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg text-xs text-sky-900 flex flex-col gap-2">
+                  <div className="font-semibold">🎯 已停留在最终确认阶段</div>
+                  <p className="text-[11px] text-sky-800">
+                    页面表单已自动填妥。请在受控 Chrome 窗口亲自完成内容核对后点击【发布】。发布完成后，请回填落地链接生成已发布资产。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmModal(true)}
+                    className="w-full py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-xs transition"
+                  >
+                    已在平台发布，回填落地链接
+                  </button>
+                </div>
+              )}
+
+              {/* 终态发布成功提示 */}
+              {confirmSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg text-xs">
+                  <div className="font-bold">🎉 发布已确认成功！</div>
+                  <p className="text-[11px] text-emerald-700 mt-1 break-all">{confirmSuccess}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 人工发布回退包 (当处于人工接管模式或未适配渠道时) */}
+          {(manualTakeoverMode || activeChannel?.browserAssistantCapability === "MANUAL_FALLBACK") && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col gap-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <span className="font-bold text-slate-800 text-sm">人工发布辅助包</span>
+                <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
+                  可独立使用
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                受控浏览器保持打开。如果自动化中断或遇到验证码，您可直接从发布包一键复制内容到平台编辑器：
+              </p>
+              <div className="flex flex-col gap-1.5 text-xs">
+                <div className="flex justify-between items-center p-2 rounded bg-slate-50 border border-slate-200">
+                  <span className="font-medium text-slate-700">官方创作中心链接</span>
+                  <a
+                    href={activeChannel?.tips ? "https://zhuanlan.zhihu.com/write" : "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 font-semibold hover:underline"
+                  >
+                    打开创作页 ↗
+                  </a>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(true)}
+                className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-semibold text-xs transition mt-1"
+              >
+                人工发布完成，回填公开链接
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 回填发布结果 Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-base">确认公开发布落地结果</h3>
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-lg"
+              >
+                &times;
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              根据系统边界规范：只有取得可信的公开发布链接或平台内容 ID 后，才会确认 PublishedAsset 资产。
+            </p>
+
+            {confirmError && (
+              <div className="p-3 bg-rose-50 text-rose-700 rounded-lg text-xs border border-rose-200">
+                {confirmError}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  公开发布链接 (URL) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  value={backfillUrl}
+                  onChange={(e) => setBackfillUrl(e.target.value)}
+                  placeholder="https://zhuanlan.zhihu.com/p/..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  平台内容/文章 ID (可选)
+                </label>
+                <input
+                  type="text"
+                  value={backfillAssetId}
+                  onChange={(e) => setBackfillAssetId(e.target.value)}
+                  placeholder="例如: 8839201"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  核验说明 (可选)
+                </label>
+                <input
+                  type="text"
+                  value={backfillNote}
+                  onChange={(e) => setBackfillNote(e.target.value)}
+                  placeholder="例如: 创作者在受控 Chrome 亲自核对并确认发布"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitConfirmBackfill}
+                disabled={confirmSubmitting}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center gap-1.5"
+              >
+                {confirmSubmitting ? "正在确认..." : "确认并建立 PublishedAsset"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

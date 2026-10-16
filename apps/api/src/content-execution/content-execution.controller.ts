@@ -445,6 +445,12 @@ export class ContentExecutionController {
 
   // ---- 多平台内容分发中心 (Multi-Platform Distribution Center) ----
 
+  /** 获取本地浏览器助手配对信息 (仅限同机安全探测) */
+  @Get("distribution/assistant-pairing")
+  getAssistantPairing() {
+    return this.content.getAssistantPairingInfo();
+  }
+
   /** 获取支持的渠道矩阵与连接状态 */
   @Get("projects/:id/distribution/channels")
   getDistributionChannels(

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GeoLens 创作者中心 (本地仿真发布平台)</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand { font-size: 18px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+    .user-profile { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+    .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    
+    .field-group { margin-bottom: 20px; }
+    label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+    
+    input[type="text"], textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus, textarea:focus { border-color: var(--primary); }
+    
+    #sim-title { font-size: 18px; font-weight: 600; }
+    
+    .rich-editor {
+      min-height: 260px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+      outline: none;
+      font-size: 15px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #fff;
+    }
+    .rich-editor:focus { border-color: var(--primary); }
+    .rich-editor:empty:before { content: attr(placeholder); color: var(--text-muted); }
+    
+    .tags-wrapper {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      background: #fff;
+    }
+    .tag-chip {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .tag-chip .remove { cursor: pointer; color: #93c5fd; }
+    .tag-chip .remove:hover { color: #1d4ed8; }
+    #sim-tag-input { border: none; outline: none; padding: 4px; flex: 1; min-width: 120px; font-size: 14px; }
+    
+    .media-section { margin-top: 15px; }
+    .media-list { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+    .media-thumbnail { width: 80px; height: 80px; border-radius: 6px; border: 1px solid var(--border); object-fit: cover; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--text-muted); }
+    
+    .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+    button {
+      padding: 9px 18px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+    .btn-secondary { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+    .btn-secondary:hover { background: #e2e8f0; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    
+    .status-bar {
+      margin-top: 16px;
+      padding: 10px 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    #publish-result-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      align-items: center;
+      justify-content: center;
+    }
+    #publish-result-modal.show { display: flex; }
+    .modal-content {
+      background: #fff;
+      border-radius: 10px;
+      width: 480px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    }
+    .success-icon { font-size: 48px; color: #16a34a; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>🌐</span> GeoLens 创作者仿真平台 (Simulation Hub)
+    </div>
+    <div class="user-profile" id="user-profile-header">
+      <div class="avatar" id="user-avatar">A</div>
+      <span id="user-name">创作者 (已登录)</span>
+      <span class="badge" style="background: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 12px; font-size: 12px;">会话有效</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <div class="field-group">
+        <label for="sim-title">文章标题</label>
+        <input type="text" id="sim-title" placeholder="请输入文章标题..." />
+      </div>
+
+      <div class="field-group">
+        <label>正文内容</label>
+        <div id="sim-body" class="rich-editor" contenteditable="true" placeholder="在此输入或粘贴正文..."></div>
+      </div>
+
+      <div class="field-group">
+        <label>话题与标签</label>
+        <div class="tags-wrapper" id="sim-tags-wrapper">
+          <input type="text" id="sim-tag-input" placeholder="输入话题并按回车添加..." />
+        </div>
+      </div>
+
+      <div class="field-group media-section">
+        <label>素材与封面图</label>
+        <input type="file" id="sim-media-input" accept="image/*" multiple />
+        <div class="media-list" id="sim-media-list"></div>
+      </div>
+
+      <div class="status-bar">
+        <span id="word-count">字数统计：标题 0 字，正文 0 字</span>
+        <span id="draft-status">草稿已自动保存</span>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn-secondary" id="sim-draft-btn">保存草稿</button>
+        <button type="button" class="btn-primary" id="sim-publish-btn">确认发布</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="publish-result-modal">
+    <div class="modal-content">
+      <div class="success-icon">✓</div>
+      <h3 style="font-size: 20px; margin-bottom: 8px;">文章发布成功！</h3>
+      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+        您的文章已公开发布，落地链接如下：
+      </p>
+      <div style="background: #f1f5f9; padding: 10px; border-radius: 6px; word-break: break-all; font-family: monospace; font-size: 13px; margin-bottom: 20px;" id="published-url-display">
+        http://127.0.0.1:8765/articles/sim-883921
+      </div>
+      <button type="button" class="btn-primary" id="close-modal-btn" onclick="document.getElementById('publish-result-modal').classList.remove('show')">完成</button>
+    </div>
+  </div>
+
+  <script>
+    const titleInput = document.getElementById('sim-title');
+    const bodyEditor = document.getElementById('sim-body');
+    const tagInput = document.getElementById('sim-tag-input');
+    const tagsWrapper = document.getElementById('sim-tags-wrapper');
+    const mediaInput = document.getElementById('sim-media-input');
+    const mediaList = document.getElementById('sim-media-list');
+    const wordCount = document.getElementById('word-count');
+    const draftStatus = document.getElementById('draft-status');
+    const publishBtn = document.getElementById('sim-publish-btn');
+    const draftBtn = document.getElementById('sim-draft-btn');
+    const modal = document.getElementById('publish-result-modal');
+    const urlDisplay = document.getElementById('published-url-display');
+
+    const tags = [];
+
+    function updateCount() {
+      const tLen = (titleInput.value || '').trim().length;
+      const bLen = (bodyEditor.innerText || '').trim().length;
+      wordCount.textContent = `字数统计：标题 ${tLen} 字，正文 ${bLen} 字`;
+    }
+
+    titleInput.addEventListener('input', () => {
+      updateCount();
+      draftStatus.textContent = '草稿已保存 (最新)';
+    });
+
+    bodyEditor.addEventListener('input', () => {
+      updateCount();
+      draftStatus.textContent = '草稿已保存 (最新)';
+    });
+
+    tagInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = tagInput.value.trim().replace(/^#/, '');
+        if (val && !tags.includes(val)) {
+          tags.push(val);
+          renderTags();
+        }
+        tagInput.value = '';
+      }
+    });
+
+    function renderTags() {
+      // 保留 tagInput 前面的 chips
+      const chips = tagsWrapper.querySelectorAll('.tag-chip');
+      chips.forEach(c => c.remove());
+      tags.forEach((tag, idx) => {
+        const chip = document.createElement('div');
+        chip.className = 'tag-chip';
+        chip.innerHTML = `<span>#${tag}</span><span class="remove" onclick="removeTag(${idx})">&times;</span>`;
+        tagsWrapper.insertBefore(chip, tagInput);
+      });
+    }
+
+    window.removeTag = function(idx) {
+      tags.splice(idx, 1);
+      renderTags();
+    };
+
+    mediaInput.addEventListener('change', (e) => {
+      mediaList.innerHTML = '';
+      Array.from(e.target.files).forEach((file, i) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'media-thumbnail';
+        thumb.textContent = `素材 ${i+1}: ${file.name.slice(0, 10)}`;
+        mediaList.appendChild(thumb);
+      });
+    });
+
+    draftBtn.addEventListener('click', () => {
+      draftStatus.textContent = '草稿手动保存成功';
+    });
+
+    publishBtn.addEventListener('click', () => {
+      const artId = 'sim-' + Math.floor(100000 + Math.random() * 900000);
+      const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'http://127.0.0.1:8765';
+      const fullUrl = origin + '/articles/' + artId;
+      urlDisplay.textContent = fullUrl;
+      urlDisplay.setAttribute('data-article-id', artId);
+      modal.classList.add('show');
+      document.body.setAttribute('data-published-url', fullUrl);
+      document.body.setAttribute('data-published-id', artId);
+      try {
+        window.history.pushState({}, '', '/articles/' + artId);
+      } catch (err) {}
+    });
+  </script>
+</body>
+</html>

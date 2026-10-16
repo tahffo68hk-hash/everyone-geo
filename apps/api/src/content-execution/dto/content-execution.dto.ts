@@ -578,8 +578,8 @@ export class BatchDistributeItemDto {
   @IsString()
   channel!: string;
 
-  @IsIn(['AUTO', 'MANUAL'])
-  mode!: 'AUTO' | 'MANUAL';
+  @IsIn(['AUTO', 'MANUAL', 'SELENIUM_ASSISTED'])
+  mode!: 'AUTO' | 'MANUAL' | 'SELENIUM_ASSISTED';
 
   @IsOptional()
   @IsString()

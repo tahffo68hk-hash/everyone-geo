@@ -15,6 +15,7 @@
     "start:api": "pnpm --filter @geolens/api start",
     "start:web": "pnpm --filter @geolens/web start",
     "start:worker": "pnpm --filter @geolens/worker start",
+    "assistant": "python apps/browser-assistant/start_assistant.py",
     "build": "pnpm -r build",
     "build:packages": "pnpm --filter @geo/database --filter @geo/core --filter @geo/llm --filter @geo/queue build",
     "build:api": "pnpm --filter @geolens/api build",

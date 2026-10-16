@@ -21,6 +21,7 @@ import {
 } from "@/lib/distribution-api";
 import { listContentDrafts, type Draft } from "@/lib/content-api";
 import { StatusBadge, LoadingSkeleton, EmptyState } from "@/components/ui";
+import { BrowserAssistedPanel } from "./browser-assisted-panel";
 
 const VIDEO_SCRIPT_CHANNELS = new Set(["DOUYIN", "WECHAT_CHANNELS", "BILIBILI"]);
 
@@ -94,6 +95,10 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // 工作台主模式：浏览器辅助发布 (Selenium V2A) 或 批量矩阵分发 (V1)
+  const [workbenchMode, setWorkbenchMode] = useState<"BROWSER_ASSISTED" | "BATCH_MATRIX">("BROWSER_ASSISTED");
+  const [activeAssistedChannel, setActiveAssistedChannel] = useState<string>("ZHIHU");
 
   // 渠道多选与模式选择：channelKey -> { selected: boolean; mode: 'AUTO' | 'MANUAL'; targetStatus?: 'draft' | 'publish' }
   const [channelSelections, setChannelSelections] = useState<
@@ -603,8 +608,50 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
         )}
       </section>
 
-      {/* 第二部分：目标渠道矩阵选择 (双模式支持) */}
-      <section className="surface p-5 space-y-4">
+      {/* 工作台模式切换 Tab */}
+      <div className="flex border-b border-slate-200 gap-2">
+        <button
+          type="button"
+          onClick={() => setWorkbenchMode("BROWSER_ASSISTED")}
+          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition ${
+            workbenchMode === "BROWSER_ASSISTED"
+              ? "border-blue-600 text-blue-600 bg-blue-50/40"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <span>🌐</span>
+          <span>浏览器辅助发布 (Selenium V2A)</span>
+          <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">新上线</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setWorkbenchMode("BATCH_MATRIX")}
+          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition ${
+            workbenchMode === "BATCH_MATRIX"
+              ? "border-blue-600 text-blue-600 bg-blue-50/40"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <span>📋</span>
+          <span>多渠道批量分发中心 (V1 矩阵)</span>
+        </button>
+      </div>
+
+      {workbenchMode === "BROWSER_ASSISTED" ? (
+        <BrowserAssistedPanel
+          projectId={projectId}
+          selectedDraft={currentDraft}
+          channels={channels}
+          activeChannelKey={activeAssistedChannel}
+          onChannelSelect={setActiveAssistedChannel}
+          onPublicationUpdated={() => {
+            loadPublications(1);
+          }}
+        />
+      ) : (
+        <>
+          {/* 第二部分：目标渠道矩阵选择 (双模式支持) */}
+          <section className="surface p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
           <div>
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -1114,6 +1161,8 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
             </button>
           </div>
         </section>
+      )}
+        </>
       )}
 
       {/* 第四部分：分发任务监控与人工发布结果回填 */}

@@ -10,6 +10,8 @@ export interface DistributionChannel {
   category: string;
   supportsAuto: boolean;
   supportsManual: boolean;
+  supportsBrowserAssistant?: boolean;
+  browserAssistantCapability?: "FULL_AUTOMATION" | "MANUAL_FALLBACK";
   autoCapability: "DIRECT_PUBLISH" | "DRAFT_ONLY" | "MANUAL_ONLY";
   requiresVideo: boolean;
   description: string;
@@ -90,7 +92,7 @@ export interface DistributionAdaptResult {
 
 export interface DistributionBatchItem {
   channel: string;
-  mode: "AUTO" | "MANUAL";
+  mode: "AUTO" | "MANUAL" | "SELENIUM_ASSISTED";
   title?: string;
   body?: string;
   tags?: string[];
@@ -295,4 +297,13 @@ export async function processPublicationRetry(publicationId: string): Promise<an
   return api<any>(`/publications/${publicationId}/process`, {
     method: "POST",
   });
+}
+
+export async function getAssistantPairingInfo(): Promise<{
+  configured: boolean;
+  port: number;
+  token: string | null;
+  url: string;
+}> {
+  return api(`/distribution/assistant-pairing`);
 }
