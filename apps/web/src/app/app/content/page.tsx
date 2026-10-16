@@ -212,7 +212,7 @@ function ContentManagementInner() {
               : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
-          <span>📝 待发布内容（草稿）</span>
+          <span>待发布内容</span>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
             {drafts.length}
           </span>
@@ -227,7 +227,7 @@ function ContentManagementInner() {
               : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
-          <span>✨ 诊断生成方案</span>
+          <span>诊断策略方案</span>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
             {strategies.length}
           </span>
@@ -242,7 +242,7 @@ function ContentManagementInner() {
               : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
-          <span>🚀 进行中的发布任务</span>
+          <span>分发任务</span>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
             {publications.length}
           </span>
@@ -257,7 +257,7 @@ function ContentManagementInner() {
               : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
-          <span>🏛️ 已发布资产沉淀</span>
+          <span>已发布资产</span>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
             {publishedAssets.length}
           </span>
@@ -304,10 +304,14 @@ function ContentManagementInner() {
 
               {filteredDrafts.length === 0 ? (
                 <EmptyState
-                  title="暂无待发布草稿"
-                  description="您可以直接新建草稿，或通过「GEO 诊断」根据发现的搜索差距一键生成针对性方案。"
-                  href={`/app/content/distribution?project=${encodeURIComponent(projectId)}`}
-                  action="前往内容发布"
+                  title="还没有内容草稿"
+                  description="您可以直接新建草稿，或通过「GEO 诊断」根据发现的搜索差距针对性生成方案。"
+                  href={`/app/content/new?project=${encodeURIComponent(projectId)}`}
+                  action="新建草稿"
+                  secondaryAction={{
+                    label: "从诊断生成",
+                    href: `/app/diagnosis?project=${encodeURIComponent(projectId)}`,
+                  }}
                 />
               ) : (
                 <div className="table-scroll overflow-x-auto">
@@ -610,8 +614,8 @@ function ContentManagementInner() {
 
               {filteredAssets.length === 0 ? (
                 <EmptyState
-                  title="暂无已发布资产"
-                  description="在多平台完成内容发布并回填公开链接后，资产将沉淀在此并自动关联到复测实验池。"
+                  title="暂无已确认公开发布的内容"
+                  description="在多平台完成内容真实发布并核验公开落地链接后，资产将沉淀在此并自动关联到复测实验池。"
                   href={`/app/content/distribution?project=${encodeURIComponent(projectId)}`}
                   action="前往发布内容"
                 />

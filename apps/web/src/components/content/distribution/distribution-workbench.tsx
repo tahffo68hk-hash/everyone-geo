@@ -301,9 +301,10 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
         // 初始化渠道选择
         const initialSel: Record<string, { selected: boolean; mode: "AUTO" | "MANUAL"; targetStatus?: "draft" | "publish" }> = {};
         for (const ch of chList) {
+          const canAuto = Boolean(ch.supportsAuto && ch.connected);
           initialSel[ch.channel] = {
             selected: ["ZHIHU", "XIAOHONGSHU", "WECHAT_OFFICIAL_ACCOUNT"].includes(ch.channel),
-            mode: ch.supportsAuto ? "AUTO" : "MANUAL",
+            mode: canAuto ? "AUTO" : "MANUAL",
             targetStatus: ch.autoCapability === "DRAFT_ONLY" ? "draft" : "publish",
           };
         }
@@ -419,7 +420,13 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     getAiProviderStatus()
-      .then((status) => setRealAiAvailable(status.providers.some((item) => item.realModeAllowed)))
+      .then((status) => {
+        const available = status.providers.some((item) => item.realModeAllowed);
+        setRealAiAvailable(available);
+        if (available) {
+          setAiUseReal(true);
+        }
+      })
       .catch(() => setRealAiAvailable(false));
   }, []);
 
@@ -1503,7 +1510,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                         <button
                           type="button"
                           onClick={() => {
-                            const mockPkg: ManualPublishingPackage = {
+                            const manualPkg: ManualPublishingPackage = {
                               channel: activeManualChannel,
                               title: draftTitle,
                               body: draftBody,
@@ -1514,7 +1521,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                               callToAction: "欢迎在评论区或正文中留下您的见解或进行进一步咨询。",
                               generatedAt: new Date().toISOString(),
                             };
-                            downloadManualPackage(mockPkg, activeManualChannel);
+                            downloadManualPackage(manualPkg, activeManualChannel);
                           }}
                           className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
                         >
@@ -1622,7 +1629,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
 
                       <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2 text-xs">
                         <div className="flex items-center justify-between">
-                          {ch.supportsAuto ? (
+                          {ch.supportsAuto && ch.connected ? (
                             <div className="flex items-center gap-1.5">
                               <button
                                 type="button"
@@ -1647,6 +1654,10 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                                 人工
                               </button>
                             </div>
+                          ) : ch.supportsAuto && !ch.connected ? (
+                            <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              未连接账号（仅人工）
+                            </span>
                           ) : (
                             <span className="text-[11px] text-slate-400">仅支持人工辅助</span>
                           )}

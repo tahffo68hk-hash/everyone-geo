@@ -128,10 +128,10 @@ export default function DiagnosisListPage() {
       {loading && <LoadingSkeleton rows={4} />}
       {!loading && !error && rows.length === 0 && (
         <EmptyState
-          title="暂无 GEO 问题诊断"
-          description="GEO 诊断基于基准测试报告深度剖析生成。若尚未进行基准测试，请先前往运行测试并生成报告快照。"
-          href={`/app/benchmark?project=${encodeURIComponent(projectId)}`}
-          action="前往运行基准测试"
+          title="当前还没有可用的诊断结果"
+          description="GEO 诊断基于基准测试报告深度剖析生成。请先前往查看报告快照并生成诊断。"
+          href={`/app/reports?project=${encodeURIComponent(projectId)}`}
+          action="前往查看报告"
         />
       )}
       {rows.length > 0 && (

@@ -287,8 +287,28 @@ export function AssetOutcomeOverview({
         </div>
       )}
 
-      {/* 核心指标卡片：4张精炼 Executive Cards */}
-      {activeRun && (
+      {/* 核心指标卡片：4张精炼 Executive Cards 或空状态 */}
+      {!activeRun ? (
+        <div className="surface p-12 text-center rounded-xl border border-slate-200 bg-white">
+          <span className="empty-mark" aria-hidden="true">📊</span>
+          <h3 className="mt-2 text-base font-semibold text-slate-900">尚无发布后复测结果</h3>
+          <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+            发布内容后需执行 GEO 复测，通过对比基线数据，客观评估 AI 可见度与引用的真实变化趋势。
+          </p>
+          {onRerunRetest && (
+            <div className="mt-4">
+              <button
+                type="button"
+                disabled={isRerunning}
+                onClick={onRerunRetest}
+                className="ui-button primary text-xs"
+              >
+                {isRerunning ? "正在执行复测评测…" : "开始复测"}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
         <>
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
             {/* 1. 测试条件一致性 */}
@@ -344,7 +364,7 @@ export function AssetOutcomeOverview({
                   ? `${attrSummary.insufficientEvidenceCount} 项证据不足`
                   : attrSummary?.noObservedChangeCount
                   ? `${attrSummary.noObservedChangeCount} 项无变化`
-                  : "证据链完备"}
+                  : (!activeRun || activeRun.totalItems === 0 || !attrSummary ? "暂无足够评测对比数据" : "证据链完备")}
               </span>
             </div>
           </div>

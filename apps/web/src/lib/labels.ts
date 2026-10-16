@@ -614,7 +614,7 @@ export const OPPORTUNITY_NAV = {
   sourceRecommendations: "来源优化建议",
   sourceFindings: "来源诊断",
   why: "为什么这是一个机会？",
-  whyHint: "以下内容机会由 GeoLens 根据当前诊断与优化建议确定性生成，用于指导后续内容建设。它并不保证 GEO 指标提升，实际效果需要在 M7D 使用相同 Benchmark 复测验证。",
+  whyHint: "以下内容机会由 GeoLens 根据当前诊断与优化建议生成，用于指导后续内容建设。它属于优化建议与建设假设，实际提升效果需发布后通过相同基准问题集复测验证。",
   targetQueries: "目标 Query",
   suggestedStructure: "建议内容结构",
   suggestedStructureHint: "仅为建议结构块（标题 + 用途），不是正文。",
@@ -636,7 +636,7 @@ export const OPPORTUNITY_NAV = {
   },
   noCompetitor: "无已审核竞品关联",
   noCitation: "当前证据未观察到引用",
-  experimentHint: "实验与复测将在下一阶段（M7D）开放",
+  experimentHint: "可通过 GEO 效果复测与归因工作台进行发布后验证",
   generateFirst: "生成内容机会",
   noneHint: "该优化建议还没有内容机会。",
 } as const;

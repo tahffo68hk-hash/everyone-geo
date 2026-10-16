@@ -101,7 +101,7 @@ export default function BenchmarkPage() {
   const [suiteId, setSuiteId] = useState("");
   const [suite, setSuite] = useState<Suite | null>(null);
 
-  const [runType, setRunType] = useState<"demo" | "real">("demo");
+  const [runType, setRunType] = useState<"demo" | "real">("real");
   const [engineId, setEngineId] = useState("");
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState("");
@@ -158,11 +158,14 @@ export default function BenchmarkPage() {
     return () => controller.abort();
   }, [suiteId]);
 
-  // ---- 默认选 demo 可用 mock 引擎 ----
+  // ---- 默认选 real 可用引擎 ----
   useEffect(() => {
     if (!options || engineId) return;
-    const mock = options.engines.find(engine => engine.provider === "mock");
-    setEngineId(mock?.id ?? "");
+    const realEngine = options.engines.find(e => e.provider !== "mock" && e.configured)
+      || options.engines.find(e => e.configured)
+      || options.engines.find(e => e.provider !== "mock")
+      || options.engines[0];
+    setEngineId(realEngine?.id ?? "");
   }, [options, engineId]);
 
   // ---- 轮询 run ----
@@ -232,8 +235,25 @@ export default function BenchmarkPage() {
         title="请先选择监测项目"
         description="选择或创建项目后，方可开展基准测试集检测与指标分析。"
         href="/app/projects/new"
-        action="新建监测项目"
+        action="创建项目"
       />
+    );
+  }
+
+  if (suites.length === 0 && !suitesError) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="GEO 基准测试"
+          description="GEO 可见度基准检测。测试集版本化；每条结果可追溯到测试问题 → 检测记录 → 原始证据 → 分析结果。"
+        />
+        <EmptyState
+          title="尚未添加监测问题"
+          description="基准测试需要基于问题集运行。请先创建或生成监测问题集。"
+          href={`/app/queries?project=${projectId}`}
+          action="创建问题集"
+        />
+      </div>
     );
   }
 
@@ -241,7 +261,7 @@ export default function BenchmarkPage() {
     <div className="space-y-6">
       <PageHeader
         title="GEO 基准测试"
-        description="GEO 可见度基准检测（通用：适用于任意监测品牌/产品）。测试集版本化；每条结果可追溯到测试问题 → 检测记录 → 原始证据 → 分析结果。「演示」为 Mock 模拟，「真实」产生真实模型服务调用。"
+        description="GEO 可见度基准检测。测试集版本化；每条结果可追溯到测试问题 → 检测记录 → 原始证据 → 分析结果。"
       />
 
       {optionsError && <p role="alert" className="text-sm text-red-700">{optionsError}</p>}
@@ -265,7 +285,7 @@ export default function BenchmarkPage() {
             </div>
             {suitesError && <p role="alert" className="mt-3 text-sm text-red-700">{suitesError}</p>}
             {projectId && !suitesError && !suites.length && (
-              <p className="mt-3 text-sm text-slate-500">该项目暂无基准测试集（可运行 seed-benchmark-v1 创建 v1）。</p>
+              <p className="mt-3 text-sm text-slate-500">该项目暂无基准测试集，请先创建问题集。</p>
             )}
             {suite && (
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -328,8 +348,8 @@ export default function BenchmarkPage() {
               <div>
                 <label htmlFor="runType" className="mb-2 block text-xs font-semibold text-slate-700">运行类型</label>
                 <select id="runType" value={runType} className="w-full rounded-lg border border-slate-300 p-2 text-xs" onChange={event => setRunType(event.target.value as "demo" | "real")}>
-                  <option value="demo">演示（Mock 模拟，不计入真实）</option>
-                  <option value="real">真实（DeepSeek 模型服务，有费用）</option>
+                  <option value="real">真实（调用真实 AI 模型服务）</option>
+                  <option value="demo">开发模拟（仅用于离线测试）</option>
                 </select>
               </div>
               <div>

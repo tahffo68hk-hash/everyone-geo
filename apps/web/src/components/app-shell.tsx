@@ -218,7 +218,7 @@ const navGroups: NavGroup[] = [
   {
     groupTitle: "效果闭环与归因",
     items: [
-      { label: "效果验证工作台", path: "/app/content/verification", icon: IconVerification, badge: "F1/F2" },
+      { label: "效果验证工作台", path: "/app/content/verification", icon: IconVerification },
       { label: "复测实验", path: "/app/experiments", icon: IconExperiments },
     ],
   },
@@ -314,11 +314,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="brand-icon-box">G</div>
           {!collapsed && (
             <div className="brand-info">
-              <div className="brand-title">
-                GeoLens
-                <span className="brand-tag">PRO</span>
-              </div>
-              <div className="brand-sub">AI 搜索可见度优化引擎</div>
+              <div className="brand-title">GeoLens</div>
+              <div className="brand-sub">AI 可见度监测与优化平台</div>
             </div>
           )}
         </Link>
@@ -460,14 +457,26 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* 用户租户信息与退出 */}
             <div className="flex items-center gap-2 text-xs">
               <div className="w-7 h-7 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
-                {(context.me?.user.name || "U")[0]?.toUpperCase()}
+                {(context.me?.user.name && !context.me.user.name.toLowerCase().includes("astra") ? context.me.user.name[0] : "用").toUpperCase()}
               </div>
               <div className="hidden sm:flex flex-col text-left">
                 <span className="font-semibold text-slate-800 leading-tight">
-                  {context.me?.user.name ?? "用户"}
+                  {(() => {
+                    const raw = context.me?.user.name;
+                    if (!raw || raw.toLowerCase().includes("astra") || raw.includes("QA owner") || raw.includes("QA outsider")) {
+                      return "产品管理员";
+                    }
+                    return raw;
+                  })()}
                 </span>
                 <span className="text-[10px] text-slate-400 leading-tight">
-                  {context.me?.organizations[0]?.name ?? "默认企业租户"}
+                  {(() => {
+                    const raw = context.me?.organizations[0]?.name;
+                    if (!raw || raw.toLowerCase().includes("astra") || raw.includes("QA owner") || raw.includes("QA outsider")) {
+                      return "企业工作台";
+                    }
+                    return raw;
+                  })()}
                 </span>
               </div>
             </div>
@@ -522,7 +531,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               title="还没有监测项目"
               description="创建项目后，监测 AI 是否提及品牌、分析竞品、发现内容缺口，并验证优化效果。"
               href={`/app/projects/new?org=${context.me?.organizations[0]?.id ?? ""}`}
-              action="新建监测项目"
+              action="创建项目"
             />
           ) : (
             <div key={context.projectId}>{children}</div>

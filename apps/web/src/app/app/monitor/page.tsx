@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { useProjectContext } from "@/components/project-context";
+import { PageHeader, EmptyState } from "@/components/ui";
 import { EMPTY_TEXT, formatSourceType, formatStatus, friendlyError } from "@/lib/labels";
 import { EvidenceDialog } from "./evidence-dialog";
 import { TaskMetrics } from "./task-metrics";
@@ -41,6 +43,7 @@ function errorText(error: unknown) {
 }
 
 export default function MonitorPage() {
+  const { projectId: contextProjectId } = useProjectContext();
   const [options, setOptions] = useState<Options | null>(null);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState("");
@@ -75,9 +78,14 @@ export default function MonitorPage() {
       .then((data) => {
         if (controller.signal.aborted) return;
         setOptions(data);
-        setProjectId(data.projects[0]?.id ?? "");
-        setQueryIds(data.projects[0]?.queries.slice(0, 5).map((query) => query.id) ?? []);
-        setEngineIds(data.engines.filter((engine) => ["mock-alpha", "mock-beta", "mock-gamma"].includes(engine.key)).map((engine) => engine.id));
+        const preferredId = (contextProjectId && data.projects.some((p) => p.id === contextProjectId))
+          ? contextProjectId
+          : (data.projects[0]?.id ?? "");
+        setProjectId(preferredId);
+        const preferredProject = data.projects.find((p) => p.id === preferredId);
+        setQueryIds(preferredProject?.queries.slice(0, 5).map((query) => query.id) ?? []);
+        const realEngines = data.engines.filter((engine) => engine.provider !== "mock" && engine.configured);
+        setEngineIds(realEngines.length > 0 ? realEngines.map((engine) => engine.id) : data.engines.slice(0, 2).map((engine) => engine.id));
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setOptionsError(errorText(error));
@@ -157,13 +165,11 @@ export default function MonitorPage() {
   const engineLabel = (engine: { name: string; provider: string }) => engine.provider === "mock" ? `${engine.name} · 演示数据` : `${engine.name} · 真实数据`;
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <header>
-          <Link href="/app" className="text-sm text-blue-700 hover:underline">← 返回工作台</Link>
-          <h1 className="mt-3 text-2xl font-semibold">GEO 监测</h1>
-          <p className="mt-2 text-sm text-slate-500">选择项目、检测问题与检测引擎（Mock/Demo 为模拟数据，DeepSeek API 为真实模型服务）创建任务并查看执行进度。</p>
-        </header>
+    <div className="space-y-6">
+      <PageHeader
+        title="GEO 持续监测"
+        description="选择项目、检测问题与检测引擎（DeepSeek API 为真实模型服务，Mock 为模拟测试）创建任务并实时查看执行进度。"
+      />
 
         <section aria-labelledby="create-heading" className="rounded-lg border border-slate-200 bg-white p-6">
           <h2 id="create-heading" className="mb-4 text-lg font-semibold">创建任务</h2>
@@ -254,7 +260,6 @@ export default function MonitorPage() {
         )}
         {taskId && <TaskMetrics key={taskId} taskId={taskId} taskStatus={task?.status} />}
         {selectedRunId && <EvidenceDialog key={selectedRunId} runId={selectedRunId} onClose={() => setSelectedRunId(null)} />}
-      </div>
-    </main>
+    </div>
   );
 }

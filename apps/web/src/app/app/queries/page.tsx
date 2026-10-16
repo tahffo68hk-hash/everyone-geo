@@ -171,7 +171,7 @@ export default function QueriesPage() {
         title="请先选择监测项目"
         description="选择或创建项目后，方可管理该项目的问题集与评测场景。"
         href="/app/projects/new"
-        action="新建监测项目"
+        action="创建项目"
       />
     );
   }
@@ -188,16 +188,16 @@ export default function QueriesPage() {
       {/* 监测对象状态 */}
       <section className={`rounded-xl border p-4 text-xs transition-all ${
         target?.brandId
-          ? "border-indigo-100 bg-gradient-to-r from-indigo-50/60 via-purple-50/30 to-white text-slate-800 shadow-xs"
+          ? "border-slate-200 bg-white text-slate-800 shadow-xs"
           : "border-amber-200 bg-amber-50/60 text-amber-950 shadow-xs"
       }`}>
         {target?.brandId ? (
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span className="font-bold text-slate-900 text-sm">监测品牌：{target.canonicalName}</span>
             </div>
-            <span className="rounded-md border border-indigo-200/60 bg-indigo-50/80 px-2 py-0.5 font-medium text-indigo-700">
+            <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-medium text-slate-700">
               {formatTargetEntityType(target.entityType)}
             </span>
             {target.productCategory && (
@@ -366,8 +366,17 @@ export default function QueriesPage() {
         <LoadingSkeleton rows={4} />
       ) : suites.length === 0 ? (
         <EmptyState
-          title="暂无测试问题集"
-          description={QUERY_WORKSPACE_NAV.emptyHint}
+          title="尚未添加监测问题"
+          description="定义要持续监测的用户问题，用于评估 AI 大模型对品牌的认知与推荐表现。"
+          onAction={() => void handleAiGenerateQuerySet()}
+          action="AI 生成问题集"
+          secondaryAction={{
+            label: "手动添加",
+            onClick: () => {
+              const el = document.querySelector('input[placeholder*="问题集名称"]') as HTMLInputElement;
+              el?.focus();
+            },
+          }}
         />
       ) : (
         <div className="surface overflow-hidden">

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { useProjectContext } from "@/components/project-context";
+import { PageHeader, EmptyState, LoadingSkeleton } from "@/components/ui";
 import {
   formatCategory, formatEffortLevel, formatExpectedSignal,
   formatOpportunityAsset, formatOpportunityPriority,
@@ -40,6 +42,7 @@ function engineLabel(e: { engineName: string; engineKey: string }): string {
 }
 
 function OpportunitiesInner() {
+  const { projectId: contextProjectId } = useProjectContext();
   const params = useSearchParams();
   const runFilter = params.get("run") ?? "";
   const [projects, setProjects] = useState<Project[]>([]);
@@ -56,11 +59,12 @@ function OpportunitiesInner() {
       .then(data => {
         setProjects(data.projects);
         const first = data.projects[0];
-        if (first) setProjectId(first.id);
+        const preferred = (contextProjectId && data.projects.find(p => p.id === contextProjectId)) ?? first;
+        if (preferred) setProjectId(preferred.id);
       })
       .catch(err => setError(friendlyError(err)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [contextProjectId]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -112,32 +116,26 @@ function OpportunitiesInner() {
   const noDataLimited = rows.length > 0 && visible.length === 0 && rows.every(r => r.run.summary?.blockedByDataQuality);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-8">
-      <div className="mx-auto max-w-7xl space-y-5">
-        <header>
-          <Link href="/app" className="text-sm text-blue-700 hover:underline">← 返回工作台</Link>
-          <h1 className="mt-3 text-2xl font-semibold">内容机会</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            由 GeoLens 根据 GEO 问题诊断与优化建议确定性生成的内容任务 brief：告诉你要补哪种内容资产、
-            覆盖哪些 Query、关注哪些模型与已审核竞品、结构中必须有什么、原始证据在哪。
-            {runFilter && isFilteredRun && (
-              <Link href="/app/opportunities" className="ml-2 text-blue-700 hover:underline">← 查看全部</Link>
-            )}
-          </p>
-        </header>
+    <div className="space-y-6">
+      <PageHeader
+        title="内容机会"
+        description="根据 GEO 问题诊断与优化建议生成的内容任务 brief，梳理待建设的内容资产类型、目标问题、模型差异与引用证据。"
+        actions={
+          <div className="flex items-center gap-2">
+            <label htmlFor="project" className="text-xs text-slate-500 font-medium">项目：</label>
+            <select id="project" value={projectId} className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-xs text-slate-700 focus:outline-hidden" onChange={e => setProjectId(e.target.value)}>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        }
+      />
 
-        <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          {OPPORTUNITY_NAV.whyHint}
-        </section>
+      <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+        {OPPORTUNITY_NAV.whyHint}
+      </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <label htmlFor="project" className="block">
-              <span className="mb-1 block text-xs font-medium text-slate-600">项目</span>
-              <select id="project" value={projectId} className="rounded-lg border border-slate-300 p-2 text-sm" onChange={e => setProjectId(e.target.value)}>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </label>
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-end gap-3">
             <label htmlFor="status-filter" className="block">
               <span className="mb-1 block text-xs font-medium text-slate-600">状态</span>
               <select id="status-filter" value={statusFilter} className="rounded-lg border border-slate-300 p-2 text-sm" onChange={e => setStatusFilter(e.target.value)}>
@@ -185,11 +183,12 @@ function OpportunitiesInner() {
         )}
 
         {!loading && !error && rows.length === 0 && (
-          <section className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-            <p className="font-medium">{OPPORTUNITY_NAV.empty}</p>
-            <p className="mx-auto mt-2 max-w-2xl">{OPPORTUNITY_NAV.emptyHint}</p>
-            <p className="mt-4"><Link href="/app/recommendations" className="text-blue-700 hover:underline">{OPPORTUNITY_NAV.backToRecommendations}</Link></p>
-          </section>
+          <EmptyState
+            title="暂无内容机会"
+            description="内容机会由系统基于优化建议提炼而成。请先在优化建议中确认方向并生成内容机会。"
+            href={`/app/recommendations?project=${encodeURIComponent(projectId)}`}
+            action="查看优化建议"
+          />
         )}
 
         {!loading && !error && rows.length > 0 && visible.length === 0 && !noDataLimited && (
@@ -281,13 +280,12 @@ function OpportunitiesInner() {
           </section>
         )}
       </div>
-    </main>
   );
 }
 
 export default function OpportunitiesPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-8"><p className="text-sm text-slate-500">正在加载内容机会…</p></main>}>
+    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">正在加载内容机会…</div>}>
       <OpportunitiesInner />
     </Suspense>
   );

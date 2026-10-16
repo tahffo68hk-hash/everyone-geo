@@ -87,7 +87,7 @@ export default function AppPage() {
         title="还没有监测项目"
         description="创建第一个监测项目后，GeoLens 会帮助你监测 AI 是否提及品牌、分析竞品并验证优化效果。"
         href="/app/projects/new"
-        action="新建监测项目"
+        action="创建项目"
       />
     );
   }
@@ -165,51 +165,50 @@ export default function AppPage() {
             ]}
           />
           <SetupChecklist steps={setupSteps as unknown as Array<{ id: string; label: string; description: string; complete: boolean; href: string; action: string }>} />
-          {/* 商业级 GEO 综合诊断与可见度评分 Hero 卡片 */}
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-indigo-700/50">
-            <div className="absolute right-0 top-0 -mt-10 -mr-10 w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-            <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+          {/* 成熟克制的 B2B SaaS 概览 Banner */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 text-white p-6 sm:p-7 shadow-xs">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
               <div className="space-y-2 max-w-2xl">
                 {runningTasksCount > 0 ? (
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 backdrop-blur-md">
+                  <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-950 text-indigo-300 border border-indigo-800">
                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                     GEO 监测任务 · {runningTasksCount} 项执行中
                   </div>
                 ) : latest ? (
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 backdrop-blur-md">
+                  <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">
                     <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    GEO 全景诊断 · 最新快照已归档
+                    GEO 监测报告 · 最新快照已归档
                   </div>
                 ) : (
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 backdrop-blur-md">
+                  <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
                     <span className="w-2 h-2 rounded-full bg-slate-400" />
-                    GEO 监测看板 · 待初始化基准
+                    GEO 监测 · 尚未开始监测
                   </div>
                 )}
-                <h2 className="hero-banner-title text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-                  {currentTarget?.canonicalName ?? project?.name ?? "目标品牌"} 的 AI 搜索可见度大盘
+                <h2 className="hero-banner-title text-xl sm:text-2xl font-bold tracking-tight text-white">
+                  {currentTarget?.canonicalName ?? project?.name ?? "目标品牌"} 的 AI 搜索可见度看板
                 </h2>
-                <p className="text-indigo-200/90 text-sm leading-relaxed">
-                  聚合多模型实测数据，覆盖品牌曝光、引用推荐、竞对对比与落地资产收录，辅助精准制定优化策略。
+                <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
+                  客观呈现多模型实测数据，覆盖品牌曝光、推荐位次与落地资产收录，提供真实可信的优化依据。
                 </p>
               </div>
 
-              <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md px-5 py-3.5 rounded-xl border border-white/15">
+              <div className="flex items-center gap-5 bg-slate-800/80 px-5 py-4 rounded-lg border border-slate-700">
                 <div className="text-right">
-                  <div className="text-xs text-indigo-200 font-medium">当前综合可见度得分</div>
-                  <div className="text-3xl font-black text-white tracking-tight">
+                  <div className="text-xs text-slate-400 font-medium">当前综合可见度得分</div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mt-0.5">
                     {latest?.summary?.visibilityRate != null ? (
                       <>
                         {Math.round(latest.summary.visibilityRate * 100)}
-                        <span className="text-lg font-normal text-indigo-300 ml-1">/ 100</span>
+                        <span className="text-sm font-normal text-slate-400 ml-1">/ 100</span>
                       </>
                     ) : (
-                      <span className="text-2xl font-bold text-indigo-200">待检测</span>
+                      <span className="text-xl font-semibold text-slate-400">待检测</span>
                     )}
                   </div>
-                </div>
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                  ★
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {latest?.summary?.visibilityRate != null ? "基于最新报告实测" : "暂无检测报告"}
+                  </div>
                 </div>
               </div>
             </div>
@@ -218,23 +217,23 @@ export default function AppPage() {
           <div className="metric-grid">
             <MetricCard
               label="AI 可见度"
-              value={latest ? pct(latest.summary?.visibilityRate) : "—"}
-              note={latest ? (visibilityTrend ? "对比上周期报告" : "最近报告 · 暂无对比基期") : "完成一次检测后显示"}
+              value={latest ? pct(latest.summary?.visibilityRate) : "尚未开始监测"}
+              note={latest ? (visibilityTrend ? "对比上周期报告" : "最近报告 · 暂无对比基期") : "完成一次监测后显示"}
               trend={visibilityTrend}
-              href={latest ? `/app/reports/${latest.id}` : undefined}
+              href={latest ? `/app/reports/${latest.id}` : `/app/benchmark?project=${projectId}`}
             />
             <MetricCard
               label="核心推荐率"
-              value={latest ? pct(latest.summary?.recommendationRate) : "—"}
-              note={latest ? (recommendationTrend ? "对比上周期报告" : "最近报告 · 暂无对比基期") : "完成一次检测后显示"}
+              value={latest ? pct(latest.summary?.recommendationRate) : "尚未开始监测"}
+              note={latest ? (recommendationTrend ? "对比上周期报告" : "最近报告 · 暂无对比基期") : "完成一次监测后显示"}
               trend={recommendationTrend}
-              href={latest ? `/app/reports/${latest.id}` : undefined}
+              href={latest ? `/app/reports/${latest.id}` : `/app/benchmark?project=${projectId}`}
             />
             <MetricCard
               label="最近报告状态"
               value={latest ? "已生成" : "待运行"}
-              note={latest ? new Date(latest.generatedAt).toLocaleDateString("zh-CN") : "尚无报告"}
-              href="/app/reports"
+              note={latest ? new Date(latest.generatedAt).toLocaleDateString("zh-CN") : "暂无监测报告"}
+              href={latest ? `/app/reports/${latest.id}` : `/app/benchmark?project=${projectId}`}
             />
             <MetricCard
               label="待处理监测任务"

@@ -48,9 +48,9 @@ export function PublishedAssetsTable({
         <span className="empty-mark" aria-hidden="true">
           📄
         </span>
-        <h3 className="mt-2 text-base font-semibold text-slate-900">暂无已发布落地资产</h3>
+        <h3 className="mt-2 text-base font-semibold text-slate-900">暂无已确认公开发布的内容</h3>
         <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-          在内容生产流程中完成排期并模拟发布后，系统将自动汇总落地资产，并在此支持 GEO 复测与客观归因分析。
+          在多平台完成内容真实发布并核验公开落地链接后，系统将自动汇总落地资产，并在此支持 GEO 复测与客观归因分析。
         </p>
       </div>
     );

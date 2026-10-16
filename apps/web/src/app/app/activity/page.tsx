@@ -63,7 +63,16 @@ function ActivityInner() {
     setQApplied(q.trim());
   }
 
-  if (!projectId) return null;
+  if (!projectId) {
+    return (
+      <EmptyState
+        title="请先选择监测项目"
+        description="选择或创建项目后，方可查看该项目下的任务与执行历史。"
+        href="/app/projects/new"
+        action="创建项目"
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">

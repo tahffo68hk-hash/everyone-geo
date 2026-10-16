@@ -91,7 +91,7 @@ function SuiteInner() {
   // 运行前确认
   const [runOpen, setRunOpen] = useState(false);
   const [engineId, setEngineId] = useState("");
-  const [runType, setRunType] = useState<"demo" | "real">("demo");
+  const [runType, setRunType] = useState<"demo" | "real">("real");
   const [preflight, setPreflight] = useState<RunPreflightResponse | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [preflightError, setPreflightError] = useState("");
@@ -126,8 +126,8 @@ function SuiteInner() {
     api<{ projects: Project[]; engines: Engine[] }>("/monitor-tasks/options")
       .then(d => {
         setEngines(d.engines);
-        const mock = d.engines.find(e => e.provider === "mock");
-        if (mock) setEngineId(mock.id);
+        const firstReal = d.engines.find(e => e.provider !== "mock" && e.configured) || d.engines.find(e => e.configured) || d.engines[0];
+        if (firstReal) setEngineId(firstReal.id);
       })
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -518,8 +518,8 @@ function SuiteInner() {
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-slate-500">模式</dt>
                 <select value={runType} onChange={e => setRunType(e.target.value as "demo" | "real")} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" aria-label="模式">
-                  <option value="demo">演示（0 调用）</option>
-                  <option value="real">真实</option>
+                  <option value="real">真实（调用真实 AI 模型）</option>
+                  <option value="demo">开发模拟（仅用于离线测试）</option>
                 </select>
               </div>
               <div className="flex justify-between"><dt className="text-slate-500">运行类型</dt><dd className="font-medium">{runType === "demo" ? "演示" : "真实"}</dd></div>

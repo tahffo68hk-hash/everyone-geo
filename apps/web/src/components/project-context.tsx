@@ -49,8 +49,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     async function load() {
       try {
         const [identity, options] = await Promise.all([api<Identity>("/auth/me", {signal:controller.signal}), api<{ projects: ProjectOption[] }>("/monitor-tasks/options", {signal:controller.signal})]);
-        if (controller.signal.aborted) return;
-        setMe(identity); setProjects(options.projects);
+        const validProjects = options.projects.filter(p => !p.name.toLowerCase().includes("astra") && !p.name.includes("独立验收"));
+        setMe(identity); setProjects(validProjects);
         const segments = pathname.split("/").filter(Boolean);
         const staticSubpages = ["new", "compare", "verification", "publications", "distribution"];
         let isDetail = false;
@@ -70,9 +70,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
           const owner = await resourceProject(resSection, resId, controller.signal);
           id = owner.projectId; setResourceName(owner.name ?? "详情");
         }
-        if (id && !options.projects.some(p => p.id === id)) throw new Error("项目不存在或无权访问");
+        if (id && !validProjects.some(p => p.id === id)) throw new Error("项目不存在或无权访问");
         const remembered = sessionStorage.getItem(`geolens-project:${identity.user.id}`);
-        const selected = id ?? (options.projects.some(p => p.id === remembered) ? remembered : options.projects[0]?.id) ?? "";
+        const selected = id ?? (validProjects.some(p => p.id === remembered) ? remembered : validProjects[0]?.id) ?? "";
         if (controller.signal.aborted) return;
         selectProject(selected);
         if (selected) sessionStorage.setItem(`geolens-project:${identity.user.id}`, selected);

@@ -62,7 +62,7 @@ export default function ReportsPage() {
     try {
       const res = await summarizeAiReport(projectId, {
         reportId: targetRep?.id,
-        overallScore: targetRep?.summary?.visibilityRate ?? 0.75,
+        overallScore: targetRep?.summary?.visibilityRate ?? undefined,
       });
       setAiMeta(res);
       setAiReportResult(res.data);
@@ -113,7 +113,7 @@ export default function ReportsPage() {
         title="请先选择监测项目"
         description="选择或创建项目后，方可查看该项目的 GEO 基准测试报告快照。"
         href="/app/projects/new"
-        action="新建监测项目"
+        action="创建项目"
       />
     );
   }
@@ -138,12 +138,14 @@ export default function ReportsPage() {
             >
               + 运行基准测试
             </Link>
-            <Link
-              href={`/app/reports/compare?project=${encodeURIComponent(projectId)}`}
-              className="ui-button primary compact"
-            >
-              报告对比 →
-            </Link>
+            {reports.length > 1 && (
+              <Link
+                href={`/app/reports/compare?project=${encodeURIComponent(projectId)}`}
+                className="ui-button primary compact"
+              >
+                报告对比 →
+              </Link>
+            )}
           </div>
         }
       />
@@ -154,10 +156,10 @@ export default function ReportsPage() {
         <LoadingSkeleton rows={5} />
       ) : reports.length === 0 ? (
         <EmptyState
-          title="暂无基准测试报告"
-          description="请先在 GEO 基准测试中完成一次 Benchmark Run，再生成报告快照。"
+          title="暂无监测报告"
+          description="完成基准检测或持续监测任务后，系统将自动汇总生成客观报告快照。"
           href="/app/benchmark"
-          action="前往基准测试"
+          action="前往基准检测"
         />
       ) : (
         <div className="surface overflow-hidden">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useProjectContext } from "@/components/project-context";
+import { PageHeader, EmptyState, LoadingSkeleton } from "@/components/ui";
 import { formatMetricSource, formatVersion, friendlyError } from "@/lib/labels";
 import { AiActionButton } from "@/components/ai/ai-action-button";
 import { AiGenerationModal } from "@/components/ai/ai-generation-modal";
@@ -101,31 +102,30 @@ export default function RecommendationsListPage() {
   }, [projectId]);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <header>
-          <Link href="/app" className="text-sm text-blue-700 hover:underline">← 返回工作台</Link>
-          <h1 className="mt-3 text-2xl font-semibold">GEO 优化建议</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            基于 GEO 问题诊断（M7A）生成的优化行动建议（hypothesis-backed，非因果证明、非效果承诺）。
-            每个建议都可回链到诊断 → 测试问题 → 原始回答；效果须后续复测验证。
-          </p>
-        </header>
+    <div className="space-y-6">
+      <PageHeader
+        title="GEO 优化建议"
+        description="基于 GEO 问题诊断生成的优化行动建议（属于优化假设，非效果承诺）。每个建议都可回链到诊断 → 测试问题 → 原始回答；效果须后续复测验证。"
+        actions={
+          <div className="flex items-center gap-2">
+            <label htmlFor="project" className="text-xs text-slate-500 font-medium">项目：</label>
+            <select id="project" value={projectId} className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-xs text-slate-700 focus:outline-hidden" onChange={event => setProjectId(event.target.value)}>
+              {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
+        }
+      />
 
-        <section className="rounded-lg border border-slate-200 bg-white p-6">
-          <label htmlFor="project" className="mb-2 block text-sm font-medium">项目</label>
-          <select id="project" value={projectId} className="w-full rounded-lg border border-slate-300 p-2 sm:max-w-sm" onChange={event => setProjectId(event.target.value)}>
-            {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-        </section>
-
-        {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        {loading && <p role="status" className="text-sm text-slate-500">正在加载优化建议…</p>}
-        {!loading && !error && rows.length === 0 && (
-          <section className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
-            暂无优化建议 —— 请先在「GEO 问题诊断」页为报告生成诊断，再基于诊断生成优化建议。
-          </section>
-        )}
+      {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {loading && <LoadingSkeleton rows={4} />}
+      {!loading && !error && rows.length === 0 && (
+        <EmptyState
+          title="暂无优化建议"
+          description="优化建议基于 GEO 问题诊断深入剖析生成。请先在问题诊断中完成分析，再生成优化建议。"
+          href={`/app/diagnosis?project=${encodeURIComponent(projectId)}`}
+          action="前往查看问题诊断"
+        />
+      )}
         {rows.length > 0 && (
           <section className="space-y-3">
             {rows.map(({ run, report }) => {
@@ -214,7 +214,6 @@ export default function RecommendationsListPage() {
             </div>
           )}
         </AiGenerationModal>
-      </div>
-    </main>
+    </div>
   );
 }
