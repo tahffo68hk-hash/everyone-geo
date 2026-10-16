@@ -13,7 +13,7 @@ export interface AssistantHealth {
 export interface AssistantChannelInfo {
   channel: string;
   is_fully_automated: boolean;
-  capability: "FULL_AUTOMATION" | "MANUAL_FALLBACK";
+  capability: "AUTOFILL_AND_CONFIRM" | "FULL_AUTOMATION" | "MANUAL_FALLBACK";
   creator_url: string;
 }
 
@@ -260,7 +260,13 @@ export class BrowserAssistantClient {
     });
   }
 
-  async confirmPublish(taskId: string, payload: { canonicalUrl?: string; externalAssetId?: string; actualPublishedAt?: string; verificationNote?: string }) {
+  async confirmPublish(taskId: string, payload: {
+    canonicalUrl?: string;
+    externalAssetId?: string;
+    actualPublishedAt?: string;
+    verificationNote?: string;
+    status?: string;
+  }) {
     return this.request<{
       success: boolean;
       status: string;
@@ -274,6 +280,7 @@ export class BrowserAssistantClient {
         external_asset_id: payload.externalAssetId,
         actual_published_at: payload.actualPublishedAt,
         verification_note: payload.verificationNote,
+        status: payload.status || "PUBLISHED",
       }),
     });
   }

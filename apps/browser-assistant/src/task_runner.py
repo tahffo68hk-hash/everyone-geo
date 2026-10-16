@@ -192,9 +192,11 @@ class TaskManager:
         self,
         task_id: str,
         canonical_url: str | None,
-        external_asset_id: str | None
+        external_asset_id: str | None,
+        verification_note: str | None = None,
+        target_status: str = "PUBLISHED"
     ) -> tuple[bool, str]:
-        """由用户或自动化录入真实发布结果，更新任务为 PUBLISHED 终态"""
+        """由用户或自动化录入真实发布结果，区分已公开与审核中，实施严格真实性约束"""
         state = self.get_task(task_id)
         if not state:
             return False, "任务不存在"
@@ -202,17 +204,49 @@ class TaskManager:
         if not canonical_url and not external_asset_id:
             return False, "必须提供真实公开链接 (canonical_url) 或平台内容 ID (external_asset_id)"
 
+        # 校验核验说明 (与 API 端的 MANUAL_VERIFIED 规则对齐)
+        if not verification_note or not verification_note.strip():
+            return False, "必须提供明确的人工核验说明 (verification_note) 以记录证明依据"
+
+        # 真实性与防 Mock 检查
+        if canonical_url:
+            c_low = canonical_url.lower().strip()
+            if any(bad in c_low for bad in ["mock://", "fake://", "example.com/mock", "mock_", "fake_"]):
+                return False, "禁止使用虚假/Mock 外部链接作为发布资产的证明证据"
+
+            if state.channel != "SIMULATION" and any(bad in c_low for bad in ["localhost", "127.0.0.1", "[::1]", "0.0.0.0"]):
+                return False, "真实平台发布凭证禁止使用 localhost 或本地回环地址"
+
+            # 平台域名归属约束
+            if state.channel == "XIAOHONGSHU" and not any(d in c_low for d in ["xiaohongshu.com", "xhslink.com"]):
+                return False, "小红书发布落地链接必须包含 xiaohongshu.com 或 xhslink.com 域名"
+            elif state.channel == "ZHIHU" and "zhihu.com" not in c_low:
+                return False, "知乎专栏发布链接必须包含 zhihu.com 域名"
+            elif state.channel == "BILIBILI" and "bilibili.com" not in c_low:
+                return False, "B站发布链接必须包含 bilibili.com 域名"
+
+        norm_status = target_status.upper().strip() if target_status else "PUBLISHED"
         with state.lock:
             state.published_url = canonical_url
             state.external_asset_id = external_asset_id
-            state.status = TaskStatus.PUBLISHED
-            state.add_log(
-                StepName.READ_RESULT,
-                "发布结果确认",
-                StepStatus.SUCCESS,
-                f"已成功确认公开发布落地：链接={canonical_url or '无'}，内容ID={external_asset_id or '无'}"
-            )
-        return True, "发布确认成功"
+            if norm_status == "PENDING_REVIEW":
+                state.status = TaskStatus.PENDING_REVIEW
+                state.add_log(
+                    StepName.READ_RESULT,
+                    "平台审核中状态已确认",
+                    StepStatus.RUNNING,
+                    f"已记录提交审核：链接={canonical_url or '无'}，内容ID={external_asset_id or '无'}，说明={verification_note}"
+                )
+                return True, "已成功登记为【平台审核中】状态"
+            else:
+                state.status = TaskStatus.PUBLISHED
+                state.add_log(
+                    StepName.READ_RESULT,
+                    "公开发布结果已确认 (MANUAL_VERIFIED)",
+                    StepStatus.SUCCESS,
+                    f"已成功确认公开发布落地：链接={canonical_url or '无'}，内容ID={external_asset_id or '无'}，核验依据={verification_note}"
+                )
+                return True, "已成功确认公开发布落地 (MANUAL_VERIFIED)"
 
     def _wait_if_paused(self, state: TaskExecutionState) -> bool:
         """如果处于暂停状态，循环等待至恢复或取消"""

@@ -156,7 +156,9 @@ def test_task_manager_pause_and_takeover():
     ok, msg = task_manager.confirm_publish_result(
         task_id=task_id,
         canonical_url="http://127.0.0.1:8765/articles/sim-123456",
-        external_asset_id="sim-123456"
+        external_asset_id="sim-123456",
+        verification_note="端到端仿真测试核验通过",
+        target_status="PUBLISHED"
     )
     assert ok is True
     assert state.status == TaskStatus.PUBLISHED

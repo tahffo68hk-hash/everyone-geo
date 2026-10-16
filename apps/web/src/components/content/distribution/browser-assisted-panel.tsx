@@ -81,7 +81,8 @@ export function BrowserAssistedPanel({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [backfillUrl, setBackfillUrl] = useState("");
   const [backfillAssetId, setBackfillAssetId] = useState("");
-  const [backfillNote, setBackfillNote] = useState("");
+  const [backfillNote, setBackfillNote] = useState("人工在受控 Chrome 核对无误并自主发布，确认公开落地链接");
+  const [backfillStatus, setBackfillStatus] = useState<"PUBLISHED" | "PENDING_REVIEW">("PUBLISHED");
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [confirmSuccess, setConfirmSuccess] = useState<string | null>(null);
@@ -404,28 +405,57 @@ export function BrowserAssistedPanel({
     setTimeout(() => setCopyFeedback(null), 2500);
   }
 
-  // 提交人工回填确认 (创建真实 PublishedAsset)
+  // 提交人工回填确认 (创建真实 PublishedAsset 或登记 PENDING_REVIEW)
   async function handleSubmitConfirmBackfill() {
-    if (!backfillUrl && !backfillAssetId) {
+    if (!backfillUrl.trim() && !backfillAssetId.trim()) {
       setConfirmError("必须填写文章落地链接 (URL) 或平台文章 ID");
       return;
     }
+    if (!backfillNote.trim()) {
+      setConfirmError("必须填写明确的人工核验说明 (verificationNote) 以保证审计真实性");
+      return;
+    }
+
+    const cLow = backfillUrl.trim().toLowerCase();
+    if (cLow) {
+      if (cLow.includes("mock://") || cLow.includes("fake://") || cLow.includes("example.com/mock") || cLow.includes("fake_")) {
+        setConfirmError("禁止使用虚假/Mock 外部链接作为发布凭证");
+        return;
+      }
+      if (activeChannelKey !== "SIMULATION" && (cLow.includes("localhost") || cLow.includes("127.0.0.1") || cLow.includes("0.0.0.0"))) {
+        setConfirmError("真实平台发布凭证禁止使用 localhost 或本地回环地址");
+        return;
+      }
+      if (activeChannelKey === "XIAOHONGSHU" && !cLow.includes("xiaohongshu.com") && !cLow.includes("xhslink.com")) {
+        setConfirmError("小红书发布落地链接必须包含 xiaohongshu.com 或 xhslink.com 域名");
+        return;
+      }
+      if (activeChannelKey === "ZHIHU" && !cLow.includes("zhihu.com")) {
+        setConfirmError("知乎专栏发布链接必须包含 zhihu.com 域名");
+        return;
+      }
+      if (activeChannelKey === "BILIBILI" && !cLow.includes("bilibili.com")) {
+        setConfirmError("B站发布链接必须包含 bilibili.com 域名");
+        return;
+      }
+    }
+
     setConfirmSubmitting(true);
     setConfirmError(null);
     try {
       if (currentTaskId) {
-        // 先在本地助手记录终态
+        // 在本地助手记录终态
         await assistantClient.confirmPublish(currentTaskId, {
-          canonicalUrl: backfillUrl,
-          externalAssetId: backfillAssetId,
-          verificationNote: backfillNote,
-        }).catch(() => null);
+          canonicalUrl: backfillUrl.trim() || undefined,
+          externalAssetId: backfillAssetId.trim() || undefined,
+          verificationNote: backfillNote.trim(),
+          status: backfillStatus,
+        });
       }
 
-      // 如果有对应的 Publication，调用现有后端 API 转换为 PublishedAsset
-      // 否则提示已成功记录
       setShowConfirmModal(false);
-      setConfirmSuccess(`发布确认成功！公开发布链接：${backfillUrl || backfillAssetId}`);
+      const statusLabel = backfillStatus === "PUBLISHED" ? "已确认公开发布 (PUBLISHED)" : "已登记平台审核中 (PENDING_REVIEW)";
+      setConfirmSuccess(`发布确认成功！状态：${statusLabel}，落地链接：${backfillUrl || backfillAssetId}`);
       if (onPublicationUpdated) onPublicationUpdated();
     } catch (e: any) {
       setConfirmError(`确认失败：${e.message}`);
@@ -528,7 +558,7 @@ export function BrowserAssistedPanel({
                     isActive ? "bg-blue-500 text-white" : "bg-sky-100 text-sky-800"
                   }`}
                 >
-                  专栏长文
+                  专栏长文 · 人工确认
                 </span>
               )}
               {isXHS && (
@@ -537,7 +567,7 @@ export function BrowserAssistedPanel({
                     isActive ? "bg-rose-500 text-white" : "bg-rose-100 text-rose-700 border border-rose-200"
                   }`}
                 >
-                  图文全自动
+                  辅助填写 · 人工确认
                 </span>
               )}
             </button>
@@ -896,12 +926,15 @@ export function BrowserAssistedPanel({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                     </svg>
-                    <span>自动化填写执行中...</span>
+                    <span>辅助填写执行中...</span>
                   </>
                 ) : (
-                  <span>开始自动填写与比对校验</span>
+                  <span>开始辅助填写与双向校验 (PREPARE_ONLY)</span>
                 )}
               </button>
+              <p className="text-[10px] text-slate-400 text-center leading-normal">
+                安全保障：自动填入内容并核对，停留在最终发布页供作者审核，绝不擅自越权点击发布
+              </p>
 
               {/* 辅助控制按钮 */}
               <div className="flex gap-2">
@@ -1114,7 +1147,7 @@ export function BrowserAssistedPanel({
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              根据系统边界规范：只有取得可信的公开发布链接或平台内容 ID 后，才会确认 PublishedAsset 资产。
+              严格遵循系统真实性约束：区分已公开发布与平台审核中，只有具备可信公开落地链接或平台内容 ID 且通过核验说明方可记录资产。
             </p>
 
             {confirmError && (
@@ -1124,6 +1157,43 @@ export function BrowserAssistedPanel({
             )}
 
             <div className="flex flex-col gap-3 text-xs">
+              {/* 状态选择：已确认公开 vs 平台审核中 */}
+              <div className="flex flex-col gap-1.5">
+                <label className="font-semibold text-slate-700 block text-xs">
+                  发布落成状态 <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBackfillStatus("PUBLISHED")}
+                    className={`p-2.5 rounded-lg border text-left flex flex-col gap-0.5 transition ${
+                      backfillStatus === "PUBLISHED"
+                        ? "border-emerald-500 bg-emerald-50/60 text-emerald-950 font-semibold ring-1 ring-emerald-400"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="text-xs flex items-center gap-1.5">
+                      <span className="text-emerald-600">●</span> 已确认公开发布
+                    </span>
+                    <span className="text-[10px] text-slate-500">落地链接已全网公开可访问</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBackfillStatus("PENDING_REVIEW")}
+                    className={`p-2.5 rounded-lg border text-left flex flex-col gap-0.5 transition ${
+                      backfillStatus === "PENDING_REVIEW"
+                        ? "border-amber-500 bg-amber-50/60 text-amber-950 font-semibold ring-1 ring-amber-400"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="text-xs flex items-center gap-1.5">
+                      <span className="text-amber-600">●</span> 平台审核中
+                    </span>
+                    <span className="text-[10px] text-slate-500">已提交审核，待平台审批通过</span>
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
                   公开发布链接 (URL) <span className="text-rose-500">*</span>
@@ -1132,7 +1202,13 @@ export function BrowserAssistedPanel({
                   type="url"
                   value={backfillUrl}
                   onChange={(e) => setBackfillUrl(e.target.value)}
-                  placeholder="https://zhuanlan.zhihu.com/p/..."
+                  placeholder={
+                    activeChannelKey === "XIAOHONGSHU"
+                      ? "https://www.xiaohongshu.com/explore/... 或 https://xhslink.com/..."
+                      : activeChannelKey === "ZHIHU"
+                      ? "https://zhuanlan.zhihu.com/p/..."
+                      : "https://..."
+                  }
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                 />
               </div>
@@ -1145,14 +1221,14 @@ export function BrowserAssistedPanel({
                   type="text"
                   value={backfillAssetId}
                   onChange={(e) => setBackfillAssetId(e.target.value)}
-                  placeholder="例如: 8839201"
+                  placeholder="例如: 651a2b3c4d5e..."
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                 />
               </div>
 
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  核验说明 (可选)
+                  人工核验说明 (Auditing Note) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1178,7 +1254,11 @@ export function BrowserAssistedPanel({
                 disabled={confirmSubmitting}
                 className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center gap-1.5"
               >
-                {confirmSubmitting ? "正在确认..." : "确认并建立 PublishedAsset"}
+                {confirmSubmitting
+                  ? "正在确认..."
+                  : backfillStatus === "PUBLISHED"
+                  ? "确认公开发布并建立 PublishedAsset"
+                  : "登记为平台审核中 (PENDING_REVIEW)"}
               </button>
             </div>
           </div>

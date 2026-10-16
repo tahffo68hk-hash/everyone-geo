@@ -108,6 +108,7 @@ class ConfirmPublishRequest(BaseModel):
     external_asset_id: str | None = None         # 平台内容 ID (如文章 ID、回答 ID)
     actual_published_at: str | None = None       # 真实发布时间
     verification_note: str | None = None         # 验证附言
+    status: str = "PUBLISHED"                    # PUBLISHED | PENDING_REVIEW
 
 
 class TaskStatusResponse(BaseModel):

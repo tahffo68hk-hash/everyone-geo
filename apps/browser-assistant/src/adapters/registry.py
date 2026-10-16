@@ -30,9 +30,14 @@ class PublisherRegistry:
         return FallbackPublisher(driver, norm_channel)
 
     @classmethod
-    def is_fully_automated(cls, channel: str) -> bool:
-        """判断该平台是否已具备全流程自动填写能力"""
+    def is_autofill_supported(cls, channel: str) -> bool:
+        """判断该平台是否具备自动填写与双向校验能力 (PREPARE_ONLY)"""
         return channel.upper() in cls._REGISTRY
+
+    @classmethod
+    def is_fully_automated(cls, channel: str) -> bool:
+        """兼容别名"""
+        return cls.is_autofill_supported(channel)
 
     @classmethod
     def get_supported_channels(cls) -> list[dict]:
@@ -43,8 +48,10 @@ class PublisherRegistry:
             is_auto = ch in cls._REGISTRY
             results.append({
                 "channel": ch,
+                "is_autofill_supported": is_auto,
                 "is_fully_automated": is_auto,
-                "capability": "FULL_AUTOMATION" if is_auto else "MANUAL_FALLBACK",
+                "capability": "AUTOFILL_AND_CONFIRM" if is_auto else "MANUAL_FALLBACK",
+                "mode": "PREPARE_ONLY" if is_auto else "MANUAL_FALLBACK",
                 "creator_url": CREATOR_URL_MAP.get(ch, "https://zhuanlan.zhihu.com/write" if ch == "ZHIHU" else "/simulation-editor.html")
             })
         return results

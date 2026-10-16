@@ -11,7 +11,7 @@ export interface DistributionChannel {
   supportsAuto: boolean;
   supportsManual: boolean;
   supportsBrowserAssistant?: boolean;
-  browserAssistantCapability?: "FULL_AUTOMATION" | "MANUAL_FALLBACK";
+  browserAssistantCapability?: "AUTOFILL_AND_CONFIRM" | "FULL_AUTOMATION" | "MANUAL_FALLBACK";
   autoCapability: "DIRECT_PUBLISH" | "DRAFT_ONLY" | "MANUAL_ONLY";
   requiresVideo: boolean;
   description: string;

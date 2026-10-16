@@ -5,6 +5,9 @@ GeoLens 本地浏览器助手 - FastAPI 服务端入口
 import io
 import json
 import zipfile
+import urllib.request
+import ssl
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException, Depends, status
@@ -213,23 +216,67 @@ async def manual_takeover(task_id: str):
     }
 
 
+def download_remote_asset(url: str, timeout: int = 15) -> tuple[bytes | None, str | None, str | None]:
+    """
+    下载远程图片素材，返回 (bytes, ext, error_msg)
+    保证非空、无虚假字节
+    """
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 GeoLens-Assistant/2.0"
+            }
+        )
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            if resp.status != 200:
+                return None, None, f"HTTP {resp.status}"
+            content = resp.read()
+            if not content or len(content) == 0:
+                return None, None, "下载内容为空 (0 bytes)"
+            
+            content_type = resp.headers.get("Content-Type", "")
+            parsed = urlparse(url)
+            p_ext = Path(parsed.path).suffix.lower()
+            if p_ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]:
+                ext = p_ext
+            elif "image/jpeg" in content_type:
+                ext = ".jpg"
+            elif "image/png" in content_type:
+                ext = ".png"
+            elif "image/webp" in content_type:
+                ext = ".webp"
+            elif "image/gif" in content_type:
+                ext = ".gif"
+            else:
+                ext = ".png"
+            return content, ext, None
+    except Exception as e:
+        return None, None, str(e)
+
+
 @app.post("/api/tasks/{task_id}/confirm", dependencies=[Depends(require_auth)])
 async def confirm_publish_result(task_id: str, payload: ConfirmPublishRequest):
     """
     人工或自动化读取真实发布落地结果后确认
-    只有具备可信公开链接或平台内容 ID 方可置为 PUBLISHED
+    区分已公开发布 (PUBLISHED) 与平台审核中 (PENDING_REVIEW)
     """
     ok, msg = task_manager.confirm_publish_result(
         task_id=task_id,
         canonical_url=payload.canonical_url,
-        external_asset_id=payload.external_asset_id
+        external_asset_id=payload.external_asset_id,
+        verification_note=payload.verification_note,
+        target_status=payload.status
     )
     if not ok:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
     state = task_manager.get_task(task_id)
     return {
         "success": True,
-        "status": state.status if state else "PUBLISHED",
+        "status": state.status if state else payload.status,
         "message": msg,
         "published_url": state.published_url if state else None,
         "external_asset_id": state.external_asset_id if state else None
@@ -254,7 +301,13 @@ async def simulate_user_publish_confirm(task_id: str):
     publisher.simulate_user_publish_click()
     is_pub, msg, data = publisher.read_publish_result()
     if is_pub and data.get("canonical_url"):
-        task_manager.confirm_publish_result(task_id, data["canonical_url"], data.get("external_asset_id"))
+        task_manager.confirm_publish_result(
+            task_id=task_id,
+            canonical_url=data["canonical_url"],
+            external_asset_id=data.get("external_asset_id"),
+            verification_note="仿真自动化闭环测试自动确认",
+            target_status="PUBLISHED"
+        )
         return {
             "success": True,
             "status": "PUBLISHED",
@@ -291,6 +344,68 @@ def generate_package_zip_stream(
             "7. 在 GeoLens 控制台回填发布落地链接"
         ]
 
+    # 处理素材图片并检测真实完整性 (不允许以空文件替代素材)
+    image_manifest: list[str] = []
+    download_failures: list[str] = []
+    image_entries: list[tuple[str, bytes]] = []
+
+    for i, item in enumerate(media_items):
+        local_p = item.get("local_path") if isinstance(item, dict) else getattr(item, "local_path", None)
+        item_url = (item.get("url") if isinstance(item, dict) else getattr(item, "url", "")) or ""
+        item_type = (item.get("type") if isinstance(item, dict) else getattr(item, "type", "IMAGE")) or "IMAGE"
+
+        # 1. 优先检查本地路径
+        if local_p and Path(local_p).exists():
+            src_path = Path(local_p)
+            fsize = src_path.stat().st_size
+            if fsize > 0:
+                ext = src_path.suffix or ".png"
+                target_name = f"images/{i+1:02d}_{src_path.stem}{ext}"
+                try:
+                    file_bytes = src_path.read_bytes()
+                    image_entries.append((target_name, file_bytes))
+                    image_manifest.append(f"{i+1:02d}: {target_name} (Source: 本地文件 {src_path.name}, 大小: {fsize} bytes)")
+                    continue
+                except Exception as e:
+                    download_failures.append(f"{i+1:02d}: 读取本地文件异常: {local_p} ({e})")
+            else:
+                download_failures.append(f"{i+1:02d}: 本地文件为空文件 (0 bytes)，已拒绝打包: {local_p}")
+                continue
+
+        # 2. 检查 file:// 协议本地 URL
+        if item_url.startswith("file://"):
+            fpath = item_url[7:]
+            if fpath.startswith("/") and len(fpath) > 3 and fpath[2] == ":":
+                fpath = fpath[1:]
+            p = Path(fpath)
+            if p.exists() and p.stat().st_size > 0:
+                ext = p.suffix or ".png"
+                target_name = f"images/{i+1:02d}_{p.stem}{ext}"
+                file_bytes = p.read_bytes()
+                image_entries.append((target_name, file_bytes))
+                image_manifest.append(f"{i+1:02d}: {target_name} (Source: 本地 file:// {p.name}, 大小: {len(file_bytes)} bytes)")
+                continue
+            else:
+                download_failures.append(f"{i+1:02d}: file:// 路径文件不存在或为空: {item_url}")
+                continue
+
+        # 3. 检查 HTTP/HTTPS 远程素材并执行真实下载
+        if item_url.startswith(("http://", "https://")):
+            content_bytes, ext, err = download_remote_asset(item_url, timeout=15)
+            if content_bytes and len(content_bytes) > 0:
+                target_name = f"images/{i+1:02d}_image{ext}"
+                image_entries.append((target_name, content_bytes))
+                image_manifest.append(f"{i+1:02d}: {target_name} (Source: 远程下载 {item_url}, 大小: {len(content_bytes)} bytes)")
+                continue
+            else:
+                download_failures.append(f"{i+1:02d}: 远程素材下载失败 URL={item_url} (错误原因: {err or '内容为空'})")
+                continue
+
+        # 4. 无有效路径或 URL
+        download_failures.append(f"{i+1:02d}: 素材缺少合法路径或 URL (URL={item_url}, LocalPath={local_p})")
+
+    asset_integrity = "COMPLETE" if not download_failures else ("PARTIAL_FAILURES" if image_entries else "ALL_FAILED")
+
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         # 1. README.md
@@ -300,6 +415,7 @@ def generate_package_zip_stream(
             f"- 生成时间: `{now_str}`",
             f"- 目标平台: **{norm_channel}**",
             f"- 官方创作后台链接: [{c_url}]({c_url})",
+            f"- 素材完整性状态: **{asset_integrity}** (成功: {len(image_entries)} / 计划: {len(media_items)})",
             f"",
             f"---",
             f"",
@@ -327,10 +443,22 @@ def generate_package_zip_stream(
             f"",
             f"{' '.join(['#' + t.replace('#', '') for t in tags]) if tags else '无'}",
             f"",
-            f"## 五、配图与素材",
+            f"## 五、配图与素材 (已按序号排布在 images/ 目录下)",
             f"",
-            f"共有 {len(media_items)} 个素材，已按推荐发布顺序保存在 images/ 目录下（如具备本地缓存）或记录在 images/image_manifest.txt 中。",
-            f"",
+        ])
+
+        if download_failures:
+            readme_lines.extend([
+                f"> [!WARNING] 素材下载异常警告",
+                f"> 以下 {len(download_failures)} 个素材未能成功下载或不存在，禁止以空文件替代：",
+            ])
+            for df in download_failures:
+                readme_lines.append(f"> - {df}")
+            readme_lines.append("")
+        else:
+            readme_lines.append(f"共有 {len(image_entries)} 个素材，已全部按发布顺序保存在 `images/` 目录下并通过非空及大小校验。\n")
+
+        readme_lines.extend([
             f"## 六、操作指引",
             f"",
             f"{instructions or '在受控浏览器打开官方创作页面后，请直接复制上方标题、正文与配图至对应输入区。核对无误后点击发布，并将最终公开地址回填至 GeoLens 控制台。'}",
@@ -350,29 +478,21 @@ def generate_package_zip_stream(
             "checklist": checklist,
             "generated_at": now_str,
             "media_count": len(media_items),
+            "packed_media_count": len(image_entries),
+            "asset_integrity": asset_integrity,
+            "download_failures": download_failures,
         }
         zf.writestr("metadata.json", json.dumps(meta_dict, ensure_ascii=False, indent=2))
 
-        # 4. images/
-        image_manifest = []
-        for i, item in enumerate(media_items):
-            local_p = getattr(item, "local_path", None)
-            item_url = getattr(item, "url", "")
-            item_type = getattr(item, "type", "IMAGE")
-            if local_p and Path(local_p).exists():
-                src_path = Path(local_p)
-                ext = src_path.suffix or ".png"
-                target_name = f"images/{i+1:02d}_{src_path.stem}{ext}"
-                try:
-                    zf.write(src_path, target_name)
-                    image_manifest.append(f"{i+1:02d}: {target_name} (Source: {src_path.name})")
-                    continue
-                except Exception:
-                    pass
-            image_manifest.append(f"{i+1:02d}: URL={item_url} [Type={item_type}]")
+        # 4. 写入真实素材图片 (绝对不创建 0 字节虚假文件)
+        for target_name, file_bytes in image_entries:
+            zf.writestr(target_name, file_bytes)
 
+        # 5. 写入清单与失败日志
         if image_manifest:
             zf.writestr("images/image_manifest.txt", "\n".join(image_manifest))
+        if download_failures:
+            zf.writestr("images/DOWNLOAD_FAILURES.txt", "\n".join(download_failures))
 
     zip_buffer.seek(0)
     return zip_buffer

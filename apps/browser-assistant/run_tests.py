@@ -76,18 +76,40 @@ def run_all_tests():
         failures += 1
 
     # 5. 运行人工发布包 ZIP 生成与导出测试
-    p("\n[5/6] Running Manual Package ZIP Generator Tests...")
+    p("\n[5/6] Running Manual Package ZIP Generator & Asset Integrity Tests...")
     try:
+        import tempfile
+        import shutil
         from tests import test_manual_package_zip
-        test_manual_package_zip.test_generate_manual_package_zip_content()
-        p("  -> PASS: Manual package ZIP stream, README.md, manifest passed")
-        passed += 1
+        
+        t1 = Path(tempfile.mkdtemp())
+        try:
+            test_manual_package_zip.test_generate_manual_package_zip_with_real_local_images(t1)
+        finally:
+            shutil.rmtree(t1, ignore_errors=True)
+            
+        t2 = Path(tempfile.mkdtemp())
+        try:
+            test_manual_package_zip.test_generate_manual_package_zip_remote_download_and_failure_reporting(t2)
+        finally:
+            shutil.rmtree(t2, ignore_errors=True)
+
+        t3 = Path(tempfile.mkdtemp())
+        try:
+            test_manual_package_zip.test_reject_zero_byte_local_file(t3)
+        finally:
+            shutil.rmtree(t3, ignore_errors=True)
+
+        p("  -> PASS: Manual package ZIP asset download, unzip integrity & failure reporting passed (3/3)")
+        passed += 3
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         p(f"  -> FAIL: Manual package ZIP test failed: {e}")
         failures += 1
 
     # 6. 运行真实受控 Chrome Selenium E2E 测试
-    p("\n[6/6] Running Real Selenium Chrome Headless E2E Pipeline Tests...")
+    p("\n[6/7] Running Real Selenium Chrome Headless E2E Pipeline Tests...")
     try:
         from tests import test_e2e_simulation
         test_e2e_simulation.test_real_selenium_e2e_pipeline()
@@ -99,6 +121,19 @@ def run_all_tests():
         import traceback
         traceback.print_exc()
         p(f"  -> FAIL: Real Selenium E2E test failed: {e}")
+        failures += 1
+
+    # 7. 运行小红书真实平台现场核验与人工接管生命周期测试
+    p("\n[7/7] Running Xiaohongshu Real Platform Live Gate & Takeover Lifecycle Tests...")
+    try:
+        from tests import test_real_xiaohongshu_live_gate
+        test_real_xiaohongshu_live_gate.test_xiaohongshu_live_platform_gate()
+        p("  -> PASS: Xiaohongshu live login gate, authentic screenshot & takeover lifecycle passed (PENDING_REAL_PLATFORM marked)")
+        passed += 1
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        p(f"  -> FAIL: Xiaohongshu live gate test failed: {e}")
         failures += 1
 
     p("\n" + "=" * 65)

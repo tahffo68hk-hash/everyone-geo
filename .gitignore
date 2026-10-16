@@ -51,3 +51,8 @@ output/**
 !output/ui-redesign/
 !output/ui-redesign/after/
 !output/ui-redesign/after/**
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
