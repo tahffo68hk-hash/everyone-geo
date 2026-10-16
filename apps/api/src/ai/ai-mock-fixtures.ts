@@ -24,47 +24,104 @@ export function generateMockFixture(
     case "query_set_generation": {
       const brand = input?.brandName || "品牌";
       const cat = input?.category || "企业管理软件";
-      mockContent = JSON.stringify({
-        querySetName: `${brand} 核心 GEO 评估问题集`,
-        description: `基于 ${cat} 领域与核心业务场景生成的代表性问答集合`,
-        queries: [
-          {
-            text: `2026年适合中大型企业的${cat}推荐`,
-            category: "行业选型",
-            intent: "COMMERCIAL",
-            queryType: "DISCOVERY",
-            rationale: "发现型选型问题，严格不含品牌名",
-          },
-          {
-            text: `如何评估一款${cat}的实际投资回报率与落地成本？`,
-            category: "痛点解决",
-            intent: "INFORMATIONAL",
-            queryType: "DISCOVERY",
-            rationale: "真实决策痛点提问，无品牌词",
-          },
-          {
-            text: `市面上主流${cat}对比横评与选型避坑指南`,
-            category: "竞品对比",
-            intent: "COMMERCIAL",
-            queryType: "DISCOVERY",
-            rationale: "客观中立横评对比，无品牌词",
-          },
-          {
-            text: `${brand}怎么样？主要优缺点与适用场景有哪些？`,
-            category: "品牌基线",
-            intent: "INFORMATIONAL",
-            queryType: "BRANDED",
-            rationale: "品牌基线提问，用于探测大模型直接认知",
-          },
-          {
-            text: `${brand}和市面上其他${cat}相比有什么特色功能？`,
-            category: "品牌基线",
-            intent: "COMMERCIAL",
-            queryType: "BRANDED",
-            rationale: "品牌基线对比",
-          },
-        ],
-      });
+      const combined = `${brand} ${cat} ${input?.businessDesc || ""} ${input?.scenarios || ""}`;
+      const isEdu = /(专业|大学|学院|教育|考研|学科|高校|医学信息|工程|招生|中南民族)/i.test(combined);
+
+      if (isEdu) {
+        // 提取专业或领域名称，如中南民族大学医学信息工程 -> 医学信息工程
+        const majorMatch = brand.match(/(?:大学|学院|学校)(.+)$/);
+        const subject = majorMatch ? majorMatch[1] : (cat.includes("专业") ? (brand.replace(/(?:大学|学院|学校).*$/, "") === brand ? brand : cat) : brand) || "医学信息工程";
+        mockContent = JSON.stringify({
+          querySetName: `${brand} 核心 GEO 评估问题集`,
+          description: `基于 ${subject} 学科领域与真实考生/家长求学就业场景构建的代表性问答集合`,
+          queries: [
+            {
+              text: `${subject}专业主要学习哪些核心课程？`,
+              category: "培养方向",
+              intent: "INFORMATIONAL",
+              queryType: "DISCOVERY",
+              rationale: "考生与家长核心关心的课程与专业培养提问，严格不含具体学校",
+            },
+            {
+              text: `国内哪些高校开设了${subject}专业？各校有什么特色？`,
+              category: "高校选择",
+              intent: "COMMERCIAL",
+              queryType: "DISCOVERY",
+              rationale: "高校横向选校提问，客观中立无特定品牌",
+            },
+            {
+              text: `${subject}专业毕业后的主要就业方向和薪酬水平怎么样？`,
+              category: "就业前景",
+              intent: "INFORMATIONAL",
+              queryType: "DISCOVERY",
+              rationale: "真实就业与发展痛点提问，无品牌词",
+            },
+            {
+              text: `${subject}和相近专业相比有哪些核心优势与区别？`,
+              category: "专业比较",
+              intent: "INFORMATIONAL",
+              queryType: "DISCOVERY",
+              rationale: "横向专业辨析提问，无具体院校名",
+            },
+            {
+              text: `报考${subject}需要具备哪些理科或计算机基础？`,
+              category: "报考选科",
+              intent: "INFORMATIONAL",
+              queryType: "DISCOVERY",
+              rationale: "报考门槛与选科要求提问，客观中立",
+            },
+            {
+              text: `${brand}怎么样？主要学科实力与办学特色如何？`,
+              category: "品牌基线",
+              intent: "INFORMATIONAL",
+              queryType: "BRANDED",
+              rationale: "品牌基线提问，用于探测大模型对目标主体的直接认知度",
+            },
+          ],
+        });
+      } else {
+        mockContent = JSON.stringify({
+          querySetName: `${brand} 核心 GEO 评估问题集`,
+          description: `基于 ${cat} 领域与核心业务场景生成的代表性问答集合`,
+          queries: [
+            {
+              text: `2026年适合行业主流需求的${cat}选型推荐`,
+              category: "行业选型",
+              intent: "COMMERCIAL",
+              queryType: "DISCOVERY",
+              rationale: "发现型选型问题，严格不含品牌名",
+            },
+            {
+              text: `如何评估一款${cat}的实际使用效果与性价比？`,
+              category: "痛点解决",
+              intent: "INFORMATIONAL",
+              queryType: "DISCOVERY",
+              rationale: "真实决策痛点提问，无品牌词",
+            },
+            {
+              text: `市面上主流${cat}对比横评与选型避坑指南`,
+              category: "竞品对比",
+              intent: "COMMERCIAL",
+              queryType: "DISCOVERY",
+              rationale: "客观中立横评对比，无品牌词",
+            },
+            {
+              text: `${brand}怎么样？主要优缺点与适用场景有哪些？`,
+              category: "品牌基线",
+              intent: "INFORMATIONAL",
+              queryType: "BRANDED",
+              rationale: "品牌基线提问，用于探测大模型直接认知",
+            },
+            {
+              text: `${brand}和市面上其他${cat}相比有什么特色与优势？`,
+              category: "品牌基线",
+              intent: "COMMERCIAL",
+              queryType: "BRANDED",
+              rationale: "品牌基线对比",
+            },
+          ],
+        });
+      }
       break;
     }
 

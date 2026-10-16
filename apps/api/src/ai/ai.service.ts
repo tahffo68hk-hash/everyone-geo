@@ -151,11 +151,39 @@ export class AiService {
       input: dto,
     });
 
-    // 事实校验：严格确保 Discovery 类别的问题不包含本品品牌词（如指定了 brandName）
-    if (dto.brandName && result.data?.queries) {
-      const bLower = dto.brandName.toLowerCase();
+    // 事实校验：严格确保 Discovery 类别的问题不包含本品品牌词或别名
+    if (result.data?.queries) {
+      const forbiddenWords: string[] = [];
+      if (dto.brandName?.trim()) forbiddenWords.push(dto.brandName.trim());
+      if (dto.productName?.trim()) forbiddenWords.push(dto.productName.trim());
+
+      try {
+        const brandProfile = await this.prisma.client.brand.findFirst({
+          where: { projectId: project.id },
+        });
+        if (brandProfile?.name?.trim()) forbiddenWords.push(brandProfile.name.trim());
+        if (brandProfile?.aliases) {
+          for (const a of brandProfile.aliases) {
+            if (typeof a === "string" && a.trim()) forbiddenWords.push(a.trim());
+          }
+        }
+      } catch {
+        // 如果 target-profile 尚未持久化到 db，不中断流程
+      }
+
+      // 如果品牌名包含大学/学院/企业/机构前缀，提取前缀防止污染（如"中南民族大学医学信息工程" -> "中南民族大学"）
+      for (const w of [...forbiddenWords]) {
+        const orgMatch = w.match(/^(.*?(?:大学|学院|学校|研究所|研究院|集团|科技|软件|电子))/);
+        if (orgMatch && orgMatch[1] && orgMatch[1].length >= 3) {
+          forbiddenWords.push(orgMatch[1]);
+        }
+      }
+
+      const uniqueForbidden = Array.from(new Set(forbiddenWords.map(w => w.toLowerCase())));
       for (const q of result.data.queries) {
-        if (q.queryType === "DISCOVERY" && q.text.toLowerCase().includes(bLower)) {
+        const qLower = q.text.toLowerCase();
+        const containsBrand = uniqueForbidden.some(w => qLower.includes(w));
+        if (containsBrand && q.queryType === "DISCOVERY") {
           // 自动纠偏为 BRANDED 类别，避免发现型问题出现品牌污染
           q.queryType = "BRANDED";
           q.category = "品牌基线";

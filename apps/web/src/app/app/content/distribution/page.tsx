@@ -1,24 +1,39 @@
 "use client";
 
+import Link from "next/link";
+import { Suspense } from "react";
 import { useProjectContext } from "@/components/project-context";
 import { DistributionWorkbench } from "@/components/content/distribution/distribution-workbench";
 import { PageHeader } from "@/components/ui";
 
-export default function ContentDistributionPage() {
+function ContentDistributionInner() {
   const { projectId } = useProjectContext();
 
   return (
     <main className="space-y-6">
       <PageHeader
-        title="多平台内容分发中心"
-        description="一站式管理官方授权自动发布与多端人工辅助分发，打通微信公众号、WordPress、小红书、知乎、抖音等重点渠道，并回填真实资产闭环接入 GEO 效果验证。"
-        badge={
-          <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 text-teal-800 text-xs px-2.5 py-0.5 font-semibold">
-            自动同步 + 人工辅助
-          </span>
+        title="内容发布"
+        description="支持手工录入与 AI 智能生成双入口，提供本地受控浏览器辅助发布与精准人工发布指引无缝协同。"
+        actions={
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/app/content?project=${encodeURIComponent(projectId)}`}
+              className="text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-300 bg-white px-3 py-1.5 rounded-lg shadow-sm"
+            >
+              ← 返回内容管理
+            </Link>
+          </div>
         }
       />
       <DistributionWorkbench projectId={projectId} />
     </main>
+  );
+}
+
+export default function ContentDistributionPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">正在加载内容发布工作台…</div>}>
+      <ContentDistributionInner />
+    </Suspense>
   );
 }

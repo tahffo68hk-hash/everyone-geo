@@ -840,9 +840,20 @@ export function BrowserAssistedPanel({
               </p>
               <div className="flex flex-col gap-1.5 text-xs">
                 <div className="flex justify-between items-center p-2 rounded bg-slate-50 border border-slate-200">
-                  <span className="font-medium text-slate-700">官方创作中心链接</span>
+                  <span className="font-medium text-slate-700">官方创作者后台链接</span>
                   <a
-                    href={activeChannel?.tips ? "https://zhuanlan.zhihu.com/write" : "#"}
+                    href={
+                      {
+                        ZHIHU: "https://zhuanlan.zhihu.com/write",
+                        XIAOHONGSHU: "https://creator.xiaohongshu.com/publish/publish",
+                        WECHAT_OFFICIAL_ACCOUNT: "https://mp.weixin.qq.com/",
+                        WECHAT: "https://mp.weixin.qq.com/",
+                        BILIBILI: "https://member.bilibili.com/platform/upload/text/edit",
+                        DOUYIN: "https://creator.douyin.com/",
+                        WECHAT_CHANNELS: "https://channels.weixin.qq.com/",
+                        WEIBO: "https://weibo.com/",
+                      }[activeChannelKey] || "https://zhuanlan.zhihu.com/write"
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 font-semibold hover:underline"

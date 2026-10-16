@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getDistributionChannels,
@@ -19,7 +20,9 @@ import {
   type ManualPublishingPackage,
   type ChannelAdaptationResult,
 } from "@/lib/distribution-api";
-import { listContentDrafts, type Draft } from "@/lib/content-api";
+import { listContentDrafts, createContentDraft, type Draft } from "@/lib/content-api";
+import { generateAiDraft, type AiResponseMeta, type ContentDraftResult } from "@/lib/ai-api";
+import { api } from "@/lib/api";
 import { StatusBadge, LoadingSkeleton, EmptyState } from "@/components/ui";
 import { BrowserAssistedPanel } from "./browser-assisted-panel";
 
@@ -27,49 +30,102 @@ const VIDEO_SCRIPT_CHANNELS = new Set(["DOUYIN", "WECHAT_CHANNELS", "BILIBILI"])
 
 const CHANNEL_PLATFORM_CONFIG: Record<
   string,
-  { label: string; color: string; badgeBg: string; creatorUrl: string; icon: string }
+  {
+    label: string;
+    color: string;
+    badgeBg: string;
+    creatorUrl: string;
+    icon: string;
+    description: string;
+    titleFieldGuide: string;
+    bodyFieldGuide: string;
+    tagsFieldGuide: string;
+    guidelines: string[];
+  }
 > = {
+  ZHIHU: {
+    label: "知乎专栏",
+    color: "sky",
+    badgeBg: "bg-sky-50 text-sky-700 border-sky-200",
+    creatorUrl: "https://zhuanlan.zhihu.com/write",
+    icon: "📖",
+    description: "知乎专栏与回答创作，适合深度科普、专业解答与行业评测。",
+    titleFieldGuide: "文章标题（建议 15-40 字，突出专业结论或疑问）",
+    bodyFieldGuide: "专栏正文（支持 Markdown / 富文本，建议带小标题与事实论据）",
+    tagsFieldGuide: "话题标签（最多 5 个，在发布面板底部输入）",
+    guidelines: [
+      "知乎专栏文章发布要求账号完成实名认证。",
+      "正文支持直接粘贴 Markdown 格式或带图富文本。",
+      "添加与行业、专业高度契合的 3-5 个公共话题以提高流通权重与搜索收录。",
+      "文章发布后会有 1-3 分钟系统审核，审核通过后进入公共推荐与搜索引擎索引。",
+    ],
+  },
+  XIAOHONGSHU: {
+    label: "小红书",
+    color: "rose",
+    badgeBg: "bg-rose-50 text-rose-700 border-rose-200",
+    creatorUrl: "https://creator.xiaohongshu.com/publish/publish",
+    icon: "📕",
+    description: "小红书图文与笔记创作，适合生动种草、经验分享与实用指南。",
+    titleFieldGuide: "笔记标题（20 字以内，吸引眼球，包含核心关键词）",
+    bodyFieldGuide: "笔记正文（1000 字以内，段落短小，善用 Emoji 表情符号）",
+    tagsFieldGuide: "笔记话题（以 # 开头，建议添加 3-8 个垂直热门话题）",
+    guidelines: [
+      "建议准备 1-9 张竖版图片（3:4 比例最佳），封面需有醒目大字或主视觉。",
+      "正文避免出现纯外部导流违禁词（如淘宝链接、私人微信）。",
+      "末尾带上针对性场景标签和专业领域话题。",
+      "发布后可在创作者平台查看笔记审核状态与曝光数据。",
+    ],
+  },
   WECHAT_OFFICIAL_ACCOUNT: {
     label: "微信公众号",
     color: "emerald",
     badgeBg: "bg-emerald-50 text-emerald-700 border-emerald-200",
     creatorUrl: "https://mp.weixin.qq.com/",
     icon: "💬",
+    description: "微信公众平台图文消息，权威发布与私域沉淀的核心阵地。",
+    titleFieldGuide: "图文标题（64 字以内，建议 20-30 字，简洁有力）",
+    bodyFieldGuide: "图文正文（排版精美，支持多图、样式排版与引用说明）",
+    tagsFieldGuide: "文章标签与合集（最多 3 个）",
+    guidelines: [
+      "需在微信公众平台扫码登录管理员或运营者账号。",
+      "封面图建议 2.35:1 横版或 1:1 方版比例，建议提前裁剪。",
+      "支持正文插入多张高清图片与视频素材。",
+      "建议先保存为草稿箱，发送手机端预览确认排版无误后再发布。",
+    ],
   },
-  WORDPRESS: {
-    label: "WordPress / 企业 CMS",
-    color: "blue",
-    badgeBg: "bg-blue-50 text-blue-700 border-blue-200",
-    creatorUrl: "/wp-admin",
-    icon: "🌐",
-  },
-  XIAOHONGSHU: {
-    label: "小红书",
-    color: "rose",
-    badgeBg: "bg-rose-50 text-rose-700 border-rose-200",
-    creatorUrl: "https://creator.xiaohongshu.com/",
-    icon: "📕",
-  },
-  ZHIHU: {
-    label: "知乎",
-    color: "sky",
-    badgeBg: "bg-sky-50 text-sky-700 border-sky-200",
-    creatorUrl: "https://www.zhihu.com/creator",
-    icon: "📖",
+  BILIBILI: {
+    label: "哔哩哔哩专栏",
+    color: "pink",
+    badgeBg: "bg-pink-50 text-pink-700 border-pink-200",
+    creatorUrl: "https://member.bilibili.com/platform/upload/text/edit",
+    icon: "📺",
+    description: "B 站专栏文稿创作，适合长图文知识科普与青年圈层互动。",
+    titleFieldGuide: "专栏标题（40 字以内）",
+    bodyFieldGuide: "专栏正文（图文并茂，支持代码块与深度长文）",
+    tagsFieldGuide: "投稿标签（最多可添加 12 个标签）",
+    guidelines: [
+      "专栏需要绑定实名认证的 B 站账号。",
+      "配图建议 16:9 横版封面，正文支持高清插图。",
+      "标签可选择对应分区热门标签（如：知识区、科普、大学专业、数码等）。",
+      "提交后通常在 10 分钟内完成平台机器与人工审核。",
+    ],
   },
   DOUYIN: {
-    label: "抖音",
+    label: "抖音创作者平台",
     color: "slate",
     badgeBg: "bg-slate-900 text-white border-slate-700",
-    creatorUrl: "https://creator.douyin.com/",
+    creatorUrl: "https://creator.douyin.com/creator-micro/content/upload",
     icon: "🎵",
-  },
-  WECHAT_CHANNELS: {
-    label: "微信视频号",
-    color: "amber",
-    badgeBg: "bg-amber-50 text-amber-700 border-amber-200",
-    creatorUrl: "https://channels.weixin.qq.com/",
-    icon: "📹",
+    description: "抖音图文与短视频创作，高爆发流量公域传播。",
+    titleFieldGuide: "视频/图文文案（30-100 字，开头 2 句包含核心钩子）",
+    bodyFieldGuide: "完整文案/分镜头脚本（分秒节拍与口播台词）",
+    tagsFieldGuide: "关联挑战与话题（以 # 开头的话题词）",
+    guidelines: [
+      "支持图文或短视频发布，短视频需先在剪辑软件中完成渲染。",
+      "文案前 2 行最关键，直接决定用户停留率与滑走率。",
+      "关联同城地点或垂直话题挑战可获得初始公域流量倾斜。",
+    ],
   },
   WEIBO: {
     label: "微博",
@@ -77,30 +133,100 @@ const CHANNEL_PLATFORM_CONFIG: Record<
     badgeBg: "bg-red-50 text-red-700 border-red-200",
     creatorUrl: "https://weibo.com/",
     icon: "🔴",
+    description: "微博短博文与头条文章，热点发酵与舆论破圈枢纽。",
+    titleFieldGuide: "头条文章标题 / 微博核心主句",
+    bodyFieldGuide: "微博正文或头条长文（支持带图九宫格与超话绑定）",
+    tagsFieldGuide: "微博双井号话题（如 #专业选择#）",
+    guidelines: [
+      "普通微博建议控制在 140 字左右，深度内容建议使用头条文章编辑器。",
+      "配图建议九宫格或 1-4 张精选单图展示。",
+      "带上 #话题# 并 @ 相关垂直蓝 V 或行业官微有助于二次转发扩散。",
+    ],
   },
-  BILIBILI: {
-    label: "哔哩哔哩",
-    color: "pink",
-    badgeBg: "bg-pink-50 text-pink-700 border-pink-200",
-    creatorUrl: "https://member.bilibili.com/",
-    icon: "📺",
+  WORDPRESS: {
+    label: "WordPress / 企业 CMS",
+    color: "blue",
+    badgeBg: "bg-blue-50 text-blue-700 border-blue-200",
+    creatorUrl: "/wp-admin",
+    icon: "🌐",
+    description: "独立站与官网博客，SEO 与事实沉淀的底座。",
+    titleFieldGuide: "SEO 页面标题（建议包含核心关键词）",
+    bodyFieldGuide: "HTML / 富文本正文（包含 H2/H3 结构与内链）",
+    tagsFieldGuide: "分类与标签（以逗号分隔）",
+    guidelines: [
+      "可直接发布为正式文章或保留在草稿箱中由主编审核。",
+      "设置永久链接 (Permalink) 为包含英文或拼音语义的规范 URL。",
+      "配置清晰的 Meta Description 提升搜索引擎抓取收录率。",
+    ],
+  },
+  WECHAT_CHANNELS: {
+    label: "微信视频号",
+    color: "amber",
+    badgeBg: "bg-amber-50 text-amber-700 border-amber-200",
+    creatorUrl: "https://channels.weixin.qq.com/",
+    icon: "📹",
+    description: "微信生态短视频与直播平台，社交链裂变传播。",
+    titleFieldGuide: "视频描述文案（简短有力）",
+    bodyFieldGuide: "脚本与口播旁白",
+    tagsFieldGuide: "视频号话题（#话题）",
+    guidelines: [
+      "需在微信视频号助手扫码授权登录。",
+      "建议视频时长在 15 秒到 3 分钟之间，分辨率 1080p 竖屏最佳。",
+      "可在视频文案中挂载微信公众号图文扩展链接，实现公私域闭环。",
+    ],
   },
 };
 
 export function DistributionWorkbench({ projectId }: { projectId: string }) {
+  const searchParams = useSearchParams();
+  const urlDraftId = searchParams?.get("draftId") || "";
+  const urlChannel = searchParams?.get("channel") || "";
+
   // 渠道与草稿状态
   const [channels, setChannels] = useState<DistributionChannel[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [selectedDraftId, setSelectedDraftId] = useState<string>("");
+  const [selectedDraftId, setSelectedDraftId] = useState<string>(urlDraftId || "");
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  // 工作台主模式：浏览器辅助发布 (Selenium V2A) 或 批量矩阵分发 (V1)
-  const [workbenchMode, setWorkbenchMode] = useState<"BROWSER_ASSISTED" | "BATCH_MATRIX">("BROWSER_ASSISTED");
-  const [activeAssistedChannel, setActiveAssistedChannel] = useState<string>("ZHIHU");
+  // 创作入口状态：'MANUAL' (手工录入) | 'AI' (AI 智能生成) | 'EXISTING' (选择已有草稿)
+  const [creationEntry, setCreationEntry] = useState<"MANUAL" | "AI" | "EXISTING">(
+    urlDraftId ? "EXISTING" : "MANUAL",
+  );
 
-  // 渠道多选与模式选择：channelKey -> { selected: boolean; mode: 'AUTO' | 'MANUAL'; targetStatus?: 'draft' | 'publish' }
+  // 入口 A：手工录入表单状态
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualChannel, setManualChannel] = useState(urlChannel || "ZHIHU");
+  const [manualTopic, setManualTopic] = useState("");
+  const [manualBody, setManualBody] = useState("");
+  const [manualTags, setManualTags] = useState("");
+  const [manualSaving, setManualSaving] = useState(false);
+
+  // 入口 B：AI 智能生成表单状态
+  const [aiTopic, setAiTopic] = useState("");
+  const [aiChannel, setAiChannel] = useState(urlChannel || "ZHIHU");
+  const [aiTone, setAiTone] = useState("PROFESSIONAL");
+  const [aiSelectedDiagId, setAiSelectedDiagId] = useState<string>("");
+  const [diagnosesList, setDiagnosesList] = useState<Array<{ id: string; name: string; findingCount: number }>>([]);
+  const [aiDraftGenerating, setAiDraftGenerating] = useState(false);
+  const [aiDraftResultMeta, setAiDraftResultMeta] = useState<AiResponseMeta<ContentDraftResult> | null>(null);
+  const [aiGeneratedDraft, setAiGeneratedDraft] = useState<{
+    title: string;
+    body: string;
+    summary: string;
+    tags: string[];
+  } | null>(null);
+  const [aiAdopting, setAiAdopting] = useState(false);
+
+  // 发布方式切换：'BROWSER_ASSISTED' (Selenium V2A) | 'MANUAL_GUIDE' (纯人工精准指引) | 'BATCH_MATRIX' (多渠道批量矩阵)
+  const [publishingMode, setPublishingMode] = useState<"BROWSER_ASSISTED" | "MANUAL_GUIDE" | "BATCH_MATRIX">(
+    "BROWSER_ASSISTED",
+  );
+  const [activeAssistedChannel, setActiveAssistedChannel] = useState<string>(urlChannel || "ZHIHU");
+  const [activeManualChannel, setActiveManualChannel] = useState<string>(urlChannel || "ZHIHU");
+
+  // 批量矩阵渠道选择
   const [channelSelections, setChannelSelections] = useState<
     Record<string, { selected: boolean; mode: "AUTO" | "MANUAL"; targetStatus?: "draft" | "publish" }>
   >({});
@@ -110,7 +236,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   const [adaptedResults, setAdaptedResults] = useState<AdaptedChannelContent[]>([]);
   const [activePreviewChannel, setActivePreviewChannel] = useState<string>("");
 
-  // 变体内容可编辑状态 (channel -> { title, body, tags })
+  // 变体内容可编辑状态
   const [editedContent, setEditedContent] = useState<
     Record<string, { title: string; body: string; tags: string[] }>
   >({});
@@ -124,14 +250,12 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   const [confirmedScripts, setConfirmedScripts] = useState<Record<string, string>>({});
   const [confirmedChannels, setConfirmedChannels] = useState<Record<string, boolean>>({});
 
-  // 批量分发触发中
+  // 批量分发中
   const [distributing, setDistributing] = useState(false);
-  // 同一份提交内容复用同一个幂等键：双击、网络重试都只会回放原任务；内容或渠道变化后才换新键
   const submissionKeyRef = useRef<string | null>(null);
   const submitLockRef = useRef(false);
 
-  // 分发记录列表
-  // 分发记录列表与分页 (P2-3)
+  // 分发记录列表与分页
   const [publications, setPublications] = useState<PublicationListItem[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPubs, setTotalPubs] = useState(0);
@@ -147,7 +271,9 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  // 本地时间格式化辅助 (P2-2)
+  // 复制反馈
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
   function toLocalDatetimeString(date: Date = new Date()): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     const y = date.getFullYear();
@@ -157,12 +283,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     const mm = pad(date.getMinutes());
     return `${y}-${m}-${d}T${hh}:${mm}`;
   }
-
-  // 查看人工发布包详情 Modal
-  const [packageModalContent, setPackageModalContent] = useState<ManualPublishingPackage | null>(null);
-
-  // 复制反馈
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   // 初始化加载
   useEffect(() => {
@@ -178,34 +298,53 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
         setChannels(chList);
         setDrafts(drList);
 
-        // 默认初始化渠道选择字典
+        // 初始化渠道选择
         const initialSel: Record<string, { selected: boolean; mode: "AUTO" | "MANUAL"; targetStatus?: "draft" | "publish" }> = {};
         for (const ch of chList) {
           initialSel[ch.channel] = {
-            selected: ["XIAOHONGSHU", "WECHAT_OFFICIAL_ACCOUNT", "ZHIHU", "WORDPRESS"].includes(ch.channel),
+            selected: ["ZHIHU", "XIAOHONGSHU", "WECHAT_OFFICIAL_ACCOUNT"].includes(ch.channel),
             mode: ch.supportsAuto ? "AUTO" : "MANUAL",
             targetStatus: ch.autoCapability === "DRAFT_ONLY" ? "draft" : "publish",
           };
         }
         setChannelSelections(initialSel);
 
-        // 优先选中 APPROVED 的草稿，若无则选第一个
-        const approved = drList.find((d) => d.status === "APPROVED");
-        const defaultDraft = approved || drList[0];
-        if (defaultDraft) {
-          setSelectedDraftId(defaultDraft.id);
+        // 如果 URL 指定了 draftId 则选定，否则选 APPROVED 或第一篇
+        if (urlDraftId && drList.some((d) => d.id === urlDraftId)) {
+          setSelectedDraftId(urlDraftId);
+          setCreationEntry("EXISTING");
+        } else if (drList.length > 0) {
+          const approved = drList.find((d) => d.status === "APPROVED");
+          setSelectedDraftId(approved ? approved.id : drList[0].id);
         }
 
-        // 加载现有分发列表
+        // 加载分发记录
         loadPublications(1);
+
+        // 预加载诊断列表供 AI 入口挑选
+        api<Array<{ diagnosis: { id: string; name?: string; summary?: any }; report?: { provider?: string } }>>(
+          `/projects/${projectId}/diagnoses`,
+        )
+          .then((rows) => {
+            if (Array.isArray(rows)) {
+              setDiagnosesList(
+                rows.map((r) => ({
+                  id: r.diagnosis.id,
+                  name: `诊断 #${r.diagnosis.id.slice(0, 8)} (${r.report?.provider || "GEO 评估"})`,
+                  findingCount: r.diagnosis.summary?.findingCount || 0,
+                })),
+              );
+            }
+          })
+          .catch(() => {});
       } catch (err: any) {
-        setErrorMsg(err.message || "加载多平台分发中心数据失败");
+        setErrorMsg(err.message || "加载发布中心数据失败");
       } finally {
         setLoadingInitial(false);
       }
     }
     loadData();
-  }, [projectId]);
+  }, [projectId, urlDraftId]);
 
   async function loadPublications(page = 1) {
     setLoadingPubs(true);
@@ -226,7 +365,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     return drafts.find((d) => d.id === selectedDraftId) || null;
   }, [drafts, selectedDraftId]);
 
-  // 选中的渠道列表
+  // 选中的批量渠道列表
   const selectedChannelsList = useMemo(() => {
     return Object.entries(channelSelections)
       .filter(([_, sel]) => sel.selected)
@@ -241,7 +380,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     return Object.fromEntries(channels.map((ch) => [ch.channel, ch.limits ?? null]));
   }, [channels]);
 
-  // 人工渠道的最终内容超限时服务端会拒绝整批提交，这里提前阻止并指出具体渠道
   const manualLimitViolations = useMemo(() => {
     return selectedChannelsList
       .filter((ch) => channelSelections[ch]?.mode === "MANUAL")
@@ -249,7 +387,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       .filter((v) => v.violations.length > 0);
   }, [selectedChannelsList, channelSelections, channelLimitsMap, editedContent]);
 
-  // 当草稿改变或点击重新适配时，自动拉取渠道变体与人工发布包
+  // 适配预览
   async function handleAdaptPreview() {
     if (!selectedDraftId || !projectId || selectedChannelsList.length === 0) return;
     setAdapting(true);
@@ -263,7 +401,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
         setActivePreviewChannel(res.channels[0].channel);
       }
 
-      // 初始化编辑字段
       const edits: Record<string, { title: string; body: string; tags: string[] }> = {};
       for (const item of res.channels) {
         edits[item.channel] = {
@@ -297,16 +434,16 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
         force,
       });
       setAiResult(res);
-      const drafts: Record<string, { title: string; body: string; tags: string; videoScript: string }> = {};
+      const draftsMap: Record<string, { title: string; body: string; tags: string; videoScript: string }> = {};
       for (const item of res.channels) {
-        drafts[item.channel] = {
+        draftsMap[item.channel] = {
           title: item.title,
           body: item.body,
           tags: item.hashtags.join(" "),
           videoScript: item.videoScript || "",
         };
       }
-      setAiDrafts(drafts);
+      setAiDrafts(draftsMap);
       setActionSuccess(
         res.replayed
           ? "已复用相同原文的上次适配结果，未再次调用模型。确认前不会提交或发布。"
@@ -334,14 +471,12 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     setActionSuccess(`${CHANNEL_PLATFORM_CONFIG[channel]?.label || channel} 的适配稿已写入预览。仍需手动提交，不会自动发布。`);
   }
 
-  // 草稿切换时自动触发展开预览
   useEffect(() => {
     if (selectedDraftId && selectedChannelsList.length > 0) {
       handleAdaptPreview();
     }
   }, [selectedDraftId]);
 
-  // 切换渠道勾选
   function toggleChannel(channelKey: string) {
     setChannelSelections((prev) => {
       const curr = prev[channelKey] || { selected: false, mode: "MANUAL" };
@@ -352,7 +487,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     });
   }
 
-  // 切换单渠道模式 (AUTO / MANUAL)
   function setChannelMode(channelKey: string, mode: "AUTO" | "MANUAL") {
     setChannelSelections((prev) => {
       const curr = prev[channelKey] || { selected: true, mode: "MANUAL" };
@@ -363,7 +497,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     });
   }
 
-  // 切换渠道发布行为 (draft / publish) - P2-1
   function setChannelTargetStatus(channelKey: string, targetStatus: "draft" | "publish") {
     setChannelSelections((prev) => {
       const curr = prev[channelKey] || { selected: true, mode: "AUTO" };
@@ -374,14 +507,12 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     });
   }
 
-  // 复制文本辅助
   function copyText(text: string, label: string) {
     navigator.clipboard.writeText(text);
-    setCopyFeedback(`${label} 已复制`);
+    setCopyFeedback(`${label} 已复制到剪贴板`);
     setTimeout(() => setCopyFeedback(null), 2500);
   }
 
-  // 下载人工发布包 (JSON) - 包含最新编辑的内容变体与素材清单 (DIST-06)
   function downloadManualPackage(pkg: ManualPublishingPackage, chKey?: string) {
     const channel = chKey || pkg.channel;
     const currentEdit = editedContent[channel];
@@ -411,7 +542,118 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     setTimeout(() => setCopyFeedback(null), 2500);
   }
 
-  // 触发一键批量分发
+  // --- 入口 A：提交手工录入草稿 ---
+  async function handleCreateManualDraft(andPublishNow = false) {
+    if (!manualTitle.trim()) {
+      setErrorMsg("请填写内容标题");
+      return;
+    }
+    if (!manualBody.trim()) {
+      setErrorMsg("请填写正文内容");
+      return;
+    }
+    setManualSaving(true);
+    setErrorMsg(null);
+    try {
+      const tagsArray = manualTags
+        .split(/[,，\s]+/)
+        .map((t) => t.replace(/#/g, "").trim())
+        .filter(Boolean);
+
+      const created = await createContentDraft(projectId, {
+        title: manualTitle.trim(),
+        topic: manualTopic.trim() || undefined,
+        body: manualBody.trim(),
+        summary: tagsArray.join(" ") || undefined,
+        generationMode: "MANUAL",
+      });
+
+      setDrafts((prev) => [created, ...prev]);
+      setSelectedDraftId(created.id);
+      setActiveAssistedChannel(manualChannel);
+      setActiveManualChannel(manualChannel);
+
+      if (andPublishNow) {
+        setCreationEntry("EXISTING");
+        setActionSuccess(`草稿「${created.title}」已保存，已为您自动进入发布模式。`);
+      } else {
+        setActionSuccess(`草稿「${created.title}」已成功保存至草稿箱。`);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "创建草稿失败");
+    } finally {
+      setManualSaving(false);
+    }
+  }
+
+  // --- 入口 B：触发 AI 生成内容 ---
+  async function handleGenerateAiDraft() {
+    if (!aiTopic.trim()) {
+      setErrorMsg("请输入要生成的核心主题或要解决的低覆盖搜索词");
+      return;
+    }
+    setAiDraftGenerating(true);
+    setErrorMsg(null);
+    setAiGeneratedDraft(null);
+    try {
+      const toneMap: Record<string, string> = {
+        PROFESSIONAL: "专业严谨、客观中立的行业科普视角",
+        EXPERIENCE: "生动活泼、亲历真实的求学/从业分享视角",
+        AUTHORITATIVE: "官方权威、体系完整的高校院系招生与学术视角",
+      };
+
+      const res = await generateAiDraft(projectId, {
+        title: aiTopic.trim(),
+        channel: aiChannel,
+        audience: toneMap[aiTone] || "专业深度视角",
+        brandContext: "以客观真实、事实求是的学术或业务信息为核心，严禁凭空夸大。",
+        provider: "auto",
+      });
+
+      setAiDraftResultMeta(res);
+      setAiGeneratedDraft({
+        title: res.data.title || aiTopic.trim(),
+        body: res.data.body || "",
+        summary: res.data.summary || "",
+        tags: res.data.tags || [],
+      });
+      setActionSuccess("AI 内容方案已生成！请在下方预览并确认，确认后可直接用于发布。");
+    } catch (err: any) {
+      setErrorMsg(err.message || "AI 生成内容失败");
+    } finally {
+      setAiDraftGenerating(false);
+    }
+  }
+
+  // --- 入口 B：采纳 AI 生成的内容并进入发布 ---
+  async function handleAdoptAiDraft() {
+    if (!aiGeneratedDraft) return;
+    setAiAdopting(true);
+    setErrorMsg(null);
+    try {
+      const created = await createContentDraft(projectId, {
+        title: aiGeneratedDraft.title.trim(),
+        topic: aiTopic.trim(),
+        body: aiGeneratedDraft.body.trim(),
+        summary: aiGeneratedDraft.summary || aiGeneratedDraft.tags.join(" "),
+        generationMode: "AI_GENERATED",
+        sourceDiagnosisId: aiSelectedDiagId || undefined,
+      });
+
+      setDrafts((prev) => [created, ...prev]);
+      setSelectedDraftId(created.id);
+      setActiveAssistedChannel(aiChannel);
+      setActiveManualChannel(aiChannel);
+      setCreationEntry("EXISTING");
+      setActionSuccess(`已采纳 AI 方案并保存为草稿「${created.title}」，已无缝带入发布工作台！`);
+    } catch (err: any) {
+      setErrorMsg(err.message || "采纳 AI 方案失败");
+    } finally {
+      setAiAdopting(false);
+    }
+  }
+
+  // 批量分发提交
   async function handleBatchDistribute() {
     if (!selectedDraftId || selectedChannelsList.length === 0) return;
     if (submitLockRef.current) return;
@@ -466,6 +708,54 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     }
   }
 
+  // 纯人工模式下快速创建单渠道人工发布记录并打开回填
+  async function handleCreateSingleManualTask(channelKey: string) {
+    if (!selectedDraftId) {
+      setErrorMsg("请先准备并选定一篇草稿后再创建发布任务");
+      return;
+    }
+    try {
+      const conf = CHANNEL_PLATFORM_CONFIG[channelKey];
+      const res = await batchDistribute(projectId, selectedDraftId, {
+        items: [
+          {
+            channel: channelKey,
+            mode: "MANUAL",
+            title: currentDraft?.title,
+            body: currentDraft?.latestRevision?.body,
+          },
+        ],
+      });
+      await loadPublications(1);
+      const createdItem = res.items[0];
+      if (createdItem) {
+        const pubItem: PublicationListItem = {
+          id: createdItem.id,
+          projectId,
+          draftId: selectedDraftId,
+          revisionId: res.revisionId,
+          connectionId: "",
+          channel: channelKey,
+          title: createdItem.title,
+          mode: "MANUAL",
+          status: createdItem.status,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          publishedAt: null,
+          attempts: [],
+        };
+        setConfirmModalPub(pubItem);
+        setBackfillUrl("");
+        setBackfillAssetId("");
+        setBackfillPublishedAt(toLocalDatetimeString());
+        setConfirmError(null);
+      }
+      setActionSuccess(`已为【${conf?.label || channelKey}】创建人工发布任务，请在平台发布完成后回填链接。`);
+    } catch (err: any) {
+      setErrorMsg(err.message || "创建人工发布任务失败");
+    }
+  }
+
   // 重试自动发布任务
   async function handleRetry(pubId: string) {
     setErrorMsg(null);
@@ -478,7 +768,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     }
   }
 
-  // 提交人工发布回填确认 (DIST-02, P2-2)
+  // 提交人工发布回填确认
   async function handleSubmitBackfill() {
     if (!confirmModalPub) return;
     if (!backfillUrl && !backfillAssetId) {
@@ -516,664 +806,1103 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* 顶部广播与提示 */}
+    <div className="space-y-8">
+      {/* 顶部全局提示 */}
       {errorMsg && (
-        <div role="alert" className="surface p-4 text-xs text-rose-800 border-rose-200 bg-rose-50/80 flex items-center justify-between">
-          <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="text-rose-500 hover:text-rose-800">×</button>
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-200 bg-rose-50/90 p-4 text-xs text-rose-800 flex items-center justify-between shadow-xs animate-fade-in"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-base">⚠️</span>
+            <span>{errorMsg}</span>
+          </div>
+          <button onClick={() => setErrorMsg(null)} className="text-rose-500 hover:text-rose-800 font-bold text-sm">
+            ×
+          </button>
         </div>
       )}
       {actionSuccess && (
-        <div role="status" className="surface p-4 text-xs text-teal-800 border-teal-200 bg-teal-50/80 flex items-center justify-between">
-          <span>{actionSuccess}</span>
-          <button onClick={() => setActionSuccess(null)} className="text-teal-500 hover:text-teal-800">×</button>
+        <div
+          role="status"
+          className="rounded-xl border border-teal-200 bg-teal-50/90 p-4 text-xs text-teal-800 flex items-center justify-between shadow-xs animate-fade-in"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-base">✅</span>
+            <span>{actionSuccess}</span>
+          </div>
+          <button onClick={() => setActionSuccess(null)} className="text-teal-500 hover:text-teal-800 font-bold text-sm">
+            ×
+          </button>
         </div>
       )}
       {copyFeedback && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-slate-900 px-4 py-2.5 text-xs text-white shadow-xl animate-fade-in flex items-center gap-2">
-          <span>✅</span> {copyFeedback}
+        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-slate-900 px-4 py-2.5 text-xs text-white shadow-2xl flex items-center gap-2 border border-slate-700 animate-fade-in">
+          <span>📋</span>
+          <span>{copyFeedback}</span>
         </div>
       )}
 
-      {/* 第一部分：待分发内容与草稿选择 */}
-      <section className="surface p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+      {/* ============================================================== */}
+      {/* 步骤 1：准备分发内容（双创作入口 + 已有草稿库） */}
+      {/* ============================================================== */}
+      <section className="surface p-6 space-y-5 rounded-2xl border border-slate-200/80 bg-white shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <span>🚀</span> 步骤 1：选择分发源草稿
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              支持一键将经过 GEO 事实核验与优化的成稿同时推送到多个公开与自媒体渠道。
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">
+                1
+              </span>
+              <h2 className="text-base font-bold text-slate-900">准备发布内容</h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              支持直接手工录入内容、由 AI 根据 GEO 诊断事实自动生成，或直接从现有草稿箱挑选成稿。
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Link href="/app/content/new" className="text-xs text-teal-700 hover:underline">
-              + 新建草稿
-            </Link>
+
+          {/* 创作入口 Switcher */}
+          <div className="flex rounded-xl bg-slate-100 p-1 border border-slate-200/70 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setCreationEntry("MANUAL")}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition ${
+                creationEntry === "MANUAL"
+                  ? "bg-white text-slate-900 font-bold shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>✍️</span>
+              <span>手工录入</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreationEntry("AI")}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition ${
+                creationEntry === "AI"
+                  ? "bg-white text-teal-700 font-bold shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>✨</span>
+              <span>AI 智能生成</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreationEntry("EXISTING")}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition ${
+                creationEntry === "EXISTING"
+                  ? "bg-white text-slate-900 font-bold shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>📁</span>
+              <span>选择已有草稿</span>
+              {drafts.length > 0 && (
+                <span className="rounded-full bg-slate-200 px-1.5 py-0.2 text-[10px] text-slate-700">
+                  {drafts.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
-        {drafts.length === 0 ? (
-          <EmptyState
-            title="暂无可用草稿"
-            description="请先在内容工作台生成或撰写一份草稿后再进行多平台分发。"
-            href="/app/content/new"
-            action="创建首篇草稿"
-          />
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-            <div className="md:col-span-1 space-y-2">
-              <label className="text-xs font-semibold text-slate-700 block">选择目标草稿</label>
-              <select
-                className="ui-input w-full text-xs"
-                value={selectedDraftId}
-                onChange={(e) => setSelectedDraftId(e.target.value)}
-              >
-                {drafts.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.status === "APPROVED" ? "✅ " : "📝 "} {d.title} (v{d.latestRevision?.version || 1})
-                  </option>
-                ))}
-              </select>
+        {/* 入口 A：手工录入 */}
+        {creationEntry === "MANUAL" && (
+          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/50 p-5">
+            <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span>✍️</span> 手工录入新内容
+              </span>
+              <span className="text-[11px] text-slate-500">将直接保存为规范版本并进入发布准备</span>
             </div>
 
-            {currentDraft && (
-              <div className="md:col-span-2 rounded-lg bg-slate-50 border border-slate-200/80 p-3 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-800">{currentDraft.title}</span>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  目标发布平台 <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={manualChannel}
+                  onChange={(e) => setManualChannel(e.target.value)}
+                  className="ui-input w-full text-xs"
+                >
+                  {Object.entries(CHANNEL_PLATFORM_CONFIG).map(([k, conf]) => (
+                    <option key={k} value={k}>
+                      {conf.icon} {conf.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2 space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  内容标题 <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={200}
+                  placeholder="请输入标题，如：医学信息工程专业核心课程与就业前景全面解读"
+                  value={manualTitle}
+                  onChange={(e) => setManualTitle(e.target.value)}
+                  className="ui-input w-full text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <label className="font-semibold text-slate-700">
+                  正文内容 <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[11px] text-slate-400">{manualBody.length} 字</span>
+              </div>
+              <textarea
+                rows={7}
+                maxLength={20000}
+                placeholder="请输入详细正文。支持 Markdown 格式，支持段落与论据引用。"
+                value={manualBody}
+                onChange={(e) => setManualBody(e.target.value)}
+                className="ui-input w-full text-xs font-mono leading-relaxed"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">主题类别 / 业务归属</label>
+                <input
+                  type="text"
+                  placeholder="如：大学专业 / 医疗信息 / 学科选校"
+                  value={manualTopic}
+                  onChange={(e) => setManualTopic(e.target.value)}
+                  className="ui-input w-full text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">标签 / 话题词</label>
+                <input
+                  type="text"
+                  placeholder="多个标签用空格或逗号分隔，如：医学信息工程 高考志愿 就业前景"
+                  value={manualTags}
+                  onChange={(e) => setManualTags(e.target.value)}
+                  className="ui-input w-full text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200/60">
+              <button
+                type="button"
+                disabled={manualSaving}
+                onClick={() => handleCreateManualDraft(false)}
+                className="ui-button secondary text-xs"
+              >
+                💾 仅存为草稿
+              </button>
+              <button
+                type="button"
+                disabled={manualSaving}
+                onClick={() => handleCreateManualDraft(true)}
+                className="ui-button primary text-xs font-bold px-4"
+              >
+                {manualSaving ? "正在创建..." : "🚀 保存并立即进入发布 →"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 入口 B：AI 智能生成 */}
+        {creationEntry === "AI" && (
+          <div className="space-y-4 rounded-xl border border-teal-200 bg-teal-50/20 p-5">
+            <div className="flex items-center justify-between border-b border-teal-100 pb-3">
+              <span className="text-xs font-bold text-teal-900 flex items-center gap-2">
+                <span>✨</span> AI 智能生成发布方案
+              </span>
+              <span className="text-[11px] text-teal-700">
+                基于项目真实 GEO 诊断与事实依据，自动契合平台行文风格
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">关联已有诊断（可选）</label>
+                <select
+                  value={aiSelectedDiagId}
+                  onChange={(e) => setAiSelectedDiagId(e.target.value)}
+                  className="ui-input w-full text-xs bg-white"
+                >
+                  <option value="">不关联特定诊断（自主输入诉求）</option>
+                  {diagnosesList.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} · {d.findingCount} 条发现
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  目标发布平台 <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={aiChannel}
+                  onChange={(e) => setAiChannel(e.target.value)}
+                  className="ui-input w-full text-xs bg-white"
+                >
+                  {Object.entries(CHANNEL_PLATFORM_CONFIG).map(([k, conf]) => (
+                    <option key={k} value={k}>
+                      {conf.icon} {conf.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">内容基调与视角</label>
+                <select
+                  value={aiTone}
+                  onChange={(e) => setAiTone(e.target.value)}
+                  className="ui-input w-full text-xs bg-white"
+                >
+                  <option value="PROFESSIONAL">专业深度科普（客观严谨、事实论证）</option>
+                  <option value="EXPERIENCE">通俗亲历种草（真实生动、就读体验）</option>
+                  <option value="AUTHORITATIVE">官方权威解答（招生就业、培养体系）</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 block">
+                核心主题 / 目标解答的低覆盖搜索词 <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                maxLength={200}
+                placeholder="例如：中南民族大学医学信息工程专业特色、核心课程设置与就业去向"
+                value={aiTopic}
+                onChange={(e) => setAiTopic(e.target.value)}
+                className="ui-input w-full text-xs bg-white"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-slate-500">
+                调用项目 AI Gateway 生成排版。生成后可直接编辑调整，确认前不会向任何外部平台发送。
+              </span>
+              <button
+                type="button"
+                disabled={aiDraftGenerating || !aiTopic.trim()}
+                onClick={handleGenerateAiDraft}
+                className="ui-button primary text-xs font-bold px-5 py-2"
+              >
+                {aiDraftGenerating ? "正在调用 AI 生成中..." : "✨ 立即生成内容方案"}
+              </button>
+            </div>
+
+            {/* AI 生成预览与微调确认卡片 */}
+            {aiGeneratedDraft && (
+              <div className="mt-4 rounded-xl border border-teal-300 bg-white p-4 space-y-3.5 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <div className="flex items-center gap-2">
-                    <StatusBadge status={currentDraft.status} />
-                    <span className="text-[11px] text-slate-500">
-                      版本 v{currentDraft.latestRevision?.version || 1}
+                    <span className="rounded bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5">
+                      {aiDraftResultMeta?.requestedProvider === "mock" ? "模拟生成" : "AI 模型成稿"}
                     </span>
+                    <span className="text-xs font-bold text-slate-900">请检查并微调生成稿件</span>
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    耗时 {aiDraftResultMeta?.latencyMs || 0}ms · 消耗 Token {aiDraftResultMeta?.totalTokens || "—"}
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">标题</label>
+                    <input
+                      type="text"
+                      className="ui-input w-full text-xs font-semibold"
+                      value={aiGeneratedDraft.title}
+                      onChange={(e) =>
+                        setAiGeneratedDraft((prev) => (prev ? { ...prev, title: e.target.value } : prev))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">正文</label>
+                    <textarea
+                      rows={8}
+                      className="ui-input w-full text-xs font-mono leading-relaxed"
+                      value={aiGeneratedDraft.body}
+                      onChange={(e) =>
+                        setAiGeneratedDraft((prev) => (prev ? { ...prev, body: e.target.value } : prev))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">推荐话题与标签</label>
+                    <input
+                      type="text"
+                      className="ui-input w-full text-xs"
+                      value={aiGeneratedDraft.tags.join(" ")}
+                      onChange={(e) =>
+                        setAiGeneratedDraft((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                tags: e.target.value.split(/\s+/).map((t) => t.replace(/#/g, "")).filter(Boolean),
+                              }
+                            : prev,
+                        )
+                      }
+                    />
                   </div>
                 </div>
-                <p className="text-slate-600 line-clamp-2 leading-relaxed">
-                  {currentDraft.latestRevision?.body || "（暂无正文）"}
-                </p>
-                <div className="flex items-center gap-3 text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
-                  <span>主题：{currentDraft.topic || "综合营销"}</span>
-                  <span>生成模式：{currentDraft.generationMode}</span>
-                  <Link
-                    href={`/app/content/${currentDraft.id}`}
-                    className="text-teal-700 font-medium hover:underline ml-auto"
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAiGeneratedDraft(null)}
+                    className="ui-button secondary text-xs"
                   >
-                    在编辑器中查看全文 →
-                  </Link>
+                    放弃此方案
+                  </button>
+                  <button
+                    type="button"
+                    disabled={aiAdopting}
+                    onClick={handleAdoptAiDraft}
+                    className="ui-button primary text-xs font-bold px-4"
+                  >
+                    {aiAdopting ? "正在采纳..." : "✅ 采纳并立即进入发布 →"}
+                  </button>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 入口 C：选择已有草稿 */}
+        {creationEntry === "EXISTING" && (
+          <div className="space-y-4">
+            {drafts.length === 0 ? (
+              <EmptyState
+                title="暂无可用草稿"
+                description="当前项目尚未创建任何内容草稿，请切换至【手工录入】或【AI 智能生成】快速创建第一篇。"
+              />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                <div className="md:col-span-1 space-y-2">
+                  <label className="text-xs font-semibold text-slate-700 block">选择目标草稿</label>
+                  <select
+                    className="ui-input w-full text-xs"
+                    value={selectedDraftId}
+                    onChange={(e) => setSelectedDraftId(e.target.value)}
+                  >
+                    {drafts.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.status === "APPROVED" ? "✅ " : "📝 "} {d.title} (v{d.latestRevision?.version || 1})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {currentDraft && (
+                  <div className="md:col-span-2 rounded-xl bg-slate-50 border border-slate-200/80 p-4 space-y-2.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800 text-sm">{currentDraft.title}</span>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={currentDraft.status} />
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          v{currentDraft.latestRevision?.version || 1}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-slate-600 line-clamp-2 leading-relaxed">
+                      {currentDraft.latestRevision?.body || "（暂无正文）"}
+                    </p>
+                    <div className="flex items-center justify-between gap-3 text-[11px] text-slate-500 pt-2 border-t border-slate-200/60">
+                      <span>主题：{currentDraft.topic || "综合分发"}</span>
+                      <span>模式：{currentDraft.generationMode}</span>
+                      <Link
+                        href={`/app/content/${currentDraft.id}`}
+                        className="text-teal-700 font-medium hover:underline ml-auto"
+                      >
+                        在全功能编辑器中查看 →
+                      </Link>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
       </section>
 
-      {/* 工作台模式切换 Tab */}
-      <div className="flex border-b border-slate-200 gap-2">
-        <button
-          type="button"
-          onClick={() => setWorkbenchMode("BROWSER_ASSISTED")}
-          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition ${
-            workbenchMode === "BROWSER_ASSISTED"
-              ? "border-blue-600 text-blue-600 bg-blue-50/40"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          <span>🌐</span>
-          <span>浏览器辅助发布 (Selenium V2A)</span>
-          <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">新上线</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setWorkbenchMode("BATCH_MATRIX")}
-          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition ${
-            workbenchMode === "BATCH_MATRIX"
-              ? "border-blue-600 text-blue-600 bg-blue-50/40"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          <span>📋</span>
-          <span>多渠道批量分发中心 (V1 矩阵)</span>
-        </button>
-      </div>
-
-      {workbenchMode === "BROWSER_ASSISTED" ? (
-        <BrowserAssistedPanel
-          projectId={projectId}
-          selectedDraft={currentDraft}
-          channels={channels}
-          activeChannelKey={activeAssistedChannel}
-          onChannelSelect={setActiveAssistedChannel}
-          onPublicationUpdated={() => {
-            loadPublications(1);
-          }}
-        />
-      ) : (
-        <>
-          {/* 第二部分：目标渠道矩阵选择 (双模式支持) */}
-          <section className="surface p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
-          <div>
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <span>🌐</span> 步骤 2：选择目标渠道与分发模式
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              同时支持【官方 API 授权自动同步】与【多端人工辅助分发】，随心勾选多个平台同时执行。
-            </p>
-          </div>
+      {/* ============================================================== */}
+      {/* 步骤 2：选择发布方式与平台（本地自动化助手 vs 纯人工指引） */}
+      {/* ============================================================== */}
+      <section className="space-y-4">
+        {/* 发布方式 Switcher */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">
-              已选 <strong className="text-teal-700 font-bold">{selectedChannelsList.length}</strong> 个渠道
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+              2
             </span>
+            <h2 className="text-base font-bold text-slate-900">选择发布方式与执行平台</h2>
+          </div>
+
+          <div className="flex gap-2">
             <button
               type="button"
-              onClick={handleAdaptPreview}
-              disabled={adapting || selectedChannelsList.length === 0}
-              className="ui-button secondary text-xs"
+              onClick={() => setPublishingMode("BROWSER_ASSISTED")}
+              className={`flex items-center gap-1.5 py-2 px-4 rounded-xl text-xs font-bold transition border ${
+                publishingMode === "BROWSER_ASSISTED"
+                  ? "border-blue-600 bg-blue-50 text-blue-700 shadow-xs ring-1 ring-blue-500/20"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+              }`}
             >
-              {adapting ? "正在适配..." : "🔄 重新生成各端变体预览"}
+              <span>🌐</span>
+              <span>浏览器辅助发布 (Selenium V2A)</span>
+              <span className="text-[9px] bg-blue-200 text-blue-800 px-1.5 py-0.2 rounded-full font-bold">
+                自动化
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPublishingMode("MANUAL_GUIDE")}
+              className={`flex items-center gap-1.5 py-2 px-4 rounded-xl text-xs font-bold transition border ${
+                publishingMode === "MANUAL_GUIDE"
+                  ? "border-teal-600 bg-teal-50 text-teal-800 shadow-xs ring-1 ring-teal-500/20"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+              }`}
+            >
+              <span>🧭</span>
+              <span>纯人工发布精准指引</span>
+              <span className="text-[9px] bg-teal-200 text-teal-800 px-1.5 py-0.2 rounded-full font-bold">
+                高合规
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPublishingMode("BATCH_MATRIX")}
+              className={`flex items-center gap-1.5 py-2 px-3 rounded-xl text-xs font-medium transition border ${
+                publishingMode === "BATCH_MATRIX"
+                  ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-xs"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+              }`}
+            >
+              <span>📋</span>
+              <span>多渠道批量矩阵 (V1)</span>
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {channels.map((ch) => {
-            const conf = CHANNEL_PLATFORM_CONFIG[ch.channel] || {
-              label: ch.name,
-              color: "slate",
-              badgeBg: "bg-slate-100 text-slate-700",
-              creatorUrl: "#",
-              icon: "📌",
-            };
-            const selection = channelSelections[ch.channel] || { selected: false, mode: "MANUAL" };
-            const isSelected = selection.selected;
+        {/* 方式 1: 本地受控浏览器辅助发布 (Selenium V2A) */}
+        {publishingMode === "BROWSER_ASSISTED" && (
+          <BrowserAssistedPanel
+            projectId={projectId}
+            selectedDraft={currentDraft}
+            channels={channels}
+            activeChannelKey={activeAssistedChannel}
+            onChannelSelect={setActiveAssistedChannel}
+            onPublicationUpdated={() => loadPublications(1)}
+          />
+        )}
 
-            return (
-              <div
-                key={ch.channel}
-                className={`rounded-xl border p-3.5 transition-all flex flex-col justify-between ${
-                  isSelected
-                    ? "border-teal-600 bg-teal-50/20 shadow-sm ring-1 ring-teal-500/30"
-                    : "border-slate-200 bg-white hover:border-slate-300"
-                }`}
-              >
-                <div className="space-y-2.5">
-                  {/* 头部：复选框 + 图标 + 平台名称 */}
-                  <div className="flex items-start justify-between gap-2">
-                    <label className="flex items-center gap-2 cursor-pointer flex-1">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleChannel(ch.channel)}
-                        className="rounded border-slate-300 text-teal-700 focus:ring-teal-500 w-4 h-4 cursor-pointer"
-                      />
-                      <span className="text-lg leading-none">{conf.icon}</span>
-                      <span className="font-semibold text-xs text-slate-900 truncate">{conf.label}</span>
-                    </label>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                      {ch.category}
-                    </span>
+        {/* 方式 2: 纯人工发布精准指引 (Manual Publishing Guidance) */}
+        {publishingMode === "MANUAL_GUIDE" && (
+          <div className="surface p-6 space-y-6 rounded-2xl border border-slate-200/80 bg-white shadow-xs">
+            {/* 平台选择 Pills */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700">选择要发布的目标平台：</span>
+                <span className="text-[11px] text-slate-400">
+                  支持一键直达官方创作者页面、字段精准复制与事后回填落成 GEO 资产
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(CHANNEL_PLATFORM_CONFIG).map(([k, conf]) => {
+                  const isCur = activeManualChannel === k;
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setActiveManualChannel(k)}
+                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition border ${
+                        isCur
+                          ? "border-teal-600 bg-teal-50 text-teal-900 shadow-xs ring-1 ring-teal-500/30"
+                          : "border-slate-200 bg-slate-50/50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span className="text-sm">{conf.icon}</span>
+                      <span>{conf.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 当前平台的指引主体卡片 */}
+            {(() => {
+              const conf = CHANNEL_PLATFORM_CONFIG[activeManualChannel] || CHANNEL_PLATFORM_CONFIG.ZHIHU;
+              const draftTitle = currentDraft?.title || "（暂无标题）";
+              const draftBody = currentDraft?.latestRevision?.body || "（暂无正文）";
+              const draftTags = currentDraft?.topic
+                ? [currentDraft.topic]
+                : ["GEO优选", "事实证据"];
+
+              return (
+                <div className="space-y-5 rounded-xl border border-slate-200 bg-slate-50/40 p-5">
+                  {/* 头部：平台名 + 创作者中心直达 */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-4">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-2xl">{conf.icon}</span>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">{conf.label} 创作者发布指引</h3>
+                        <p className="text-xs text-slate-500">{conf.description}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={conf.creatorUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 shadow-sm flex items-center gap-1.5"
+                      >
+                        <span>打开 {conf.label} 创作页面</span>
+                        <span>↗</span>
+                      </a>
+                    </div>
                   </div>
 
-                  {/* 能力徽章 */}
-                  <div className="flex flex-wrap gap-1">
-                    {ch.supportsAuto ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        ⚡ 官方自动同步
-                        {ch.autoCapability === "DRAFT_ONLY" ? " (草稿箱)" : ""}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                        📋 人工辅助发布包
-                      </span>
-                    )}
-                    {ch.requiresVideo && (
-                      <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                        🎬 视频类
-                      </span>
-                    )}
+                  {/* 字段映射卡片流 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* 字段 1：文章/笔记标题 */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-teal-500" />
+                            【文章/笔记标题】对应字段
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-mono">{draftTitle.length} 字</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mb-2">{conf.titleFieldGuide}</p>
+                        <div className="rounded-lg bg-slate-50 p-2.5 text-xs font-medium text-slate-800 border border-slate-100 select-all">
+                          {draftTitle}
+                        </div>
+                      </div>
+                      <div className="pt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => copyText(draftTitle, "标题")}
+                          className="ui-button secondary text-xs py-1 px-3"
+                        >
+                          📄 一键复制标题
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 字段 2：标签/话题词 */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-blue-500" />
+                            【话题 / 标签】对应字段
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-mono">{draftTags.length} 个标签</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mb-2">{conf.tagsFieldGuide}</p>
+                        <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-slate-50 border border-slate-100 min-h-10 items-center">
+                          {draftTags.map((t, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 border border-blue-200"
+                            >
+                              #{t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="pt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => copyText(draftTags.map((t) => `#${t}`).join(" "), "话题标签")}
+                          className="ui-button secondary text-xs py-1 px-3"
+                        >
+                          🏷️ 一键复制全部标签
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 字段 3：正文内容 */}
+                    <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-4 space-y-2">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          【正文与排版】对应字段
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-mono">{draftBody.length} 字</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">{conf.bodyFieldGuide}</p>
+                      <div className="max-h-44 overflow-y-auto rounded-lg bg-slate-50 p-3 text-xs text-slate-700 border border-slate-100 font-mono whitespace-pre-wrap leading-relaxed select-all">
+                        {draftBody}
+                      </div>
+                      <div className="pt-2 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400">
+                          可直接点击右侧按钮复制完整正文，然后粘贴至平台富文本框
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyText(draftBody, "正文内容")}
+                          className="ui-button primary text-xs py-1.5 px-4 font-bold"
+                        >
+                          📝 一键复制完整正文
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* 描述与提示 */}
-                  <p className="text-[11px] text-slate-500 leading-normal line-clamp-2">
-                    {ch.description}
+                  {/* 平台规则 Checklist & 闭环行动栏 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-2">
+                    <div className="lg:col-span-2 rounded-xl border border-amber-200 bg-amber-50/50 p-4 space-y-2">
+                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                        <span>🛡️</span> {conf.label} 平台合规与审核要点
+                      </span>
+                      <ul className="space-y-1.5 text-xs text-amber-800">
+                        {conf.guidelines.map((rule, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-[11px] font-bold text-amber-600">·</span>
+                            <span className="leading-relaxed">{rule}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-slate-900 block">完成人工发布了吗？</span>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          在 {conf.label} 点击发布并获取公开链接后，请回填地址，系统将立即沉淀为 GEO
+                          监测资产并进入定期效果再测。
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCreateSingleManualTask(activeManualChannel)}
+                          className="w-full rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white hover:bg-teal-700 shadow-sm flex items-center justify-center gap-1.5"
+                        >
+                          <span>✨</span>
+                          <span>已发布？回填公开落地链接</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const mockPkg: ManualPublishingPackage = {
+                              channel: activeManualChannel,
+                              title: draftTitle,
+                              body: draftBody,
+                              hashtags: draftTags,
+                              checklist: conf.guidelines,
+                              assetManifest: [],
+                              videoScript: null,
+                              callToAction: "欢迎在评论区或正文中留下您的见解或进行进一步咨询。",
+                              generatedAt: new Date().toISOString(),
+                            };
+                            downloadManualPackage(mockPkg, activeManualChannel);
+                          }}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                        >
+                          <span>💾</span>
+                          <span>下载发布包 JSON</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* 方式 3: 多渠道批量分发中心 (高级矩阵) */}
+        {publishingMode === "BATCH_MATRIX" && (
+          <div className="space-y-6">
+            <section className="surface p-5 space-y-4 rounded-xl border border-slate-200 bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span>🌐</span> 目标渠道矩阵勾选与模式设置
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    同时支持【官方 API 授权自动同步】与【多端人工辅助分发】，随心勾选多个平台同时执行。
                   </p>
                 </div>
-
-                {/* 底部模式选择切换 */}
-                <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    {ch.supportsAuto ? (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setChannelMode(ch.channel, "AUTO")}
-                          className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                            selection.mode === "AUTO"
-                              ? "bg-teal-700 text-white shadow-xs"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                          }`}
-                        >
-                          自动模式
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setChannelMode(ch.channel, "MANUAL")}
-                          className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                            selection.mode === "MANUAL"
-                              ? "bg-teal-700 text-white shadow-xs"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                          }`}
-                        >
-                          人工模式
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-slate-400">已启用标准化人工发布包</span>
-                    )}
-
-                    <a
-                      href={conf.creatorUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] text-slate-500 hover:text-teal-700 flex items-center gap-0.5"
-                      title="直达创作者后台"
-                    >
-                      后台 ↗
-                    </a>
-                  </div>
-
-                  {/* WordPress 或全量发布通道支持 draft/publish 切换 (P2-1) */}
-                  {ch.supportsAuto && selection.mode === "AUTO" && ch.autoCapability !== "DRAFT_ONLY" && (
-                    <div className="flex items-center justify-between text-[11px] bg-slate-50 p-1.5 rounded border border-slate-200">
-                      <span className="text-slate-600 font-medium">推送行为:</span>
-                      <select
-                        value={selection.targetStatus || "draft"}
-                        onChange={(e) => setChannelTargetStatus(ch.channel, e.target.value as "draft" | "publish")}
-                        className="text-[11px] bg-white border border-slate-300 rounded px-1.5 py-0.5 font-medium text-slate-800"
-                      >
-                        <option value="draft">保存至草稿箱 (draft)</option>
-                        <option value="publish">直接公开推送 (publish)</option>
-                      </select>
-                    </div>
-                  )}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">
+                    已选 <strong className="text-teal-700 font-bold">{selectedChannelsList.length}</strong> 个渠道
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAdaptPreview}
+                    disabled={adapting || selectedChannelsList.length === 0}
+                    className="ui-button secondary text-xs"
+                  >
+                    {adapting ? "正在适配..." : "🔄 重新生成各端变体预览"}
+                  </button>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* 第三部分：多端变体排版预览与微调 */}
-      {selectedChannelsList.length > 0 && (
-        <section className="surface p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span>🎨</span> 步骤 3：多端变体预览与排版微调
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                规则预览会立即填入编辑区。AI 适配需要单独生成，并在确认后才写入编辑区。
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1 text-[11px] text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={aiUseReal}
-                  disabled={!realAiAvailable || aiRunning}
-                  onChange={(e) => setAiUseReal(e.target.checked)}
-                />
-                使用真实模型
-              </label>
-              <button
-                type="button"
-                onClick={() => handleAiAdapt(false)}
-                disabled={aiRunning}
-                className="ui-button primary text-xs py-1.5 px-3"
-              >
-                {aiRunning ? "正在生成渠道适配..." : "AI 生成"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAiAdapt(true)}
-                disabled={aiRunning || !aiResult}
-                className="ui-button secondary text-xs py-1.5 px-3 disabled:opacity-50"
-              >
-                重新生成
-              </button>
-            </div>
-          </div>
-          {!realAiAvailable && (
-            <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-              未启用真实模型。AI 生成将返回模拟结果，并明确标为模拟，不会产生模型费用。
-            </p>
-          )}
-          {aiUseReal && (
-            <p className="text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded px-2 py-1">
-              已选择真实模型。服务端固定使用 deepseek-flash、关闭思考、限制输出，并且本进程只允许一次请求。确认前不会提交或发布。
-            </p>
-          )}
-          {aiResult && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2 text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded px-1.5 py-0.5 font-semibold ${aiResult.realAi ? "bg-teal-100 text-teal-800" : "bg-amber-100 text-amber-900"}`}>
-                  {aiResult.realAi ? `真实模型 ${aiResult.provider}/${aiResult.model}` : "模拟结果，不是真实 AI"}
-                </span>
-                <span className="text-slate-500">
-                  {aiResult.promptVersion} · token {aiResult.totalTokens ?? "—"} · 估算费用 {aiResult.estimatedCost ?? "—"} · {aiResult.latencyMs}ms
-                  {aiResult.replayed ? " · 已复用，未再次调用" : ""}
-                </span>
-              </div>
-              {aiResult.channels
-                .filter((item) => {
-                  const preferred = aiResult.channels.some((channel) => channel.channel === activePreviewChannel)
-                    ? activePreviewChannel
-                    : selectedChannelsList.find((channel) => aiResult.channels.some((item) => item.channel === channel))
-                      || aiResult.channels[0]?.channel;
-                  return item.channel === preferred;
-                })
-                .map((item) => {
-                  const draft = aiDrafts[item.channel];
-                  const originalBody = currentDraft?.latestRevision?.body || "";
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                {channels.map((ch) => {
+                  const conf = CHANNEL_PLATFORM_CONFIG[ch.channel] || {
+                    label: ch.name,
+                    color: "slate",
+                    badgeBg: "bg-slate-100 text-slate-700",
+                    creatorUrl: "#",
+                    icon: "📌",
+                    description: ch.description,
+                  };
+                  const selection = channelSelections[ch.channel] || { selected: false, mode: "MANUAL" };
+                  const isSelected = selection.selected;
+
                   return (
-                    <div key={item.channel} className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <div className="font-semibold text-slate-700">原文</div>
-                        <p className="text-slate-800">{currentDraft?.title}</p>
-                        <p className="max-h-28 overflow-auto whitespace-pre-wrap text-slate-600">{originalBody}</p>
+                    <div
+                      key={ch.channel}
+                      className={`rounded-xl border p-3.5 transition-all flex flex-col justify-between ${
+                        isSelected
+                          ? "border-teal-600 bg-teal-50/20 shadow-xs ring-1 ring-teal-500/30"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer flex-1">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleChannel(ch.channel)}
+                              className="rounded border-slate-300 text-teal-700 focus:ring-teal-500 w-4 h-4 cursor-pointer"
+                            />
+                            <span className="text-lg leading-none">{conf.icon}</span>
+                            <span className="font-semibold text-xs text-slate-900 truncate">{conf.label}</span>
+                          </label>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                            {ch.category}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1">
+                          {ch.supportsAuto ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              ⚡ 官方自动同步
+                              {ch.autoCapability === "DRAFT_ONLY" ? " (草稿箱)" : ""}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                              📋 人工辅助发布包
+                            </span>
+                          )}
+                          {ch.requiresVideo && (
+                            <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                              🎬 视频类
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 leading-normal line-clamp-2">
+                          {ch.description}
+                        </p>
                       </div>
-                      <div className="space-y-2">
-                        <div className="font-semibold text-slate-700">适配稿（确认前不会进入提交）</div>
-                        <input
-                          value={draft?.title || ""}
-                          onChange={(e) => setAiDrafts((prev) => ({ ...prev, [item.channel]: { ...prev[item.channel], title: e.target.value } }))}
-                          className="w-full rounded border border-slate-300 px-2 py-1"
-                          aria-label="AI 适配标题"
-                        />
-                        <textarea
-                          value={draft?.body || ""}
-                          onChange={(e) => setAiDrafts((prev) => ({ ...prev, [item.channel]: { ...prev[item.channel], body: e.target.value } }))}
-                          className="w-full min-h-20 rounded border border-slate-300 px-2 py-1"
-                          aria-label="AI 适配正文"
-                        />
-                        <input
-                          value={draft?.tags || ""}
-                          onChange={(e) => setAiDrafts((prev) => ({ ...prev, [item.channel]: { ...prev[item.channel], tags: e.target.value } }))}
-                          className="w-full rounded border border-slate-300 px-2 py-1"
-                          aria-label="AI 适配话题"
-                          placeholder="话题以空格分隔"
-                        />
-                        {(VIDEO_SCRIPT_CHANNELS.has(item.channel) || item.videoScript) && (
-                          <textarea
-                            value={draft?.videoScript || ""}
-                            onChange={(e) => setAiDrafts((prev) => ({ ...prev, [item.channel]: { ...prev[item.channel], videoScript: e.target.value } }))}
-                            className="w-full min-h-16 rounded border border-slate-300 px-2 py-1"
-                            aria-label="AI 视频脚本"
-                          />
-                        )}
-                        {item.adjustments.map((note) => (
-                          <p key={note} className="text-slate-500">{note}</p>
-                        ))}
-                        {item.riskNotes.map((note) => (
-                          <p key={note} className="text-rose-700">{note}</p>
-                        ))}
-                        {item.omittedClaims.map((note) => (
-                          <p key={note} className="text-slate-500">{note}</p>
-                        ))}
-                        <button type="button" onClick={() => confirmAiDraft(item.channel)} className="ui-button primary text-xs py-1 px-2">
-                          {confirmedChannels[item.channel] ? "已确认，再次写入预览" : "确认采用到当前渠道"}
-                        </button>
+
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          {ch.supportsAuto ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setChannelMode(ch.channel, "AUTO")}
+                                className={`text-[11px] px-2 py-0.5 rounded font-semibold ${
+                                  selection.mode === "AUTO"
+                                    ? "bg-teal-700 text-white"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                }`}
+                              >
+                                自动
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setChannelMode(ch.channel, "MANUAL")}
+                                className={`text-[11px] px-2 py-0.5 rounded font-semibold ${
+                                  selection.mode === "MANUAL"
+                                    ? "bg-slate-800 text-white"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                }`}
+                              >
+                                人工
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">仅支持人工辅助</span>
+                          )}
+
+                          {selection.mode === "AUTO" && ch.autoCapability !== "DRAFT_ONLY" && (
+                            <select
+                              value={selection.targetStatus || "publish"}
+                              onChange={(e) =>
+                                setChannelTargetStatus(ch.channel, e.target.value as "draft" | "publish")
+                              }
+                              className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5"
+                            >
+                              <option value="publish">直接发布</option>
+                              <option value="draft">存草稿箱</option>
+                            </select>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
                 })}
-            </div>
-          )}
-
-          {/* 渠道标签切换 */}
-          <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
-            {selectedChannelsList.map((chKey) => {
-              const conf = CHANNEL_PLATFORM_CONFIG[chKey] || { label: chKey, icon: "📌" };
-              const isCurrent = activePreviewChannel === chKey;
-              return (
-                <button
-                  key={chKey}
-                  type="button"
-                  onClick={() => setActivePreviewChannel(chKey)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                    isCurrent
-                      ? "bg-slate-900 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  <span>{conf.icon}</span>
-                  <span>{conf.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 当前选中的渠道预览与微调内容 */}
-          {activePreviewChannel && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-2">
-              {/* 左侧：变体编辑与标题/正文 */}
-              <div className="space-y-3.5 bg-slate-50/50 p-4 rounded-xl border border-slate-200/80">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800">
-                    {CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.label} 专属文案
-                  </span>
-                  <span className="text-[11px] text-slate-500">
-                    分发模式：{channelSelections[activePreviewChannel]?.mode === "AUTO" ? "⚡ 自动同步" : "📋 人工辅助"}
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <label className="font-semibold text-slate-700">标题</label>
-                    {channelLimitsMap[activePreviewChannel] && (
-                      <span className={`text-[11px] ${
-                        (editedContent[activePreviewChannel]?.title?.length || 0) > channelLimitsMap[activePreviewChannel]!.title
-                          ? "text-rose-600 font-bold"
-                          : "text-slate-400"
-                      }`}>
-                        {editedContent[activePreviewChannel]?.title?.length || 0}/{channelLimitsMap[activePreviewChannel]!.title} 字
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    className="ui-input w-full text-xs"
-                    value={editedContent[activePreviewChannel]?.title || ""}
-                    onChange={(e) =>
-                      setEditedContent((prev) => ({
-                        ...prev,
-                        [activePreviewChannel]: {
-                          ...prev[activePreviewChannel],
-                          title: e.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <label className="font-semibold text-slate-700">正文与话题</label>
-                    {channelLimitsMap[activePreviewChannel]?.body != null && (
-                      <span className={`text-[11px] ${
-                        (editedContent[activePreviewChannel]?.body?.length || 0) > channelLimitsMap[activePreviewChannel]!.body!
-                          ? "text-rose-600 font-bold"
-                          : "text-slate-400"
-                      }`}>
-                        {editedContent[activePreviewChannel]?.body?.length || 0}/{channelLimitsMap[activePreviewChannel]!.body} 字
-                      </span>
-                    )}
-                  </div>
-                  <textarea
-                    rows={8}
-                    className="ui-input w-full text-xs font-mono leading-relaxed"
-                    value={editedContent[activePreviewChannel]?.body || ""}
-                    onChange={(e) =>
-                      setEditedContent((prev) => ({
-                        ...prev,
-                        [activePreviewChannel]: {
-                          ...prev[activePreviewChannel],
-                          body: e.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => copyText(editedContent[activePreviewChannel]?.title || "", "标题")}
-                    className="ui-button secondary text-xs py-1"
-                  >
-                    📄 复制标题
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => copyText(editedContent[activePreviewChannel]?.body || "", "正文")}
-                    className="ui-button secondary text-xs py-1"
-                  >
-                    📝 复制正文与标签
-                  </button>
-                </div>
               </div>
+            </section>
 
-              {/* 右侧：人工发布包指引清单与素材 */}
-              <div className="space-y-3.5 bg-white p-4 rounded-xl border border-slate-200/80">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800">
-                    📋 发布指引与素材包清单
-                  </span>
-                  {adaptedResults.find((r) => r.channel === activePreviewChannel)?.manualPackage && (
+            {/* 多端变体预览与微调 */}
+            {selectedChannelsList.length > 0 && (
+              <section className="surface p-5 space-y-4 rounded-xl border border-slate-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      <span>🎨</span> 多端变体预览与排版微调
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      规则预览会立即填入编辑区。AI 适配需要单独生成，并在确认后才写入编辑区。
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-1 text-[11px] text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={aiUseReal}
+                        disabled={!realAiAvailable || aiRunning}
+                        onChange={(e) => setAiUseReal(e.target.checked)}
+                      />
+                      使用真实模型
+                    </label>
                     <button
                       type="button"
-                      onClick={() =>
-                        downloadManualPackage(
-                          adaptedResults.find((r) => r.channel === activePreviewChannel)!.manualPackage,
-                          activePreviewChannel
-                        )
-                      }
-                      className="text-xs text-teal-700 hover:underline font-semibold"
+                      onClick={() => handleAiAdapt(false)}
+                      disabled={aiRunning}
+                      className="ui-button primary text-xs py-1.5 px-3"
                     >
-                      💾 下载发布包 JSON
+                      {aiRunning ? "正在生成渠道适配..." : "AI 生成"}
                     </button>
-                  )}
+                  </div>
                 </div>
 
-                {/* 平台专属 Checklist */}
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
-                    操作流程指引 (Checklist)
-                  </span>
-                  <ul className="space-y-1 text-xs text-slate-700">
-                    {(
-                      adaptedResults.find((r) => r.channel === activePreviewChannel)?.manualPackage?.checklist || [
-                        "登录对应平台创作者中心。",
-                        "复制左侧标题与正文至输入框。",
-                        "预览并确认无误后点击发布。",
-                      ]
-                    ).map((step, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <span className="flex-shrink-0 w-4 h-4 rounded-full bg-slate-100 text-slate-700 text-[10px] flex items-center justify-center font-bold">
-                          {idx + 1}
+                {/* 渠道标签切换 */}
+                <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
+                  {selectedChannelsList.map((chKey) => {
+                    const conf = CHANNEL_PLATFORM_CONFIG[chKey] || { label: chKey, icon: "📌" };
+                    const isCurrent = activePreviewChannel === chKey;
+                    return (
+                      <button
+                        key={chKey}
+                        type="button"
+                        onClick={() => setActivePreviewChannel(chKey)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isCurrent
+                            ? "bg-slate-900 text-white shadow-xs"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        <span>{conf.icon}</span>
+                        <span>{conf.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* 当前选中的渠道预览与微调内容 */}
+                {activePreviewChannel && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-2">
+                    <div className="space-y-3.5 bg-slate-50/50 p-4 rounded-xl border border-slate-200/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800">
+                          {CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.label} 专属文案
                         </span>
-                        <span className="leading-relaxed">{step}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                        <span className="text-[11px] text-slate-500">
+                          分发模式：{channelSelections[activePreviewChannel]?.mode === "AUTO" ? "⚡ 自动同步" : "📋 人工辅助"}
+                        </span>
+                      </div>
 
-                {/* 素材列表预览 */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
-                    关联素材与资产清单
-                  </span>
-                  {adaptedResults.find((r) => r.channel === activePreviewChannel)?.manualPackage?.assetManifest?.length ? (
-                    <div className="space-y-1 text-xs">
-                      {adaptedResults
-                        .find((r) => r.channel === activePreviewChannel)!
-                        .manualPackage.assetManifest.map((asset) => (
-                          <div
-                            key={asset.index}
-                            className="flex items-center justify-between rounded bg-slate-50 px-2.5 py-1.5 border border-slate-100"
-                          >
-                            <span className="font-medium text-slate-700">{asset.notes} ({asset.type})</span>
-                            <a
-                              href={asset.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[11px] text-teal-700 hover:underline"
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <label className="font-semibold text-slate-700">标题</label>
+                          {channelLimitsMap[activePreviewChannel] && (
+                            <span
+                              className={`text-[11px] ${
+                                (editedContent[activePreviewChannel]?.title?.length || 0) >
+                                channelLimitsMap[activePreviewChannel]!.title
+                                  ? "text-rose-600 font-bold"
+                                  : "text-slate-400"
+                              }`}
                             >
-                              查看素材 ↗
-                            </a>
-                          </div>
-                        ))}
+                              {editedContent[activePreviewChannel]?.title?.length || 0}/
+                              {channelLimitsMap[activePreviewChannel]!.title} 字
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          className="ui-input w-full text-xs"
+                          value={editedContent[activePreviewChannel]?.title || ""}
+                          onChange={(e) =>
+                            setEditedContent((prev) => ({
+                              ...prev,
+                              [activePreviewChannel]: {
+                                ...prev[activePreviewChannel],
+                                title: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <label className="font-semibold text-slate-700">正文与话题</label>
+                        </div>
+                        <textarea
+                          rows={8}
+                          className="ui-input w-full text-xs font-mono leading-relaxed"
+                          value={editedContent[activePreviewChannel]?.body || ""}
+                          onChange={(e) =>
+                            setEditedContent((prev) => ({
+                              ...prev,
+                              [activePreviewChannel]: {
+                                ...prev[activePreviewChannel],
+                                body: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => copyText(editedContent[activePreviewChannel]?.title || "", "标题")}
+                          className="ui-button secondary text-xs py-1"
+                        >
+                          📄 复制标题
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyText(editedContent[activePreviewChannel]?.body || "", "正文")}
+                          className="ui-button secondary text-xs py-1"
+                        >
+                          📝 复制正文
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-xs text-slate-400">当前草稿未挂载独立图像或视频素材文件。</p>
-                  )}
-                </div>
 
-                {/* 创作者后台直达 */}
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                  <span className="text-slate-500">直达平台发布后台：</span>
-                  <a
-                    href={CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.creatorUrl || "#"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ui-button secondary text-xs py-1"
+                    <div className="space-y-3.5 bg-white p-4 rounded-xl border border-slate-200/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800">📋 人工发布包与素材清单</span>
+                        {adaptedResults.find((r) => r.channel === activePreviewChannel)?.manualPackage && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              downloadManualPackage(
+                                adaptedResults.find((r) => r.channel === activePreviewChannel)!.manualPackage,
+                                activePreviewChannel,
+                              )
+                            }
+                            className="text-xs text-teal-700 hover:underline font-semibold"
+                          >
+                            💾 下载发布包 JSON
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                          操作指引
+                        </span>
+                        <ul className="space-y-1 text-xs text-slate-700">
+                          {(
+                            adaptedResults.find((r) => r.channel === activePreviewChannel)?.manualPackage?.checklist || [
+                              "登录平台创作者中心。",
+                              "复制左侧标题与正文至输入框。",
+                              "预览无误后提交发布。",
+                            ]
+                          ).map((step, idx) => (
+                            <li key={idx} className="flex items-start gap-2">
+                              <span className="flex-shrink-0 w-4 h-4 rounded-full bg-slate-100 text-slate-700 text-[10px] flex items-center justify-center font-bold">
+                                {idx + 1}
+                              </span>
+                              <span className="leading-relaxed">{step}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span className="text-slate-500">直达平台发布后台：</span>
+                        <a
+                          href={CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.creatorUrl || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ui-button secondary text-xs py-1"
+                        >
+                          打开 {CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.label} 后台 ↗
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 底部一键批量分发按钮 */}
+                <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
+                  <div className="text-xs text-slate-500 space-y-1">
+                    <div>
+                      将向 <strong className="text-slate-900">{selectedChannelsList.length}</strong> 个渠道提交任务。
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={distributing || selectedChannelsList.length === 0 || manualLimitViolations.length > 0}
+                    onClick={handleBatchDistribute}
+                    className="ui-button primary text-xs px-6 py-2.5 font-bold shadow-md"
                   >
-                    打开 {CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.label} 后台 ↗
-                  </a>
+                    {distributing ? "正在批量分发中..." : `🚀 一键批量分发 (${selectedChannelsList.length} 个渠道)`}
+                  </button>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* 底部一键批量分发按钮 */}
-          <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
-            <div className="text-xs text-slate-500 space-y-1">
-              <div>
-                将同时向 <strong className="text-slate-900">{selectedChannelsList.length}</strong> 个渠道提交分发任务。自动模式将同步至平台/草稿箱，人工模式将生成待发布清单；人工发布后需回填真实链接才会落地为 GEO 资产。
-              </div>
-              {manualLimitViolations.length > 0 && (
-                <div role="alert" className="text-rose-600 font-medium">
-                  超出平台限制，需调整后提交：
-                  {manualLimitViolations
-                    .map((v) => `${CHANNEL_PLATFORM_CONFIG[v.channel]?.label || v.channel}（${v.violations.join("，")}）`)
-                    .join("；")}
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              disabled={distributing || selectedChannelsList.length === 0 || manualLimitViolations.length > 0}
-              onClick={handleBatchDistribute}
-              className="ui-button primary text-xs px-6 py-2.5 font-bold shadow-md"
-            >
-              {distributing ? "正在批量分发中..." : `🚀 一键批量分发 (${selectedChannelsList.length} 个渠道)`}
-            </button>
+              </section>
+            )}
           </div>
-        </section>
-      )}
-        </>
-      )}
+        )}
+      </section>
 
-      {/* 第四部分：分发任务监控与人工发布结果回填 */}
-      <section className="surface p-5 space-y-4">
+      {/* ============================================================== */}
+      {/* 步骤 3：分发执行看板与真实落地资产 */}
+      {/* ============================================================== */}
+      <section className="surface p-6 space-y-4 rounded-2xl border border-slate-200/80 bg-white shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
           <div>
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <span>📊</span> 分发执行看板与真实落地资产
-            </h2>
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white">
+                3
+              </span>
+              <h2 className="text-base font-bold text-slate-900">分发执行看板与真实落地资产</h2>
+            </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              监控已创建的分发任务状态，人工发布完成后回填公开链接，直接生成 PublishedAsset 沉淀为 GEO 证据资产。
+              监控已发布或人工待发布任务，回填真实公开链接后将落成 PublishedAsset，并进入 GEO 事实复测与归因闭环。
             </p>
           </div>
           <button
@@ -1182,14 +1911,14 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
             disabled={loadingPubs}
             className="ui-button secondary text-xs"
           >
-            {loadingPubs ? "刷新中..." : "🔄 刷新记录"}
+            {loadingPubs ? "刷新中..." : "🔄 刷新看板"}
           </button>
         </div>
 
         {publications.length === 0 ? (
           <EmptyState
             title="暂无分发任务记录"
-            description="完成上方的步骤 1-3 并点击【一键批量分发】后，将在此处实时展示各渠道状态。"
+            description="完成上方的发布步骤后，将在此处实时展示任务执行进度与落地资产证据。"
           />
         ) : (
           <div className="overflow-x-auto">
@@ -1228,11 +1957,11 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                             <div className="font-semibold text-slate-900">{conf.label}</div>
                             <div className="text-[10px] flex items-center gap-1">
                               <span className={isManualMode ? "text-amber-700 font-medium" : "text-teal-700 font-medium"}>
-                                {isManualMode ? "人工辅助" : "自动发布"}
+                                {isManualMode ? "人工发布" : "自动发布"}
                               </span>
                               {isMockRun && (
                                 <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
-                                  (模拟执行)
+                                  (模拟)
                                 </span>
                               )}
                             </div>
@@ -1282,7 +2011,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                           </div>
                         ) : isExternalDraft ? (
                           <div className="text-[11px] text-slate-600">
-                            {isMockRun ? "已在模拟沙箱中存放至草稿箱" : "已安全存放至官方草稿箱，绝不私自群发"}
+                            {isMockRun ? "已在模拟沙箱中存放至草稿箱" : "已安全存放至官方草稿箱"}
                           </div>
                         ) : isFailed ? (
                           <div className="text-[11px] text-rose-600 truncate" title={latestAttempt?.errorMessage || ""}>
@@ -1290,7 +2019,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                           </div>
                         ) : (
                           <div className="text-[11px] text-slate-400">
-                            待人工前往平台发布并回填公开地址
+                            待前往平台发布并回填真实访问链接
                           </div>
                         )}
                       </td>
@@ -1301,7 +2030,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
 
                       <td className="py-3 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* 人工发布回填按钮 */}
                           {!isPublished && (
                             <button
                               type="button"
@@ -1314,11 +2042,10 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                               }}
                               className="ui-button primary text-[11px] py-1 px-2.5 font-semibold"
                             >
-                              回填结果确认
+                              回填确认
                             </button>
                           )}
 
-                          {/* 失败重试 */}
                           {isFailed && (
                             <button
                               type="button"
@@ -1329,23 +2056,21 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                             </button>
                           )}
 
-                          {/* 直达官方平台 */}
                           <a
                             href={conf.creatorUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="ui-button secondary text-[11px] py-1 px-2"
-                            title="前往对应平台创作者中心"
+                            title="前往平台创作者后台"
                           >
                             直达 ↗
                           </a>
 
-                          {/* 已发布且存在落地资产时提供进入 GEO 验证工作台的闭环跳转 */}
                           {isPublished && asset && (
                             <Link
                               href="/app/content/verification"
                               className="ui-button secondary text-[11px] py-1 px-2 text-teal-700 font-semibold"
-                              title="前往效果验证工作台查看 Retest 归因"
+                              title="前往 GEO 效果复测与归因工作台"
                             >
                               GEO 验证 ↗
                             </Link>
@@ -1358,7 +2083,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
               </tbody>
             </table>
 
-            {/* 分页控制栏 (P2-3) */}
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
               <div>
                 第 {currentPage} 页 / 共 {Math.max(1, Math.ceil(totalPubs / pageSize))} 页 (共 {totalPubs} 条记录)
@@ -1389,11 +2113,11 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       {/* 人工发布回填确认 Modal */}
       {confirmModalPub && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="surface max-w-lg w-full p-6 space-y-4 rounded-xl shadow-2xl animate-fade-in bg-white">
+          <div className="surface max-w-lg w-full p-6 space-y-4 rounded-2xl shadow-2xl animate-fade-in bg-white border border-slate-200">
             <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  确认人工发布结果（落成 PublishedAsset）
+                  确认发布结果（落成 PublishedAsset 资产）
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   目标渠道：{CHANNEL_PLATFORM_CONFIG[confirmModalPub.channel]?.label || confirmModalPub.channel}
@@ -1421,12 +2145,12 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                 </label>
                 <input
                   type="url"
-                  placeholder="如 https://www.xiaohongshu.com/explore/... 或 https://zhuanlan.zhihu.com/p/..."
+                  placeholder="如 https://zhuanlan.zhihu.com/p/... 或 https://www.xiaohongshu.com/explore/..."
                   className="ui-input w-full text-xs"
                   value={backfillUrl}
                   onChange={(e) => setBackfillUrl(e.target.value)}
                 />
-                <span className="text-[11px] text-slate-400">公开可访问的完整网址，用于 GEO 搜索引擎再测检索。</span>
+                <span className="text-[11px] text-slate-400">公开可访问的完整网址，用于 GEO 搜索引擎检索与事实复测。</span>
               </div>
 
               <div className="space-y-1">
@@ -1448,7 +2172,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                     onClick={() => setBackfillPublishedAt("")}
                     className="text-[11px] text-slate-400 hover:text-slate-700 underline"
                   >
-                    清空时间（记录为未指定）
+                    清空时间
                   </button>
                 </div>
                 <input
@@ -1457,7 +2181,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                   value={backfillPublishedAt}
                   onChange={(e) => setBackfillPublishedAt(e.target.value)}
                 />
-                <span className="text-[10px] text-slate-400">采用本地时间格式，若不清空将作为 GEO 事实再测基准时间。</span>
+                <span className="text-[10px] text-slate-400">若不清空将作为 GEO 事实再测基准时间。</span>
               </div>
 
               <div className="space-y-1">

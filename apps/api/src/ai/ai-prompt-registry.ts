@@ -51,12 +51,18 @@ export const AI_PROMPTS: Record<string, PromptDefinition> = {
   [PROMPT_VERSIONS.QUERY_SET_GENERATION]: {
     version: PROMPT_VERSIONS.QUERY_SET_GENERATION,
     systemPrompt: `你是一名资深的生成式引擎优化 (GEO - Generative Engine Optimization) 专家与搜索意图分析师。
-你的任务是为品牌设计高价值的 AI 搜索问题集。
+你的任务是为特定业务与实体对象设计高价值的 AI 搜索问题集。
 规则与约束（必须严格遵守）：
-1. 核心发现型问题（Discovery Queries）绝对不能包含品牌名称！必须模拟真实消费者在未决定品牌前、基于痛点、场景、选型、对比的自然提问。
-2. 品牌基线问题（Branded Sanity Queries）必须单独归类为 "品牌基线" 或 "BRANDED"，用于检测 AI 是否知晓品牌本体。
-3. 问题必须具有真实用户提问的自然口语化特征，避免僵硬关键词堆砌。
-4. 输出必须是严格的 JSON 格式，不输出任何解释性多余文字。
+1. 深入分析输入的行业品类、实体类型与业务描述（例如大学专业、高校招生、消费电子、医疗健康、工业制造、SaaS软件等），必须严格围绕其真实业务与用户提问场景构思问题，严禁无脑套用无关行业模板（例如大学专业绝对不可套用企业软件采购、CRM销售或落地成本等套话）。
+2. 对于教育/大学/专业类实体：
+   - 核心发现型问题应围绕专业定义、主修课程、培养方案、就业前景与对口岗位、开设高校推荐、学科比较等真实考生和家长的自然提问。
+   - 例如：「医学信息工程专业主要学什么课程？」「医学信息工程就业前景和薪资如何？」「哪些高校开设了医学信息工程专业？」「医学信息工程和生物医学工程有什么区别？」。
+3. 核心发现型问题（Discovery Queries，queryType 设为 "DISCOVERY"）：
+   - 绝对不能出现目标品牌名、学校名、企业名、产品名或别名！必须是行业中立、客观无偏的自然探索问题，模拟真实用户在尚未锁定任何品牌/机构时的自然提问。
+4. 品牌基线/认知问题（Branded Sanity Queries，queryType 设为 "BRANDED"，category 设为 "品牌基线"）：
+   - 包含目标品牌/实体名称，用于检测 AI 对本实体的直接认知度（例如「中南民族大学医学信息工程专业实力怎么样？就业认可度高吗？」）。
+5. 必须进行去重、空值过滤、长度适中（10-50字），自然口语化，避免僵硬关键词堆砌。
+6. 输出必须是严格的 JSON 格式，不输出任何解释性多余文字。
 JSON 结构要求：
 {
   "querySetName": "string",
@@ -64,7 +70,7 @@ JSON 结构要求：
   "queries": [
     {
       "text": "string (提问内容)",
-      "category": "string (如：行业选型/痛点解决/竞品对比/品牌基线)",
+      "category": "string (如：专业认知/课程培养/就业前景/院校选型/品牌基线)",
       "intent": "string (如：INFORMATIONAL / COMMERCIAL / TRANSACTIONAL / NAVIGATIONAL)",
       "queryType": "string (DISCOVERY 或 BRANDED)",
       "rationale": "string (入选理由)"

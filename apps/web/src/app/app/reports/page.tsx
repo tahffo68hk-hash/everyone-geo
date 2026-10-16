@@ -139,7 +139,7 @@ export default function ReportsPage() {
               + 运行基准测试
             </Link>
             <Link
-              href="/app/reports/compare"
+              href={`/app/reports/compare?project=${encodeURIComponent(projectId)}`}
               className="ui-button primary compact"
             >
               报告对比 →

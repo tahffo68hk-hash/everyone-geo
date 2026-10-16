@@ -129,9 +129,9 @@ export default function DiagnosisListPage() {
       {!loading && !error && rows.length === 0 && (
         <EmptyState
           title="暂无 GEO 问题诊断"
-          description="请在「GEO 基准测试报告」中为已完成报告点击「生成 GEO 问题诊断」。"
-          href="/app/reports"
-          action="前往基准报告"
+          description="GEO 诊断基于基准测试报告深度剖析生成。若尚未进行基准测试，请先前往运行测试并生成报告快照。"
+          href={`/app/benchmark?project=${encodeURIComponent(projectId)}`}
+          action="前往运行基准测试"
         />
       )}
       {rows.length > 0 && (
