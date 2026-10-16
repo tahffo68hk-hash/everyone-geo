@@ -67,7 +67,7 @@ class TaskExecutionState:
         elif self.channel == "SIMULATION":
             creator_url = "http://127.0.0.1:8765/static/simulation-editor.html"
         elif self.channel == "XIAOHONGSHU":
-            creator_url = "https://creator.xiaohongshu.com/"
+            creator_url = "https://creator.xiaohongshu.com/publish/publish?source=official"
         elif self.channel == "BILIBILI":
             creator_url = "https://member.bilibili.com/"
 

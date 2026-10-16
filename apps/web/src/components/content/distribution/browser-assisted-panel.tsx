@@ -60,6 +60,19 @@ export function BrowserAssistedPanel({
   const [editTags, setEditTags] = useState<string[]>([]);
   const [tagInputText, setTagInputText] = useState("");
 
+  // 素材配图管理 (支持顺序调整与编号，小红书支持 1-9 张图，首图为封面)
+  const [mediaItems, setMediaItems] = useState<
+    Array<{
+      index: number;
+      type: string;
+      url: string;
+      local_path?: string | null;
+      mime_type?: string;
+      notes?: string | null;
+    }>
+  >([]);
+  const [downloadingZip, setDownloadingZip] = useState(false);
+
   // 人工接管与发布包
   const [manualTakeoverMode, setManualTakeoverMode] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
@@ -76,7 +89,7 @@ export function BrowserAssistedPanel({
   // 当前渠道配置
   const activeChannel = channels.find((c) => c.channel === activeChannelKey) || channels[0];
 
-  // 同步草稿内容到编辑态
+  // 同步草稿内容到编辑态与配图列表
   useEffect(() => {
     if (selectedDraft) {
       setEditTitle(selectedDraft.title || "");
@@ -84,6 +97,42 @@ export function BrowserAssistedPanel({
       setEditBody(latestRev?.body || "");
       const rawTags = (latestRev as any)?.tags || [];
       setEditTags(Array.isArray(rawTags) ? rawTags : []);
+
+      // 初始化素材图片
+      const draftAssets = (selectedDraft as any)?.assets || (selectedDraft as any)?.media_items || [];
+      if (Array.isArray(draftAssets) && draftAssets.length > 0) {
+        setMediaItems(
+          draftAssets.map((a: any, idx: number) => ({
+            index: idx + 1,
+            type: a.type || "IMAGE",
+            url: a.url || a.previewUrl || `https://assets.geolens.local/images/${selectedDraft.id}/${idx + 1}.png`,
+            local_path: a.local_path || null,
+            notes: a.notes || (idx === 0 ? "封面首图" : `配图 ${idx + 1}`),
+          }))
+        );
+      } else {
+        // 提供针对小红书图文的优质素材推荐结构
+        setMediaItems([
+          {
+            index: 1,
+            type: "IMAGE",
+            url: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop",
+            notes: "封面首图 (建议 3:4 比例，突出痛点)",
+          },
+          {
+            index: 2,
+            type: "IMAGE",
+            url: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop",
+            notes: "配图 2：核心方案与关键数据对比",
+          },
+          {
+            index: 3,
+            type: "IMAGE",
+            url: "https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?w=800&auto=format&fit=crop",
+            notes: "配图 3：实战落地步骤与行动指引",
+          },
+        ]);
+      }
     }
   }, [selectedDraft]);
 
@@ -256,6 +305,7 @@ export function BrowserAssistedPanel({
         title: editTitle,
         body: editBody,
         tags: editTags,
+        media_items: mediaItems,
         source_draft_id: selectedDraft.id,
         source_revision_id: selectedDraft.revisions?.[0]?.id,
         headless: false, // 保证用户桌面可见受控 Chrome 窗口
@@ -265,6 +315,38 @@ export function BrowserAssistedPanel({
     } catch (e: any) {
       setExecuting(false);
       alert(`发起发布任务失败：${e.message}`);
+    }
+  }
+
+  // 下载完整人工发布包 (ZIP)
+  async function handleDownloadPackageZip() {
+    setDownloadingZip(true);
+    try {
+      let blob: Blob;
+      if (currentTaskId && taskState?.manual_package) {
+        blob = await assistantClient.downloadTaskPackageZip(currentTaskId);
+      } else {
+        blob = await assistantClient.exportPackageZip({
+          channel: activeChannelKey,
+          title: editTitle,
+          body: editBody,
+          tags: editTags,
+          media_items: mediaItems,
+        });
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${activeChannelKey.toLowerCase()}_manual_package_${Date.now()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      setCopyFeedback("已成功生成并下载完整人工发布包 (ZIP)！包含 README.md、content.txt、metadata.json 及编号素材");
+    } catch (err: any) {
+      alert(`下载发布包失败: ${err.message}`);
+    } finally {
+      setDownloadingZip(false);
     }
   }
 
@@ -427,6 +509,7 @@ export function BrowserAssistedPanel({
         {channels.map((ch) => {
           const isActive = ch.channel === activeChannelKey;
           const isZhihu = ch.channel === "ZHIHU";
+          const isXHS = ch.channel === "XIAOHONGSHU";
           return (
             <button
               key={ch.channel}
@@ -445,7 +528,16 @@ export function BrowserAssistedPanel({
                     isActive ? "bg-blue-500 text-white" : "bg-sky-100 text-sky-800"
                   }`}
                 >
-                  首发适配
+                  专栏长文
+                </span>
+              )}
+              {isXHS && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                    isActive ? "bg-rose-500 text-white" : "bg-rose-100 text-rose-700 border border-rose-200"
+                  }`}
+                >
+                  图文全自动
                 </span>
               )}
             </button>
@@ -483,16 +575,30 @@ export function BrowserAssistedPanel({
             {/* 标题 */}
             <div className="flex flex-col gap-1.5">
               <div className="flex justify-between items-center text-xs">
-                <label className="font-semibold text-slate-700">文章标题</label>
+                <div className="flex items-center gap-2">
+                  <label className="font-semibold text-slate-700">
+                    {activeChannelKey === "XIAOHONGSHU" ? "笔记标题 (限 20 字)" : "文章标题"}
+                  </label>
+                  {activeChannelKey === "XIAOHONGSHU" && editTitle.length > 20 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditTitle(editTitle.slice(0, 20))}
+                      className="text-[11px] px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-medium transition"
+                    >
+                      按 20 字截断
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   <span
                     className={`font-mono ${
-                      activeChannel?.limits?.title && editTitle.length > activeChannel.limits.title
+                      (activeChannel?.limits?.title && editTitle.length > activeChannel.limits.title) ||
+                      (activeChannelKey === "XIAOHONGSHU" && editTitle.length > 20)
                         ? "text-rose-600 font-bold"
                         : "text-slate-400"
                     }`}
                   >
-                    {editTitle.length} {activeChannel?.limits?.title ? `/ ${activeChannel.limits.title}` : ""} 字
+                    {editTitle.length} {activeChannelKey === "XIAOHONGSHU" ? "/ 20" : activeChannel?.limits?.title ? `/ ${activeChannel.limits.title}` : ""} 字
                   </span>
                   <button
                     type="button"
@@ -507,7 +613,8 @@ export function BrowserAssistedPanel({
                 type="text"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="请输入文章标题..."
+                placeholder={activeChannelKey === "XIAOHONGSHU" ? "请输入小红书笔记标题 (建议醒目、痛点突出，限 20 字)..." : "请输入文章标题..."}
+                maxLength={activeChannelKey === "XIAOHONGSHU" ? 30 : undefined}
                 className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-900"
               />
             </div>
@@ -582,6 +689,109 @@ export function BrowserAssistedPanel({
                   className="flex-1 min-w-[120px] bg-transparent text-xs outline-none text-slate-800 px-1 py-0.5"
                 />
               </div>
+            </div>
+
+            {/* 素材配图列表 (针对小红书图文笔记尤为关键：1-9张，首图为封面) */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+              <div className="flex justify-between items-center text-xs">
+                <div className="flex items-center gap-2">
+                  <label className="font-semibold text-slate-700">
+                    {activeChannelKey === "XIAOHONGSHU" ? "小红书笔记配图 (1-9 张)" : "素材配图列表"}
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    共 {mediaItems.length} 张 · 首图决定点击率
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadPackageZip}
+                  disabled={downloadingZip}
+                  className="text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 font-medium"
+                >
+                  {downloadingZip ? "打包中..." : "📦 下载完整人工发布包 (ZIP)"}
+                </button>
+              </div>
+
+              {mediaItems.length === 0 ? (
+                <div className="p-3 text-xs bg-slate-50 border border-dashed border-slate-200 rounded-lg text-slate-500 text-center">
+                  暂无配图素材。小红书笔记建议配置 1~9 张图片，启动受控浏览器后将按序辅助上传。
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                  {mediaItems.map((img, idx) => (
+                    <div
+                      key={idx}
+                      className="group relative rounded-lg border border-slate-200 overflow-hidden bg-slate-50 aspect-[3/4] flex flex-col justify-between p-1.5 hover:shadow-md transition"
+                    >
+                      <div className="flex items-center justify-between z-10">
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                            idx === 0
+                              ? "bg-rose-500 text-white"
+                              : "bg-black/60 text-white"
+                          }`}
+                        >
+                          {idx === 0 ? "封面 #1" : `#${idx + 1}`}
+                        </span>
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition">
+                          {idx > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = [...mediaItems];
+                                const temp = next[idx - 1];
+                                next[idx - 1] = next[idx];
+                                next[idx] = temp;
+                                setMediaItems(next);
+                              }}
+                              className="w-4 h-4 rounded bg-white text-slate-700 text-[10px] flex items-center justify-center shadow"
+                              title="前移（调整展示顺序）"
+                            >
+                              ←
+                            </button>
+                          )}
+                          {idx < mediaItems.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = [...mediaItems];
+                                const temp = next[idx + 1];
+                                next[idx + 1] = next[idx];
+                                next[idx] = temp;
+                                setMediaItems(next);
+                              }}
+                              className="w-4 h-4 rounded bg-white text-slate-700 text-[10px] flex items-center justify-center shadow"
+                              title="后移（调整展示顺序）"
+                            >
+                              →
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 图片背景或缩略图 */}
+                      <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-400 bg-slate-100 overflow-hidden">
+                        {img.url.startsWith("http") ? (
+                          <img
+                            src={img.url}
+                            alt={img.notes || `Image ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <span>🖼️ 图 {idx + 1}</span>
+                        )}
+                      </div>
+
+                      <div className="z-10 bg-black/60 backdrop-blur-xs text-white text-[9px] px-1 py-0.5 rounded truncate">
+                        {img.notes || `配图 ${idx + 1}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 复制反馈 */}
@@ -861,6 +1071,20 @@ export function BrowserAssistedPanel({
                     打开创作页 ↗
                   </a>
                 </div>
+              </div>
+              <div className="flex flex-col gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handleDownloadPackageZip}
+                  disabled={downloadingZip}
+                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <span>📦</span>
+                  <span>{downloadingZip ? "正在打包..." : "下载完整人工发布包 (ZIP)"}</span>
+                </button>
+                <p className="text-[10px] text-slate-400 text-center">
+                  打包包含 README.md 核对清单、content.txt 纯文本、metadata.json 与按序素材配图
+                </p>
               </div>
               <button
                 type="button"

@@ -48,7 +48,7 @@ def run_all_tests():
         failures += 1
 
     # 3. 运行知乎平台适配器测试
-    p("\n[3/4] Running Zhihu Adapter Unit Tests...")
+    p("\n[3/5] Running Zhihu Adapter Unit Tests...")
     try:
         from tests import test_zhihu_adapter
         test_zhihu_adapter.test_zhihu_publisher_metadata()
@@ -59,8 +59,35 @@ def run_all_tests():
         p(f"  -> FAIL: Zhihu adapter test failed: {e}")
         failures += 1
 
-    # 4. 运行真实受控 Chrome Selenium E2E 测试
-    p("\n[4/4] Running Real Selenium Chrome Headless E2E Pipeline Tests...")
+    # 4. 运行小红书平台适配器测试
+    p("\n[4/5] Running Xiaohongshu Adapter Unit Tests...")
+    try:
+        from tests import test_xiaohongshu_adapter
+        test_xiaohongshu_adapter.test_xiaohongshu_publisher_metadata()
+        test_xiaohongshu_adapter.test_xiaohongshu_title_20_char_limit()
+        test_xiaohongshu_adapter.test_xiaohongshu_popover_dismissal()
+        test_xiaohongshu_adapter.test_xiaohongshu_validate_draft_logic()
+        test_xiaohongshu_adapter.test_xiaohongshu_prepare_for_confirmation_gate()
+        test_xiaohongshu_adapter.test_xiaohongshu_read_publish_result()
+        p("  -> PASS: Xiaohongshu adapter tests passed (6/6)")
+        passed += 6
+    except Exception as e:
+        p(f"  -> FAIL: Xiaohongshu adapter test failed: {e}")
+        failures += 1
+
+    # 5. 运行人工发布包 ZIP 生成与导出测试
+    p("\n[5/6] Running Manual Package ZIP Generator Tests...")
+    try:
+        from tests import test_manual_package_zip
+        test_manual_package_zip.test_generate_manual_package_zip_content()
+        p("  -> PASS: Manual package ZIP stream, README.md, manifest passed")
+        passed += 1
+    except Exception as e:
+        p(f"  -> FAIL: Manual package ZIP test failed: {e}")
+        failures += 1
+
+    # 6. 运行真实受控 Chrome Selenium E2E 测试
+    p("\n[6/6] Running Real Selenium Chrome Headless E2E Pipeline Tests...")
     try:
         from tests import test_e2e_simulation
         test_e2e_simulation.test_real_selenium_e2e_pipeline()

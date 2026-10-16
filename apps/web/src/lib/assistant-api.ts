@@ -109,7 +109,7 @@ export interface CreatePublishTaskPayload {
     type: string;
     url: string;
     local_path?: string | null;
-    mime_type: string;
+    mime_type?: string;
     notes?: string | null;
   }>;
   cover_url?: string | null;
@@ -287,6 +287,42 @@ export class BrowserAssistantClient {
     }>(`/api/tasks/${taskId}/simulate-confirm`, {
       method: "POST",
     });
+  }
+
+  async downloadTaskPackageZip(taskId: string): Promise<Blob> {
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers["X-Assistant-Token"] = this.token;
+      headers["Authorization"] = `Bearer ${this.token}`;
+    }
+    const res = await fetch(`${this.baseUrl}/api/tasks/${taskId}/download-package`, {
+      headers,
+    });
+    if (!res.ok) throw new Error("下载发布包失败");
+    return res.blob();
+  }
+
+  async exportPackageZip(payload: {
+    channel: string;
+    title: string;
+    body: string;
+    tags: string[];
+    media_items?: any[];
+  }): Promise<Blob> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.token) {
+      headers["X-Assistant-Token"] = this.token;
+      headers["Authorization"] = `Bearer ${this.token}`;
+    }
+    const res = await fetch(`${this.baseUrl}/api/package/export-zip`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("导出人工发布包失败");
+    return res.blob();
   }
 }
 

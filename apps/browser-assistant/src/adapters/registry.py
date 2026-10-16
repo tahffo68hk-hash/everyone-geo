@@ -7,6 +7,7 @@ from selenium import webdriver
 from .base import BasePublisher
 from .zhihu import ZhihuPublisher
 from .simulation import LocalSimulationPublisher
+from .xiaohongshu import XiaohongshuPublisher
 from .fallback import FallbackPublisher, CREATOR_URL_MAP
 
 
@@ -16,6 +17,7 @@ class PublisherRegistry:
     _REGISTRY: dict[str, Type[BasePublisher]] = {
         "ZHIHU": ZhihuPublisher,
         "SIMULATION": LocalSimulationPublisher,
+        "XIAOHONGSHU": XiaohongshuPublisher,
     }
 
     @classmethod

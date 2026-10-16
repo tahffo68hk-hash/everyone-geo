@@ -2,21 +2,27 @@
 GeoLens 本地浏览器助手 - FastAPI 服务端入口
 提供受控 Localhost HTTP 接口，严格实施 Origin 白名单和本地配对令牌鉴权
 """
+import io
+import json
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .config import settings, BASE_DIR
 from .security import (
     CURRENT_TOKEN, verify_origin, verify_request_auth
 )
 from .models import (
-    CreatePublishTaskRequest, ConfirmPublishRequest, TaskStatusResponse
+    CreatePublishTaskRequest, ConfirmPublishRequest, TaskStatusResponse,
+    ExportPackageZipRequest
 )
 from .browser_manager import browser_manager
 from .adapters.registry import registry
+from .adapters.fallback import CREATOR_URL_MAP
 from .task_runner import task_manager
 
 app = FastAPI(
@@ -256,3 +262,163 @@ async def simulate_user_publish_confirm(task_id: str):
             "external_asset_id": data.get("external_asset_id")
         }
     return {"success": False, "message": msg}
+
+
+def generate_package_zip_stream(
+    channel: str,
+    title: str,
+    body: str,
+    tags: list[str],
+    media_items: list,
+    checklist: list[str] | None = None,
+    creator_url: str | None = None,
+    instructions: str | None = None,
+    generated_at: str | None = None
+) -> io.BytesIO:
+    """生成包含完整 Markdown、纯文本、结构化元数据和真实图片素材的 ZIP 包"""
+    norm_channel = channel.upper()
+    now_str = generated_at or datetime.now(timezone.utc).isoformat()
+    c_url = creator_url or CREATOR_URL_MAP.get(norm_channel, "https://creator.xiaohongshu.com/publish/publish?source=official" if norm_channel == "XIAOHONGSHU" else "https://zhuanlan.zhihu.com/write")
+    
+    if not checklist:
+        checklist = [
+            f"1. 确认登录 {norm_channel} 官方创作者账号",
+            "2. 检查标题无错漏与错别字",
+            "3. 核对正文排版及分段换行",
+            "4. 按照编号顺序上传素材配图",
+            "5. 填入相关话题标签以增加曝光",
+            "6. 预览确认无误后点击发布",
+            "7. 在 GeoLens 控制台回填发布落地链接"
+        ]
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 1. README.md
+        readme_lines = [
+            f"# GeoLens 人工发布辅助包 - {norm_channel}",
+            f"",
+            f"- 生成时间: `{now_str}`",
+            f"- 目标平台: **{norm_channel}**",
+            f"- 官方创作后台链接: [{c_url}]({c_url})",
+            f"",
+            f"---",
+            f"",
+            f"## 一、发布核对清单 (Checklist)",
+            f"",
+        ]
+        for c in checklist:
+            readme_lines.append(f"- [ ] {c}")
+
+        readme_lines.extend([
+            f"",
+            f"## 二、文章/笔记标题",
+            f"",
+            f"```text",
+            f"{title}",
+            f"```",
+            f"",
+            f"## 三、正文描述预览",
+            f"",
+            f"```markdown",
+            f"{body}",
+            f"```",
+            f"",
+            f"## 四、话题标签",
+            f"",
+            f"{' '.join(['#' + t.replace('#', '') for t in tags]) if tags else '无'}",
+            f"",
+            f"## 五、配图与素材",
+            f"",
+            f"共有 {len(media_items)} 个素材，已按推荐发布顺序保存在 images/ 目录下（如具备本地缓存）或记录在 images/image_manifest.txt 中。",
+            f"",
+            f"## 六、操作指引",
+            f"",
+            f"{instructions or '在受控浏览器打开官方创作页面后，请直接复制上方标题、正文与配图至对应输入区。核对无误后点击发布，并将最终公开地址回填至 GeoLens 控制台。'}",
+        ])
+        zf.writestr("README.md", "\n".join(readme_lines))
+
+        # 2. content.txt
+        zf.writestr("content.txt", body)
+
+        # 3. metadata.json
+        meta_dict = {
+            "channel": norm_channel,
+            "title": title,
+            "body_length": len(body),
+            "hashtags": tags,
+            "creator_url": c_url,
+            "checklist": checklist,
+            "generated_at": now_str,
+            "media_count": len(media_items),
+        }
+        zf.writestr("metadata.json", json.dumps(meta_dict, ensure_ascii=False, indent=2))
+
+        # 4. images/
+        image_manifest = []
+        for i, item in enumerate(media_items):
+            local_p = getattr(item, "local_path", None)
+            item_url = getattr(item, "url", "")
+            item_type = getattr(item, "type", "IMAGE")
+            if local_p and Path(local_p).exists():
+                src_path = Path(local_p)
+                ext = src_path.suffix or ".png"
+                target_name = f"images/{i+1:02d}_{src_path.stem}{ext}"
+                try:
+                    zf.write(src_path, target_name)
+                    image_manifest.append(f"{i+1:02d}: {target_name} (Source: {src_path.name})")
+                    continue
+                except Exception:
+                    pass
+            image_manifest.append(f"{i+1:02d}: URL={item_url} [Type={item_type}]")
+
+        if image_manifest:
+            zf.writestr("images/image_manifest.txt", "\n".join(image_manifest))
+
+    zip_buffer.seek(0)
+    return zip_buffer
+
+
+@app.get("/api/tasks/{task_id}/download-package", dependencies=[Depends(require_auth)])
+async def download_task_manual_package(task_id: str):
+    """下载特定发布任务的完整人工发布包 ZIP"""
+    state = task_manager.get_task(task_id)
+    if not state or not state.manual_package:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务或发布包不存在")
+
+    pkg = state.manual_package
+    buf = generate_package_zip_stream(
+        channel=pkg.channel,
+        title=pkg.title,
+        body=pkg.body,
+        tags=pkg.hashtags,
+        media_items=pkg.media_items,
+        checklist=pkg.checklist,
+        creator_url=pkg.creator_url,
+        instructions=pkg.instructions,
+        generated_at=pkg.generated_at
+    )
+    filename = f"{pkg.channel.lower()}_manual_package_{task_id[:8]}.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+@app.post("/api/package/export-zip", dependencies=[Depends(require_auth)])
+async def export_package_zip(req: ExportPackageZipRequest):
+    """直接根据草稿参数生成并下载人工发布包 ZIP（无需提前创建异步任务）"""
+    buf = generate_package_zip_stream(
+        channel=req.channel,
+        title=req.title,
+        body=req.body,
+        tags=req.tags,
+        media_items=req.media_items
+    )
+    filename = f"{req.channel.lower()}_manual_package.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+

@@ -127,3 +127,12 @@ class TaskStatusResponse(BaseModel):
     external_asset_id: str | None = None
     created_at: str
     updated_at: str
+
+
+class ExportPackageZipRequest(BaseModel):
+    channel: str
+    title: str
+    body: str
+    tags: list[str] = Field(default_factory=list)
+    media_items: list[MediaItem] = Field(default_factory=list)
+

@@ -7,7 +7,7 @@ from .base import BasePublisher
 from ..models import MediaItem, ValidationDiff
 
 CREATOR_URL_MAP = {
-    "XIAOHONGSHU": "https://creator.xiaohongshu.com/",
+    "XIAOHONGSHU": "https://creator.xiaohongshu.com/publish/publish?source=official",
     "BILIBILI": "https://member.bilibili.com/",
     "DOUYIN": "https://creator.douyin.com/",
     "WECHAT_CHANNELS": "https://channels.weixin.qq.com/",

@@ -2761,7 +2761,10 @@ export class ContentExecutionService implements OnModuleDestroy {
       return {
         ...item,
         supportsBrowserAssistant: true,
-        browserAssistantCapability: item.channel === "ZHIHU" ? "FULL_AUTOMATION" : "MANUAL_FALLBACK",
+        browserAssistantCapability:
+          item.channel === "ZHIHU" || item.channel === "XIAOHONGSHU"
+            ? "FULL_AUTOMATION"
+            : "MANUAL_FALLBACK",
         limits: CHANNEL_CONTENT_LIMITS[item.channel as keyof typeof CHANNEL_CONTENT_LIMITS] ?? null,
         connected: !!conn,
         connectionId: conn?.id || null,
