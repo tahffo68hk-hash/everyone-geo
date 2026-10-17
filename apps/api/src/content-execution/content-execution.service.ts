@@ -2754,17 +2754,55 @@ export class ContentExecutionService implements OnModuleDestroy {
         description: "专栏长文与视频投稿简介，包含分区指引与一键三连互动引导。",
         tips: "专栏支持富文本与多图排版，视频投稿支持简介与标签预设。",
       },
+      {
+        channel: "KUAISHOU",
+        name: "快手",
+        category: "短视频",
+        supportsAuto: false,
+        supportsManual: true,
+        autoCapability: "MANUAL_ONLY",
+        requiresVideo: true,
+        description: "快手创作者服务平台短视频发布，支持视频上传、标题、标签与合集设置。",
+        tips: "受控浏览器辅助上传成片视频并填写描述标签，PREPARE_ONLY 停留在发布前供您审核。",
+      },
+      {
+        channel: "BAIJIAHAO",
+        name: "百家号",
+        category: "图文资讯",
+        supportsAuto: false,
+        supportsManual: true,
+        autoCapability: "MANUAL_ONLY",
+        requiresVideo: false,
+        description: "百度百家号文章创作与图文发布，支持标题、正文、配图与原创声明。",
+        tips: "百度生态首发收录与搜索加权，受控浏览器辅助填入正文并停留确认。",
+      },
+      {
+        channel: "TOUTIAO",
+        name: "今日头条",
+        category: "新闻资讯",
+        supportsAuto: false,
+        supportsManual: true,
+        autoCapability: "MANUAL_ONLY",
+        requiresVideo: false,
+        description: "今日头条号创作者平台文章发布，支持 30 字以内凝练标题与配图上传。",
+        tips: "头条文章严控标题 30 字以内，受控浏览器自动填写正文并在【发布】按钮前停留等待创作者人工确认。",
+      },
     ];
+
+    const AUTOFILL_CHANNELS = new Set([
+      "ZHIHU", "XIAOHONGSHU", "BILIBILI", "DOUYIN",
+      "WECHAT_CHANNELS", "KUAISHOU", "WEIBO", "BAIJIAHAO",
+      "WECHAT_OFFICIAL_ACCOUNT", "TOUTIAO"
+    ]);
 
     return CHANNEL_MATRIX.map((item) => {
       const conn = connMap.get(item.channel);
       return {
         ...item,
         supportsBrowserAssistant: true,
-        browserAssistantCapability:
-          item.channel === "ZHIHU" || item.channel === "XIAOHONGSHU"
-            ? "AUTOFILL_AND_CONFIRM"
-            : "MANUAL_FALLBACK",
+        browserAssistantCapability: AUTOFILL_CHANNELS.has(item.channel)
+          ? "AUTOFILL_AND_CONFIRM"
+          : "MANUAL_FALLBACK",
         limits: CHANNEL_CONTENT_LIMITS[item.channel as keyof typeof CHANNEL_CONTENT_LIMITS] ?? null,
         connected: !!conn,
         connectionId: conn?.id || null,

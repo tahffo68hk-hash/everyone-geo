@@ -83,6 +83,9 @@ export function BrowserAssistedPanel({
     }>
   >([]);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [showAddMediaInput, setShowAddMediaInput] = useState(false);
+  const [customMediaPath, setCustomMediaPath] = useState("");
+  const [customMediaType, setCustomMediaType] = useState<"VIDEO" | "IMAGE" | "COVER">("VIDEO");
 
   // 人工接管与发布包
   const [manualTakeoverMode, setManualTakeoverMode] = useState(false);
@@ -100,6 +103,7 @@ export function BrowserAssistedPanel({
 
   // 当前渠道配置
   const activeChannel = channels.find((c) => c.channel === activeChannelKey) || channels[0];
+  const isVideoChannel = Boolean(activeChannel?.requiresVideo || ["BILIBILI", "DOUYIN", "WECHAT_CHANNELS", "KUAISHOU"].includes(activeChannelKey));
 
   // 同步草稿内容到编辑态与配图列表
   useEffect(() => {
@@ -509,8 +513,36 @@ export function BrowserAssistedPanel({
         setConfirmError("知乎专栏发布链接必须包含 zhihu.com 域名");
         return;
       }
-      if (activeChannelKey === "BILIBILI" && !cLow.includes("bilibili.com")) {
-        setConfirmError("B站发布链接必须包含 bilibili.com 域名");
+      if (activeChannelKey === "BILIBILI" && !cLow.includes("bilibili.com") && !cLow.includes("b23.tv")) {
+        setConfirmError("B站发布链接必须包含 bilibili.com 或 b23.tv 域名");
+        return;
+      }
+      if (activeChannelKey === "DOUYIN" && !cLow.includes("douyin.com") && !cLow.includes("iesdouyin.com")) {
+        setConfirmError("抖音发布链接必须包含 douyin.com 或 iesdouyin.com 域名");
+        return;
+      }
+      if (activeChannelKey === "WECHAT_CHANNELS" && !cLow.includes("weixin.qq.com") && !cLow.includes("qq.com")) {
+        setConfirmError("微信视频号发布链接必须包含 weixin.qq.com 或 qq.com 域名");
+        return;
+      }
+      if (activeChannelKey === "KUAISHOU" && !cLow.includes("kuaishou.com") && !cLow.includes("kwai.com")) {
+        setConfirmError("快手发布链接必须包含 kuaishou.com 或 kwai.com 域名");
+        return;
+      }
+      if (activeChannelKey === "WEIBO" && !cLow.includes("weibo.com") && !cLow.includes("weibo.cn")) {
+        setConfirmError("微博发布链接必须包含 weibo.com 或 weibo.cn 域名");
+        return;
+      }
+      if (activeChannelKey === "BAIJIAHAO" && !cLow.includes("baidu.com")) {
+        setConfirmError("百家号发布链接必须包含 baidu.com 域名");
+        return;
+      }
+      if (activeChannelKey === "WECHAT_OFFICIAL_ACCOUNT" && !cLow.includes("mp.weixin.qq.com") && !cLow.includes("weixin.qq.com") && !cLow.includes("qq.com")) {
+        setConfirmError("微信公众号发布链接必须包含 weixin.qq.com 或 qq.com 域名");
+        return;
+      }
+      if (activeChannelKey === "TOUTIAO" && !cLow.includes("toutiao.com")) {
+        setConfirmError("今日头条发布链接必须包含 toutiao.com 域名");
         return;
       }
     }
@@ -628,8 +660,7 @@ export function BrowserAssistedPanel({
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         {channels.map((ch) => {
           const isActive = ch.channel === activeChannelKey;
-          const isZhihu = ch.channel === "ZHIHU";
-          const isXHS = ch.channel === "XIAOHONGSHU";
+          const isVideo = ch.requiresVideo || ["BILIBILI", "DOUYIN", "WECHAT_CHANNELS", "KUAISHOU"].includes(ch.channel);
           return (
             <button
               key={ch.channel}
@@ -642,22 +673,21 @@ export function BrowserAssistedPanel({
               }`}
             >
               <span>{ch.name}</span>
-              {isZhihu && (
+              {isVideo ? (
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded font-normal ${
-                    isActive ? "bg-blue-500 text-white" : "bg-sky-100 text-sky-800"
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                    isActive ? "bg-purple-500 text-white" : "bg-purple-50 text-purple-700 border border-purple-200"
                   }`}
                 >
-                  专栏长文 · 人工确认
+                  视频 · 人工确认
                 </span>
-              )}
-              {isXHS && (
+              ) : (
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
-                    isActive ? "bg-rose-500 text-white" : "bg-rose-100 text-rose-700 border border-rose-200"
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                    isActive ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600 border border-slate-200"
                   }`}
                 >
-                  辅助填写 · 人工确认
+                  {ch.channel === "XIAOHONGSHU" ? "笔记 · 人工确认" : "图文 · 人工确认"}
                 </span>
               )}
             </button>
@@ -811,105 +841,193 @@ export function BrowserAssistedPanel({
               </div>
             </div>
 
-            {/* 素材配图列表 (针对小红书图文笔记尤为关键：1-9张，首图为封面) */}
+            {/* 素材配图/视频成片列表 */}
             <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
               <div className="flex justify-between items-center text-xs">
                 <div className="flex items-center gap-2">
                   <label className="font-semibold text-slate-700">
-                    {activeChannelKey === "XIAOHONGSHU" ? "小红书笔记配图 (1-9 张)" : "素材配图列表"}
+                    {isVideoChannel ? "视频成片与封面素材" : activeChannelKey === "XIAOHONGSHU" ? "小红书笔记配图 (1-9 张)" : "素材配图列表"}
                   </label>
                   <span className="text-[11px] text-slate-400">
-                    共 {mediaItems.length} 张 · 首图决定点击率
+                    共 {mediaItems.length} 个素材 · {isVideoChannel ? "受控Chrome优先上传成片" : "首图决定点击率"}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleDownloadPackageZip}
-                  disabled={downloadingZip}
-                  className="text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 font-medium"
-                >
-                  {downloadingZip ? "打包中..." : "📦 下载完整人工发布包 (ZIP)"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddMediaInput(!showAddMediaInput)}
+                    className="text-xs text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 font-medium"
+                  >
+                    {showAddMediaInput ? "收起输入" : isVideoChannel ? "＋ 添加本地成片/素材" : "＋ 添加本地素材"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadPackageZip}
+                    disabled={downloadingZip}
+                    className="text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 font-medium"
+                  >
+                    {downloadingZip ? "打包中..." : "📦 下载完整人工发布包 (ZIP)"}
+                  </button>
+                </div>
               </div>
+
+              {isVideoChannel && (
+                <div className="p-2.5 rounded-lg bg-purple-50/80 border border-purple-200 text-purple-900 text-xs flex items-center gap-2 shadow-xs">
+                  <span className="text-base shrink-0">🎥</span>
+                  <span className="leading-snug">
+                    <strong>视频发布说明：</strong>系统将在桌面受控 Chrome 中优先上传视频文件，并在视频解析后自动填写标题、简介与标签，PREPARE_ONLY 停留在最终发布页供作者审核。
+                  </span>
+                </div>
+              )}
+
+              {showAddMediaInput && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-col gap-2 text-xs animate-fade-in">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={customMediaType}
+                      onChange={(e) => setCustomMediaType(e.target.value as any)}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white font-medium text-xs text-slate-700"
+                    >
+                      <option value="VIDEO">🎬 视频成片 (VIDEO)</option>
+                      <option value="COVER">🖼️ 封面图片 (COVER)</option>
+                      <option value="IMAGE">🖼️ 插图/配图 (IMAGE)</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={customMediaPath}
+                      onChange={(e) => setCustomMediaPath(e.target.value)}
+                      placeholder="输入本地视频或图片文件绝对路径 (如 D:\videos\demo.mp4 或 file://...)"
+                      className="flex-1 min-w-[200px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-mono text-xs text-slate-900"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!customMediaPath.trim()) return;
+                        const trimmed = customMediaPath.trim();
+                        const nextItem = {
+                          index: mediaItems.length + 1,
+                          type: customMediaType,
+                          url: trimmed.startsWith("http") || trimmed.startsWith("file://") ? trimmed : `file:///${trimmed.replace(/\\/g, "/")}`,
+                          local_path: trimmed.startsWith("file://") ? null : trimmed,
+                          notes: customMediaType === "VIDEO" ? "本地成片视频" : customMediaType === "COVER" ? "指定封面图片" : `素材 ${mediaItems.length + 1}`,
+                        };
+                        setMediaItems([...mediaItems, nextItem]);
+                        setCustomMediaPath("");
+                        setShowAddMediaInput(false);
+                      }}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-xs shadow-xs transition"
+                    >
+                      确定添加
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    安全保证：本地素材由受控 Chrome 助手直接通过本地文件句柄载入，无需云端中转或 Base64 编码。
+                  </p>
+                </div>
+              )}
 
               {mediaItems.length === 0 ? (
                 <div className="p-3 text-xs bg-slate-50 border border-dashed border-slate-200 rounded-lg text-slate-500 text-center">
-                  暂无配图素材。小红书笔记建议配置 1~9 张图片，启动受控浏览器后将按序辅助上传。
+                  {isVideoChannel
+                    ? "暂无视频素材。请点击上方【＋ 添加本地成片/素材】指定成片 .mp4 路径，或在草稿中挂载视频资产。"
+                    : "暂无配图素材。笔记建议配置 1~9 张图片，启动受控浏览器后将按序辅助上传。"}
                 </div>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                  {mediaItems.map((img, idx) => (
-                    <div
-                      key={idx}
-                      className="group relative rounded-lg border border-slate-200 overflow-hidden bg-slate-50 aspect-[3/4] flex flex-col justify-between p-1.5 hover:shadow-md transition"
-                    >
-                      <div className="flex items-center justify-between z-10">
-                        <span
-                          className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
-                            idx === 0
-                              ? "bg-rose-500 text-white"
-                              : "bg-black/60 text-white"
-                          }`}
-                        >
-                          {idx === 0 ? "封面 #1" : `#${idx + 1}`}
-                        </span>
-                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition">
-                          {idx > 0 && (
+                  {mediaItems.map((img, idx) => {
+                    const isVideo = img.type === "VIDEO" || img.url.endsWith(".mp4") || img.url.endsWith(".mov");
+                    return (
+                      <div
+                        key={idx}
+                        className="group relative rounded-lg border border-slate-200 overflow-hidden bg-slate-50 aspect-[3/4] flex flex-col justify-between p-1.5 hover:shadow-md transition"
+                      >
+                        <div className="flex items-center justify-between z-10">
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                              isVideo
+                                ? "bg-purple-600 text-white"
+                                : idx === 0 || img.type === "COVER"
+                                ? "bg-rose-500 text-white"
+                                : "bg-black/60 text-white"
+                            }`}
+                          >
+                            {isVideo ? "🎬 视频" : idx === 0 || img.type === "COVER" ? "封面 #1" : `#${idx + 1}`}
+                          </span>
+                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition">
+                            {idx > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = [...mediaItems];
+                                  const temp = next[idx - 1];
+                                  next[idx - 1] = next[idx];
+                                  next[idx] = temp;
+                                  setMediaItems(next);
+                                }}
+                                className="w-4 h-4 rounded bg-white text-slate-700 text-[10px] flex items-center justify-center shadow"
+                                title="前移（调整展示顺序）"
+                              >
+                                ←
+                              </button>
+                            )}
+                            {idx < mediaItems.length - 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = [...mediaItems];
+                                  const temp = next[idx + 1];
+                                  next[idx + 1] = next[idx];
+                                  next[idx] = temp;
+                                  setMediaItems(next);
+                                }}
+                                className="w-4 h-4 rounded bg-white text-slate-700 text-[10px] flex items-center justify-center shadow"
+                                title="后移（调整展示顺序）"
+                              >
+                                →
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => {
-                                const next = [...mediaItems];
-                                const temp = next[idx - 1];
-                                next[idx - 1] = next[idx];
-                                next[idx] = temp;
-                                setMediaItems(next);
+                                setMediaItems(mediaItems.filter((_, i) => i !== idx));
                               }}
-                              className="w-4 h-4 rounded bg-white text-slate-700 text-[10px] flex items-center justify-center shadow"
-                              title="前移（调整展示顺序）"
+                              className="w-4 h-4 rounded bg-rose-500 hover:bg-rose-600 text-white text-[10px] flex items-center justify-center shadow"
+                              title="移除此素材"
                             >
-                              ←
+                              &times;
                             </button>
-                          )}
-                          {idx < mediaItems.length - 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const next = [...mediaItems];
-                                const temp = next[idx + 1];
-                                next[idx + 1] = next[idx];
-                                next[idx] = temp;
-                                setMediaItems(next);
+                          </div>
+                        </div>
+
+                        {/* 图片背景或缩略图 */}
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-400 bg-slate-100 overflow-hidden">
+                          {isVideo ? (
+                            <div className="flex flex-col items-center justify-center gap-1 text-purple-700 p-2 text-center">
+                              <span className="text-2xl">🎬</span>
+                              <span className="text-[10px] font-mono break-all line-clamp-2">
+                                {img.local_path ? img.local_path.split(/[\\/]/).pop() : "本地视频"}
+                              </span>
+                            </div>
+                          ) : img.url.startsWith("http") ? (
+                            <img
+                              src={img.url}
+                              alt={img.notes || `Image ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = "none";
                               }}
-                              className="w-4 h-4 rounded bg-white text-slate-700 text-[10px] flex items-center justify-center shadow"
-                              title="后移（调整展示顺序）"
-                            >
-                              →
-                            </button>
+                            />
+                          ) : (
+                            <span>🖼️ 图 {idx + 1}</span>
                           )}
                         </div>
-                      </div>
 
-                      {/* 图片背景或缩略图 */}
-                      <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-400 bg-slate-100 overflow-hidden">
-                        {img.url.startsWith("http") ? (
-                          <img
-                            src={img.url}
-                            alt={img.notes || `Image ${idx + 1}`}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = "none";
-                            }}
-                          />
-                        ) : (
-                          <span>🖼️ 图 {idx + 1}</span>
-                        )}
+                        <div className="z-10 bg-black/60 backdrop-blur-xs text-white text-[9px] px-1 py-0.5 rounded truncate">
+                          {img.notes || (isVideo ? "视频成片" : `配图 ${idx + 1}`)}
+                        </div>
                       </div>
-
-                      <div className="z-10 bg-black/60 backdrop-blur-xs text-white text-[9px] px-1 py-0.5 rounded truncate">
-                        {img.notes || `配图 ${idx + 1}`}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1272,10 +1390,13 @@ export function BrowserAssistedPanel({
                         XIAOHONGSHU: "https://creator.xiaohongshu.com/publish/publish",
                         WECHAT_OFFICIAL_ACCOUNT: "https://mp.weixin.qq.com/",
                         WECHAT: "https://mp.weixin.qq.com/",
-                        BILIBILI: "https://member.bilibili.com/platform/upload/text/edit",
+                        BILIBILI: "https://member.bilibili.com/",
                         DOUYIN: "https://creator.douyin.com/",
                         WECHAT_CHANNELS: "https://channels.weixin.qq.com/",
+                        KUAISHOU: "https://cp.kuaishou.com/article/publish/video",
                         WEIBO: "https://weibo.com/",
+                        BAIJIAHAO: "https://baijiahao.baidu.com/builder/rc/edit?type=news",
+                        TOUTIAO: "https://mp.toutiao.com/profile_v4/graphic/publish",
                       }[activeChannelKey] || "https://zhuanlan.zhihu.com/write"
                     }
                     target="_blank"
@@ -1388,6 +1509,22 @@ export function BrowserAssistedPanel({
                       ? "https://www.xiaohongshu.com/explore/... 或 https://xhslink.com/..."
                       : activeChannelKey === "ZHIHU"
                       ? "https://zhuanlan.zhihu.com/p/..."
+                      : activeChannelKey === "BILIBILI"
+                      ? "https://www.bilibili.com/video/BV... 或 https://b23.tv/..."
+                      : activeChannelKey === "DOUYIN"
+                      ? "https://www.douyin.com/video/..."
+                      : activeChannelKey === "WECHAT_CHANNELS"
+                      ? "https://channels.weixin.qq.com/..."
+                      : activeChannelKey === "KUAISHOU"
+                      ? "https://www.kuaishou.com/short-video/..."
+                      : activeChannelKey === "WEIBO"
+                      ? "https://weibo.com/..."
+                      : activeChannelKey === "BAIJIAHAO"
+                      ? "https://baijiahao.baidu.com/s?id=..."
+                      : activeChannelKey === "WECHAT_OFFICIAL_ACCOUNT"
+                      ? "https://mp.weixin.qq.com/s/..."
+                      : activeChannelKey === "TOUTIAO"
+                      ? "https://www.toutiao.com/article/..."
                       : "https://..."
                   }
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"

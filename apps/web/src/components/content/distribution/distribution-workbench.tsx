@@ -26,7 +26,7 @@ import { api } from "@/lib/api";
 import { StatusBadge, LoadingSkeleton, EmptyState } from "@/components/ui";
 import { BrowserAssistedPanel } from "./browser-assisted-panel";
 
-const VIDEO_SCRIPT_CHANNELS = new Set(["DOUYIN", "WECHAT_CHANNELS", "BILIBILI"]);
+const VIDEO_SCRIPT_CHANNELS = new Set(["DOUYIN", "WECHAT_CHANNELS", "BILIBILI", "KUAISHOU"]);
 
 const CHANNEL_PLATFORM_CONFIG: Record<
   string,
@@ -173,6 +173,54 @@ const CHANNEL_PLATFORM_CONFIG: Record<
       "需在微信视频号助手扫码授权登录。",
       "建议视频时长在 15 秒到 3 分钟之间，分辨率 1080p 竖屏最佳。",
       "可在视频文案中挂载微信公众号图文扩展链接，实现公私域闭环。",
+    ],
+  },
+  KUAISHOU: {
+    label: "快手",
+    color: "orange",
+    badgeBg: "bg-orange-50 text-orange-700 border-orange-200",
+    creatorUrl: "https://cp.kuaishou.com/article/publish/video",
+    icon: "⚡",
+    description: "快手创作者服务平台短视频发布，公域推荐与真实社区互动。",
+    titleFieldGuide: "短视频标题（30 字以内，醒目吸引点击）",
+    bodyFieldGuide: "视频描述与口播分镜脚本",
+    tagsFieldGuide: "快手话题（以 # 开头）",
+    guidelines: [
+      "支持 1080p 竖屏短视频成片上传。",
+      "标题建议 30 字以内，善用热门话题与接地气文案。",
+      "受控 Chrome 辅助上传成片并填写描述，PREPARE_ONLY 停留在最终发布页供作者审核。",
+    ],
+  },
+  BAIJIAHAO: {
+    label: "百家号",
+    color: "indigo",
+    badgeBg: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    creatorUrl: "https://baijiahao.baidu.com/builder/rc/edit?type=news",
+    icon: "🔍",
+    description: "百度百家号文章与图文发布，百度搜索引擎收录与加权展示。",
+    titleFieldGuide: "文章标题（64 字以内，建议 20-30 字，契合搜索意图）",
+    bodyFieldGuide: "文章正文（图文富文本，支持多图与排版）",
+    tagsFieldGuide: "分类与标签",
+    guidelines: [
+      "百度搜索生态首发加权与信息流分发。",
+      "文章标题建议包含核心搜索关键词，正文层次分明。",
+      "受控 Chrome 辅助自动填入并停留在发布前供作者审核。",
+    ],
+  },
+  TOUTIAO: {
+    label: "今日头条",
+    color: "rose",
+    badgeBg: "bg-rose-50 text-rose-700 border-rose-200",
+    creatorUrl: "https://mp.toutiao.com/profile_v4/graphic/publish",
+    icon: "📰",
+    description: "今日头条号创作者平台，算法推荐与信息流强力分发。",
+    titleFieldGuide: "头条标题（严控 30 字以内，信息量大、观点鲜明）",
+    bodyFieldGuide: "头条文章正文（支持富文本排版与多张高清插图）",
+    tagsFieldGuide: "头条话题与分类",
+    guidelines: [
+      "头条平台对标题长度有硬性限制，严格控制在 30 字以内。",
+      "封面图支持单图、三图或无图模式，建议配合高清横图。",
+      "受控 Chrome 自动填写正文与标题，并在【发布】按钮前停留等待人工确认。",
     ],
   },
 };

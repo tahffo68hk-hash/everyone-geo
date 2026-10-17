@@ -37,6 +37,9 @@ export const CHANNEL_CONTENT_LIMITS: Partial<Record<Channel, ChannelContentLimit
   WORDPRESS: { title: 200, body: null, maxTags: null },
   WECHAT_OFFICIAL_ACCOUNT: { title: 64, body: null, maxTags: null },
   WECHAT_CHANNELS: { title: 60, body: 1000, maxTags: null },
+  KUAISHOU: { title: 60, body: 1000, maxTags: 10 },
+  BAIJIAHAO: { title: 64, body: 5000, maxTags: 5 },
+  TOUTIAO: { title: 30, body: 5000, maxTags: 5 },
 };
 
 export interface FinalChannelContent {
