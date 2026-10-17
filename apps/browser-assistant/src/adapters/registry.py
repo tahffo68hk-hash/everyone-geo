@@ -12,6 +12,7 @@ from .bilibili import BilibiliPublisher
 from .douyin import DouyinPublisher
 from .wechat_channels import WechatChannelsPublisher
 from .kuaishou import KuaishouPublisher
+from .weibo import WeiboPublisher
 from .fallback import FallbackPublisher, CREATOR_URL_MAP
 
 
@@ -26,6 +27,7 @@ class PublisherRegistry:
         "DOUYIN": DouyinPublisher,
         "WECHAT_CHANNELS": WechatChannelsPublisher,
         "KUAISHOU": KuaishouPublisher,
+        "WEIBO": WeiboPublisher,
     }
 
     @classmethod
