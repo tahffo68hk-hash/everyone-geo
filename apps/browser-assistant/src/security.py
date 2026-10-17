@@ -104,12 +104,35 @@ SENSITIVE_DIRECTORY_NAMES = {
 }
 
 
-def validate_media_file_path(file_path: str | Path, expected_type: str | None = None) -> tuple[bool, str, Path | None]:
+def get_authorized_media_roots() -> list[Path]:
+    """返回本地受信任的素材资产库与运行时缓存根目录清单"""
+    from .config import RUNTIME_DIR, REPO_ROOT, TEMP_DIR
+    import tempfile
+
+    roots = [
+        RUNTIME_DIR.resolve(),
+        REPO_ROOT.resolve(),
+        TEMP_DIR.resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+    custom_dir = os.environ.get("CONTENT_ASSET_STORAGE_DIR")
+    if custom_dir:
+        roots.append(Path(custom_dir).resolve())
+    return roots
+
+
+def validate_media_file_path(
+    file_path: str | Path,
+    expected_type: str | None = None,
+    allowed_roots: list[Path] | None = None,
+    enforce_root_authorization: bool = True
+) -> tuple[bool, str, Path | None]:
     """
     检查本地文件访问权限，严格防御任意本地文件被非法读取或越权上传:
     1. 校验扩展名必须属于合法素材白名单（视频/图片），严禁 .env/.key/代码/脚本/系统可执行文件
     2. 防御路径穿越与系统敏感目录（System32, .ssh, .git, etc.）
-    3. 校验文件在本地存在、为常规文件且非空 (size > 0)
+    3. 校验素材路径必须属于当前项目、临时存储或明确授权的本地资产库，杜绝读取任意本地用户目录
+    4. 校验文件在本地存在、为常规文件且非空 (size > 0)
     """
     if not file_path:
         return False, "文件路径不能为空", None
@@ -135,6 +158,13 @@ def validate_media_file_path(file_path: str | Path, expected_type: str | None = 
     for sensitive in SENSITIVE_DIRECTORY_NAMES:
         if sensitive in parts_lower:
             return False, f"安全拦截: 禁止读取敏感系统或凭据目录 '{sensitive}' 下的文件", None
+
+    # 授权范围安全边界：文件必须位于受信任的项目工作区、运行时缓存或系统临时任务目录下
+    if enforce_root_authorization:
+        roots = allowed_roots or get_authorized_media_roots()
+        is_authorized = any(p == r or r in p.parents for r in roots)
+        if not is_authorized:
+            return False, f"安全拦截: 素材路径未获得本地任务授权 (不在受信任的项目工作区或运行时目录下): {p}", None
 
     if not p.exists():
         return False, f"本地素材文件不存在: {p}", None
