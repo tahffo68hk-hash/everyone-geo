@@ -10,6 +10,7 @@ from .simulation import LocalSimulationPublisher
 from .xiaohongshu import XiaohongshuPublisher
 from .bilibili import BilibiliPublisher
 from .douyin import DouyinPublisher
+from .wechat_channels import WechatChannelsPublisher
 from .fallback import FallbackPublisher, CREATOR_URL_MAP
 
 
@@ -22,6 +23,7 @@ class PublisherRegistry:
         "XIAOHONGSHU": XiaohongshuPublisher,
         "BILIBILI": BilibiliPublisher,
         "DOUYIN": DouyinPublisher,
+        "WECHAT_CHANNELS": WechatChannelsPublisher,
     }
 
     @classmethod
