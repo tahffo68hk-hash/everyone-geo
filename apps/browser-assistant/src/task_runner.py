@@ -9,7 +9,8 @@ import threading
 
 from .models import (
     TaskStatus, StepName, StepStatus, StepLog,
-    CreatePublishTaskRequest, TaskStatusResponse, ManualPublishPackage, ValidationDiff
+    CreatePublishTaskRequest, TaskStatusResponse, ManualPublishPackage, ValidationDiff,
+    MediaItem
 )
 from .browser_manager import browser_manager
 from .adapters.registry import registry
@@ -99,8 +100,8 @@ class TaskExecutionState:
             self.updated_at = datetime.now(timezone.utc).isoformat()
 
     def to_response(self) -> TaskStatusResponse:
+        is_running = browser_manager.is_driver_running(self.channel, self.account_id)
         with self.lock:
-            is_running = browser_manager.is_driver_running(self.channel, self.account_id)
             return TaskStatusResponse(
                 task_id=self.task_id,
                 channel=self.channel,
@@ -254,6 +255,59 @@ class TaskManager:
             time.sleep(0.5)
         return not state.is_cancelled
 
+    def _prepare_local_media_items(self, media_items: list[MediaItem], task_id: str) -> list[MediaItem]:
+        """
+        确保图片素材在本地有实际文件路径，供 WebDriver input[type=file] 上传
+        若仅有远程 URL，自动缓存到 TEMP_DIR
+        """
+        from .config import TEMP_DIR
+        from pathlib import Path
+        import urllib.request
+        import ssl
+        from urllib.parse import urlparse
+
+        prepared = []
+        for item in media_items:
+            new_item = MediaItem(
+                index=item.index,
+                type=item.type,
+                url=item.url,
+                local_path=item.local_path,
+                mime_type=item.mime_type,
+                notes=item.notes
+            )
+            if item.type == "IMAGE":
+                # 如果本地路径已存在有效文件
+                if item.local_path and Path(item.local_path).exists() and Path(item.local_path).stat().st_size > 0:
+                    prepared.append(new_item)
+                    continue
+
+                # 如果是 http/https 远程 URL，下载缓存
+                if item.url and item.url.startswith(("http://", "https://")):
+                    try:
+                        parsed = urlparse(item.url)
+                        p_ext = Path(parsed.path).suffix.lower()
+                        ext = p_ext if p_ext in [".png", ".jpg", ".jpeg", ".webp"] else ".jpg"
+                        cached_file = TEMP_DIR / f"{task_id[:8]}_{item.index}{ext}"
+                        if not cached_file.exists() or cached_file.stat().st_size == 0:
+                            ctx = ssl.create_default_context()
+                            ctx.check_hostname = False
+                            ctx.verify_mode = ssl.CERT_NONE
+                            req = urllib.request.Request(
+                                item.url,
+                                headers={"User-Agent": "Mozilla/5.0 GeoLens-Assistant/2.0"}
+                            )
+                            with urllib.request.urlopen(req, timeout=12, context=ctx) as resp:
+                                content = resp.read()
+                                if content and len(content) > 0:
+                                    cached_file.write_bytes(content)
+                        if cached_file.exists() and cached_file.stat().st_size > 0:
+                            new_item.local_path = str(cached_file)
+                    except Exception:
+                        pass
+            prepared.append(new_item)
+        return prepared
+
     def _run_task_pipeline(self, state: TaskExecutionState):
         """核心 9 步发布流水线执行函数"""
         req = state.req
@@ -268,159 +322,221 @@ class TaskManager:
                 account_id=account_id,
                 headless=req.headless
             )
+            state.add_log(StepName.CHECK_LOGIN, "浏览器已就绪", StepStatus.SUCCESS, f"已成功调起并连接 {channel} 受控 Chrome 实例")
             publisher = registry.get_publisher(channel, driver)
         except Exception as e:
-            state.status = TaskStatus.FAILED
-            state.error_message = f"调起浏览器失败：{e}"
-            state.add_log(StepName.CHECK_LOGIN, "启动浏览器失败", StepStatus.FAILED, str(e))
-            return
-
-        # 检查是否为未适配渠道（人工回退）
-        if not registry.is_fully_automated(channel):
             state.status = TaskStatus.MANUAL_REQUIRED
             state.is_manual_takeover = True
+            state.error_message = f"调起浏览器失败：{e}"
+            state.add_log(StepName.CHECK_LOGIN, "启动浏览器失败", StepStatus.FAILED, f"{e}。已保留当前任务并开启人工接管模式，请使用右侧发布包手动完成发布。")
+            return
+
+        browser_manager.mark_busy(channel, account_id)
+        try:
+            # 检查是否为未适配渠道（人工回退）
+            if not registry.is_fully_automated(channel):
+                state.status = TaskStatus.MANUAL_REQUIRED
+                state.is_manual_takeover = True
+                publisher.open_editor()
+                state.add_log(
+                    StepName.OPEN_EDITOR,
+                    "人工辅助发布模式",
+                    StepStatus.SUCCESS,
+                    f"{channel} 暂未开放完全无人值守自动化。已为您在受控浏览器打开官方创作页面，请使用右侧发布包手动粘贴发布。"
+                )
+                return
+
+            # 2. 步骤 1: 检查登录态
+            state.current_step = StepName.CHECK_LOGIN
+            state.status = TaskStatus.FILLING
+            t0 = time.time()
+            state.add_log(StepName.CHECK_LOGIN, "检查登录状态", StepStatus.RUNNING, f"正在打开官方页面并检测 {channel} 登录态...")
+
+            # 先尝试访问官方页面探测登录
             publisher.open_editor()
-            state.add_log(
-                StepName.OPEN_EDITOR,
-                "人工辅助发布模式",
-                StepStatus.SUCCESS,
-                f"{channel} 暂未开放完全无人值守自动化。已为您在受控浏览器打开官方创作页面，请使用右侧发布包手动粘贴发布。"
+            is_logged_in, login_msg, extra = publisher.check_login()
+            duration = int((time.time() - t0) * 1000)
+
+            if not is_logged_in:
+                state.status = TaskStatus.WAITING_FOR_LOGIN
+                state.add_log(StepName.CHECK_LOGIN, "等待用户登录", StepStatus.FAILED, f"{login_msg}。受控浏览器已保持打开，请在窗口中扫码或输入账号登录后重试。", duration)
+                return
+            else:
+                state.add_log(StepName.CHECK_LOGIN, "登录状态正常", StepStatus.SUCCESS, login_msg, duration)
+
+            if not self._wait_if_paused(state):
+                return
+
+            # 3. 步骤 2: 打开创作页面
+            state.current_step = StepName.OPEN_EDITOR
+            state.add_log(StepName.OPEN_EDITOR, "切换创作页面", StepStatus.RUNNING, "正在切换至图文发布模式...")
+            t0 = time.time()
+            ok, msg = publisher.open_editor()
+            duration = int((time.time() - t0) * 1000)
+            if not ok:
+                state.status = TaskStatus.FAILED
+                state.error_message = msg
+                state.add_log(StepName.OPEN_EDITOR, "打开创作页失败", StepStatus.FAILED, msg, duration)
+                return
+            state.add_log(StepName.OPEN_EDITOR, "创作页已就绪", StepStatus.SUCCESS, msg, duration)
+
+            if not self._wait_if_paused(state):
+                return
+
+            # 小红书图文模式要求先上传至少一张图片，页面才会展现标题与正文输入区
+            if channel == "XIAOHONGSHU":
+                # 步骤: 上传素材与配图
+                state.current_step = StepName.UPLOAD_MEDIA
+                state.add_log(StepName.UPLOAD_MEDIA, "上传素材配图", StepStatus.RUNNING, f"正在准备并按序上传 {len(req.media_items)} 张素材图片以激活图文编辑器...")
+                t0 = time.time()
+                prepared_items = self._prepare_local_media_items(req.media_items, req.task_id)
+                ok, msg = publisher.upload_media(prepared_items)
+                duration = int((time.time() - t0) * 1000)
+                state.add_log(StepName.UPLOAD_MEDIA, "素材上传完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
+                time.sleep(1.2)  # 等待小红书前端完成切片与编辑器展开
+
+                if not self._wait_if_paused(state):
+                    return
+
+                # 步骤: 填写标题
+                state.current_step = StepName.FILL_TITLE
+                title_display = req.title[:20] if len(req.title) > 20 else req.title
+                state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.RUNNING, f"正在输入标题（限长 20 字）：{title_display}...")
+                t0 = time.time()
+                ok, msg = publisher.fill_title(req.title)
+                duration = int((time.time() - t0) * 1000)
+                if not ok:
+                    state.status = TaskStatus.MANUAL_REQUIRED
+                    state.error_message = msg
+                    state.add_log(StepName.FILL_TITLE, "填写标题失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    return
+                state.add_log(StepName.FILL_TITLE, "标题填写成功", StepStatus.SUCCESS, msg, duration)
+
+                if not self._wait_if_paused(state):
+                    return
+
+                # 步骤: 填写正文富文本
+                state.current_step = StepName.FILL_CONTENT
+                state.add_log(StepName.FILL_CONTENT, "填写正文", StepStatus.RUNNING, f"正在写入正文内容（共 {len(req.body)} 字）...")
+                t0 = time.time()
+                ok, msg = publisher.fill_content(req.body)
+                duration = int((time.time() - t0) * 1000)
+                if not ok:
+                    state.status = TaskStatus.MANUAL_REQUIRED
+                    state.error_message = msg
+                    state.add_log(StepName.FILL_CONTENT, "填写正文失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    return
+                state.add_log(StepName.FILL_CONTENT, "正文填写成功", StepStatus.SUCCESS, msg, duration)
+
+                if not self._wait_if_paused(state):
+                    return
+            else:
+                # 步骤: 填写标题
+                state.current_step = StepName.FILL_TITLE
+                title_display = req.title[:20] if len(req.title) > 20 else req.title
+                state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.RUNNING, f"正在输入标题：{title_display}...")
+                t0 = time.time()
+                ok, msg = publisher.fill_title(req.title)
+                duration = int((time.time() - t0) * 1000)
+                if not ok:
+                    state.status = TaskStatus.MANUAL_REQUIRED
+                    state.error_message = msg
+                    state.add_log(StepName.FILL_TITLE, "填写标题失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    return
+                state.add_log(StepName.FILL_TITLE, "标题填写成功", StepStatus.SUCCESS, msg, duration)
+
+                if not self._wait_if_paused(state):
+                    return
+
+                # 步骤: 填写正文富文本
+                state.current_step = StepName.FILL_CONTENT
+                state.add_log(StepName.FILL_CONTENT, "填写正文", StepStatus.RUNNING, f"正在写入正文内容（共 {len(req.body)} 字）...")
+                t0 = time.time()
+                ok, msg = publisher.fill_content(req.body)
+                duration = int((time.time() - t0) * 1000)
+                if not ok:
+                    state.status = TaskStatus.MANUAL_REQUIRED
+                    state.error_message = msg
+                    state.add_log(StepName.FILL_CONTENT, "填写正文失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    return
+                state.add_log(StepName.FILL_CONTENT, "正文填写成功", StepStatus.SUCCESS, msg, duration)
+
+                if not self._wait_if_paused(state):
+                    return
+
+                # 步骤: 上传素材与配图
+                state.current_step = StepName.UPLOAD_MEDIA
+                state.add_log(StepName.UPLOAD_MEDIA, "上传素材", StepStatus.RUNNING, f"正在准备并按序上传 {len(req.media_items)} 张素材图片...")
+                t0 = time.time()
+                prepared_items = self._prepare_local_media_items(req.media_items, req.task_id)
+                ok, msg = publisher.upload_media(prepared_items)
+                duration = int((time.time() - t0) * 1000)
+                state.add_log(StepName.UPLOAD_MEDIA, "素材上传完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
+
+                if not self._wait_if_paused(state):
+                    return
+
+            # 7. 步骤 6: 填入话题标签
+            state.current_step = StepName.FILL_TAGS
+            state.add_log(StepName.FILL_TAGS, "填写标签", StepStatus.RUNNING, "正在添加话题标签...")
+            t0 = time.time()
+            ok, msg = publisher.fill_tags(req.tags)
+            duration = int((time.time() - t0) * 1000)
+            state.add_log(StepName.FILL_TAGS, "标签填写完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
+
+            if not self._wait_if_paused(state):
+                return
+
+            # 8. 步骤 7: 双向一致性比对校验
+            state.current_step = StepName.VALIDATE_DRAFT
+            state.add_log(StepName.VALIDATE_DRAFT, "一致性比对", StepStatus.RUNNING, "正在从页面 DOM 反读数据执行双向比对校验...")
+            t0 = time.time()
+            validation = publisher.validate_draft(
+                expected_title=req.title,
+                expected_body=req.body,
+                expected_tags=req.tags,
+                expected_media_count=len(req.media_items)
             )
-            return
+            duration = int((time.time() - t0) * 1000)
+            state.validation = validation
 
-        # 2. 步骤 1: 检查登录态
-        state.current_step = StepName.CHECK_LOGIN
-        state.status = TaskStatus.FILLING
-        t0 = time.time()
-        
-        # 先尝试访问官方页面探测登录
-        publisher.open_editor()
-        is_logged_in, login_msg, extra = publisher.check_login()
-        duration = int((time.time() - t0) * 1000)
-        
-        if not is_logged_in:
-            state.status = TaskStatus.WAITING_FOR_LOGIN
-            state.add_log(StepName.CHECK_LOGIN, "检查登录状态", StepStatus.FAILED, f"{login_msg}。请在浏览器中扫码或登录后重试。", duration)
-            # 浏览器保持打开，等待用户登录
-            return
-        else:
-            state.add_log(StepName.CHECK_LOGIN, "检查登录状态", StepStatus.SUCCESS, login_msg, duration)
+            if validation.passed:
+                state.add_log(
+                    StepName.VALIDATE_DRAFT,
+                    "一致性比对通过",
+                    StepStatus.SUCCESS,
+                    f"内容校验通过：标题完全匹配，正文字数基本吻合（检测到 {validation.body_length_actual} 字）",
+                    duration
+                )
+            else:
+                dis_str = "；".join(validation.discrepancies)
+                state.add_log(
+                    StepName.VALIDATE_DRAFT,
+                    "一致性比对提醒",
+                    StepStatus.RUNNING,
+                    f"校验发现差异（{dis_str}），已进入人工确认阶段供作者核查",
+                    duration
+                )
 
-        if not self._wait_if_paused(state):
-            return
+            # 9. 步骤 8: 准备确认 (绝对不擅自点击最终发布按钮)
+            state.current_step = StepName.PREPARE_CONFIRMATION
+            t0 = time.time()
+            ok, msg = publisher.prepare_for_confirmation()
+            duration = int((time.time() - t0) * 1000)
 
-        # 3. 步骤 2: 打开创作页面
-        state.current_step = StepName.OPEN_EDITOR
-        t0 = time.time()
-        ok, msg = publisher.open_editor()
-        duration = int((time.time() - t0) * 1000)
-        if not ok:
-            state.status = TaskStatus.FAILED
-            state.error_message = msg
-            state.add_log(StepName.OPEN_EDITOR, "打开创作页", StepStatus.FAILED, msg, duration)
-            return
-        state.add_log(StepName.OPEN_EDITOR, "打开创作页", StepStatus.SUCCESS, msg, duration)
+            # 截图存证
+            browser_manager.take_screenshot(channel, account_id, f"draft_ready_{req.task_id[:8]}")
 
-        if not self._wait_if_paused(state):
-            return
-
-        # 4. 步骤 3: 填写标题
-        state.current_step = StepName.FILL_TITLE
-        t0 = time.time()
-        ok, msg = publisher.fill_title(req.title)
-        duration = int((time.time() - t0) * 1000)
-        if not ok:
-            state.status = TaskStatus.MANUAL_REQUIRED
-            state.error_message = msg
-            state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
-            return
-        state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.SUCCESS, msg, duration)
-
-        if not self._wait_if_paused(state):
-            return
-
-        # 5. 步骤 4: 填写正文富文本
-        state.current_step = StepName.FILL_CONTENT
-        t0 = time.time()
-        ok, msg = publisher.fill_content(req.body)
-        duration = int((time.time() - t0) * 1000)
-        if not ok:
-            state.status = TaskStatus.MANUAL_REQUIRED
-            state.error_message = msg
-            state.add_log(StepName.FILL_CONTENT, "填写正文", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
-            return
-        state.add_log(StepName.FILL_CONTENT, "填写正文", StepStatus.SUCCESS, msg, duration)
-
-        if not self._wait_if_paused(state):
-            return
-
-        # 6. 步骤 5: 上传素材与配图
-        state.current_step = StepName.UPLOAD_MEDIA
-        t0 = time.time()
-        ok, msg = publisher.upload_media(req.media_items)
-        duration = int((time.time() - t0) * 1000)
-        state.add_log(StepName.UPLOAD_MEDIA, "上传素材", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
-
-        if not self._wait_if_paused(state):
-            return
-
-        # 7. 步骤 6: 填入话题标签
-        state.current_step = StepName.FILL_TAGS
-        t0 = time.time()
-        ok, msg = publisher.fill_tags(req.tags)
-        duration = int((time.time() - t0) * 1000)
-        state.add_log(StepName.FILL_TAGS, "填写标签", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
-
-        if not self._wait_if_paused(state):
-            return
-
-        # 8. 步骤 7: 双向一致性比对校验
-        state.current_step = StepName.VALIDATE_DRAFT
-        t0 = time.time()
-        validation = publisher.validate_draft(
-            expected_title=req.title,
-            expected_body=req.body,
-            expected_tags=req.tags,
-            expected_media_count=len(req.media_items)
-        )
-        duration = int((time.time() - t0) * 1000)
-        state.validation = validation
-        
-        if validation.passed:
+            state.status = TaskStatus.AWAITING_CONFIRMATION
             state.add_log(
-                StepName.VALIDATE_DRAFT,
-                "一致性比对",
+                StepName.PREPARE_CONFIRMATION,
+                "等待最终人工确认",
                 StepStatus.SUCCESS,
-                f"内容校验通过：标题完全匹配，正文字数基本吻合（检测到 {validation.body_length_actual} 字）",
+                "所有内容已自动填入完毕并通过比对。当前浏览器已停留在最终发布确认区，请创作者核对无误后在浏览器中点击【发布】或在 GeoLens 面板完成发布结果确认。",
                 duration
             )
-        else:
-            dis_str = "；".join(validation.discrepancies)
-            state.add_log(
-                StepName.VALIDATE_DRAFT,
-                "一致性比对提醒",
-                StepStatus.RUNNING,
-                f"校验发现差异（{dis_str}），已进入人工确认阶段供作者核查",
-                duration
-            )
-
-        # 9. 步骤 8: 准备确认 (绝对不擅自点击最终发布按钮)
-        state.current_step = StepName.PREPARE_CONFIRMATION
-        t0 = time.time()
-        ok, msg = publisher.prepare_for_confirmation()
-        duration = int((time.time() - t0) * 1000)
-        
-        # 截图存证
-        browser_manager.take_screenshot(channel, account_id, f"draft_ready_{req.task_id[:8]}")
-
-        state.status = TaskStatus.AWAITING_CONFIRMATION
-        state.add_log(
-            StepName.PREPARE_CONFIRMATION,
-            "等待最终人工确认",
-            StepStatus.SUCCESS,
-            "所有内容已自动填入完毕并通过比对。当前浏览器已停留在最终发布确认区，请创作者核对无误后在浏览器中点击【发布】或在 GeoLens 面板完成发布结果确认。",
-            duration
-        )
+        finally:
+            browser_manager.mark_idle(channel, account_id)
 
 
 task_manager = TaskManager()

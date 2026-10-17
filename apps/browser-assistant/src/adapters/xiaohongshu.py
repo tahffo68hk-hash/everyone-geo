@@ -154,32 +154,52 @@ class XiaohongshuPublisher(BasePublisher):
             pass
 
     def check_login(self) -> tuple[bool, str, dict[str, Any]]:
-        """检查小红书创作者服务平台登录状态"""
-        curr_url = self.driver.current_url.lower()
+        """检查小红书创作者服务平台登录状态（高效低延迟探针）"""
+        try:
+            curr_url = self.driver.current_url.lower()
+        except Exception:
+            return False, "受控浏览器无响应或已关闭", {}
+
         if "login" in curr_url or "creator.xiaohongshu.com/login" in curr_url:
             return False, "当前处于小红书登录页面，请创作者在浏览器中扫码登录", {"url": curr_url}
 
         # 检查关键 Cookie
-        cookies = {c["name"]: c["value"] for c in self.driver.get_cookies()}
+        try:
+            cookies = {c["name"]: c["value"] for c in self.driver.get_cookies()}
+        except Exception:
+            cookies = {}
         has_auth_cookie = any(k in cookies for k in ["web_session", "a1", "customerClientId", "web_session_id"])
 
-        # 检查是否出现登录弹窗或二维码
-        for by, sel in self.SELECTORS["login_modal"]:
-            try:
-                elems = self.driver.find_elements(by, sel)
-                if any(e.is_displayed() for e in elems):
-                    return False, "检测到小红书登录弹窗或二维码，请在浏览器中完成扫码登录", {"has_cookie": has_auth_cookie}
-            except Exception:
-                pass
-
-        # 检查创作者头像与身份指示元素
-        for by, sel in self.SELECTORS["avatar"]:
-            try:
-                elems = self.driver.find_elements(by, sel)
-                if any(e.is_displayed() for e in elems):
-                    return True, "检测到小红书创作者头像，已成功登录", {"selector": sel, "has_cookie": has_auth_cookie}
-            except Exception:
-                pass
+        # 使用单次 JS DOM 查询毫秒级探测登录弹窗/二维码或创作者头像，避免 WebDriver 隐式等待拖慢流水线
+        js_probe = """
+            var res = { has_modal: false, has_avatar: false, avatar_selector: null };
+            var modalSels = ['.login-box', '.qrcode-img', '.login-container', '.qrcode-box', '.content-wrapper .login'];
+            for (var i = 0; i < modalSels.length; i++) {
+                var m = document.querySelector(modalSels[i]);
+                if (m && m.offsetParent !== null) {
+                    res.has_modal = true;
+                    break;
+                }
+            }
+            var avatarSels = ['img.avatar-item', '.user-avatar', '.avatar-wrap', '.side-bar-avatar', "header img[alt*='头像']", '.creator-avatar', '.user-info', '.author-name'];
+            for (var j = 0; j < avatarSels.length; j++) {
+                var a = document.querySelector(avatarSels[j]);
+                if (a && a.offsetParent !== null) {
+                    res.has_avatar = true;
+                    res.avatar_selector = avatarSels[j];
+                    break;
+                }
+            }
+            return res;
+        """
+        try:
+            probe_res = self.driver.execute_script(js_probe)
+            if probe_res.get("has_modal"):
+                return False, "检测到小红书登录弹窗或二维码，请在浏览器中完成扫码登录", {"has_cookie": has_auth_cookie}
+            if probe_res.get("has_avatar"):
+                return True, "检测到小红书创作者头像，已成功登录", {"selector": probe_res.get("avatar_selector"), "has_cookie": has_auth_cookie}
+        except Exception:
+            pass
 
         # 如果在 creator.xiaohongshu.com 域名且具备 Cookie
         if "creator.xiaohongshu.com" in curr_url and has_auth_cookie:
@@ -187,10 +207,13 @@ class XiaohongshuPublisher(BasePublisher):
 
         # 若在小红书域名下但未明确匹配
         if "xiaohongshu.com" in curr_url:
-            page_src = self.driver.page_source
-            if "扫码登录" in page_src or "登录小红书" in page_src:
-                return False, "小红书提示未登录，请在浏览器窗口扫码登录", {}
-            return True, "小红书会话处于活跃状态", {}
+            try:
+                page_src = self.driver.page_source
+                if "扫码登录" in page_src or "登录小红书" in page_src:
+                    return False, "小红书提示未登录，请在浏览器窗口扫码登录", {}
+                return True, "小红书会话处于活跃状态", {}
+            except Exception:
+                pass
 
         return False, "未连接到小红书创作者平台页面", {}
 
@@ -217,6 +240,26 @@ class XiaohongshuPublisher(BasePublisher):
 
     def _switch_to_image_tab(self):
         """确保当前处于【上传图文】Tab 模式"""
+        try:
+            # 优先使用单次 JS 探测并点击上传图文 Tab
+            js_switch = """
+                var tabs = document.querySelectorAll('.tab, .publish-tab, div[aria-label*="图文"], span');
+                for (var i = 0; i < tabs.length; i++) {
+                    var t = tabs[i];
+                    if ((t.innerText || '').trim().includes('上传图文')) {
+                        t.click();
+                        return true;
+                    }
+                }
+                return false;
+            """
+            switched = self.driver.execute_script(js_switch)
+            if switched:
+                time.sleep(0.5)
+                return
+        except Exception:
+            pass
+
         for by, sel in self.SELECTORS["tab_image_note"]:
             try:
                 elems = self.driver.find_elements(by, sel)

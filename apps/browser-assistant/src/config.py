@@ -11,11 +11,13 @@ REPO_ROOT = BASE_DIR.parent.parent
 RUNTIME_DIR = REPO_ROOT / ".runtime" / "browser-assistant"
 PROFILES_DIR = RUNTIME_DIR / "profiles"
 SCREENSHOTS_DIR = RUNTIME_DIR / "screenshots"
+TEMP_DIR = RUNTIME_DIR / "temp"
 TOKEN_FILE = RUNTIME_DIR / "assistant_token.json"
 
 # 确保目录存在
 PROFILES_DIR.mkdir(parents=True, exist_ok=True)
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class AssistantSettings(BaseModel):

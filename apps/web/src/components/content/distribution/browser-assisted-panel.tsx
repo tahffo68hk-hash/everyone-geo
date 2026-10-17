@@ -193,8 +193,8 @@ export function BrowserAssistedPanel({
           setManualTakeoverMode(true);
         }
 
-        // 终态停止轮询
-        if (["PUBLISHED", "FAILED", "AWAITING_CONFIRMATION", "MANUAL_REQUIRED"].includes(resp.status)) {
+        // 终态或需用户操作时停止自动轮询 executing 状态
+        if (["PUBLISHED", "FAILED", "AWAITING_CONFIRMATION", "MANUAL_REQUIRED", "WAITING_FOR_LOGIN"].includes(resp.status)) {
           setExecuting(false);
         } else {
           timer = setTimeout(poll, 1000);
@@ -982,6 +982,8 @@ export function BrowserAssistedPanel({
                       ? "bg-rose-100 text-rose-800"
                       : taskState.status === "MANUAL_REQUIRED"
                       ? "bg-amber-100 text-amber-800"
+                      : taskState.status === "WAITING_FOR_LOGIN"
+                      ? "bg-amber-100 text-amber-800 border border-amber-300"
                       : "bg-blue-50 text-blue-700"
                   }`}
                 >
@@ -1041,6 +1043,35 @@ export function BrowserAssistedPanel({
                   </div>
                 ))}
               </div>
+
+              {/* 等待创作者登录提示 */}
+              {taskState.status === "WAITING_FOR_LOGIN" && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex flex-col gap-2.5">
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <span className="text-sm">🔑</span>
+                    <span>等待平台账号登录</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    检测到创作者账号尚未登录。受控 Chrome 窗口已保持打开，请在弹出的浏览器中完成扫码或密码登录。登录成功后，点击下方按钮继续自动填写。
+                  </p>
+                  <div className="flex gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={handleStartPublishTask}
+                      className="flex-1 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-medium text-xs transition shadow-sm"
+                    >
+                      已完成登录，重新检查并继续
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleManualTakeover}
+                      className="px-3 py-1.5 bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 rounded-md font-medium text-xs transition"
+                    >
+                      切换人工接管
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* 停留在最终确认阶段时的提示与回填入口 */}
               {taskState.status === "AWAITING_CONFIRMATION" && (
