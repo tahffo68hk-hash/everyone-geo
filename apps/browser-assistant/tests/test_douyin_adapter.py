@@ -156,3 +156,52 @@ def test_douyin_validate_draft():
     assert diff.body_match is True
     assert diff.tags_match is True
     assert diff.passed is True
+
+
+def test_douyin_wait_for_upload_completion():
+    driver = MagicMock()
+    pub = DouyinPublisher(driver)
+
+    # 1. 模拟平台上传报错
+    err_elem = MagicMock()
+    err_elem.is_displayed.return_value = True
+    err_elem.text = "视频转码失败，请检查视频清晰度与码率"
+
+    def mock_elements_error(by, sel):
+        if "上传失败" in str(sel) or "视频转码失败" in str(sel):
+            return [err_elem]
+        return []
+
+    driver.find_elements.side_effect = mock_elements_error
+    ok, msg = pub.wait_for_upload_completion(timeout_sec=2)
+    assert ok is False
+    assert "转码失败" in msg or "失败" in msg
+
+    # 2. 模拟转码完成与播放器就绪
+    title_elem = MagicMock()
+    title_elem.is_displayed.return_value = True
+
+    duration_elem = MagicMock()
+    duration_elem.is_displayed.return_value = True
+    duration_elem.text = "00:30"
+
+    thumb_elem = MagicMock()
+    thumb_elem.is_displayed.return_value = True
+    thumb_elem.get_attribute.return_value = "https://p3.douyinpic.com/tos-cn-i-cover.jpeg"
+
+    def mock_elements_success(by, sel):
+        sel_str = str(sel)
+        if "title" in sel_str:
+            return [title_elem]
+        if "duration" in sel_str or "time" in sel_str:
+            return [duration_elem]
+        if "player" in sel_str or "cover" in sel_str:
+            return [thumb_elem]
+        return []
+
+    driver.find_elements.side_effect = mock_elements_success
+    ok, msg = pub.wait_for_upload_completion(timeout_sec=5)
+    assert ok is True
+    assert "已完成" in msg
+    assert "00:30" in msg or "缩略图" in msg
+

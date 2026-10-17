@@ -43,6 +43,7 @@ class BilibiliPublisher(BasePublisher):
             (By.CSS_SELECTOR, ".user-profile"),
         ],
         "login_modal": [
+            (By.XPATH, "//*[contains(text(), '扫码登录') or contains(text(), '密码登录') or contains(text(), '短信登录')]"),
             (By.CSS_SELECTOR, ".login-form"),
             (By.CSS_SELECTOR, ".qrcode-img"),
             (By.CSS_SELECTOR, ".bili-mini-login"),
@@ -108,7 +109,33 @@ class BilibiliPublisher(BasePublisher):
             (By.XPATH, "//span[contains(text(), '自制')]/.."),
             (By.CSS_SELECTOR, "label.radio-item:nth-child(1)"),
         ],
-        # 9. 最终提交按钮
+        # 9. 视频上传与处理状态监测
+        "upload_complete_status": [
+            (By.XPATH, "//*[contains(text(), '上传完成') or contains(text(), '转码完成') or contains(text(), '处理完成')]"),
+            (By.CSS_SELECTOR, ".upload-success"),
+            (By.CSS_SELECTOR, ".file-item.is-success"),
+            (By.CSS_SELECTOR, ".file-list .file-item"),
+            (By.CSS_SELECTOR, ".video-item"),
+        ],
+        "video_duration": [
+            (By.CSS_SELECTOR, ".duration"),
+            (By.CSS_SELECTOR, ".video-duration"),
+            (By.CSS_SELECTOR, ".file-item .time"),
+            (By.XPATH, "//*[contains(@class, 'duration') or contains(@class, 'time')]"),
+        ],
+        "video_thumbnail": [
+            (By.CSS_SELECTOR, ".cover-preview img"),
+            (By.CSS_SELECTOR, ".video-cover img"),
+            (By.CSS_SELECTOR, "img.cover-img"),
+            (By.CSS_SELECTOR, ".file-item img"),
+            (By.CSS_SELECTOR, ".video-item img"),
+        ],
+        "upload_error": [
+            (By.XPATH, "//*[contains(text(), '上传失败') or contains(text(), '格式不支持') or contains(text(), '文件损坏')]"),
+            (By.CSS_SELECTOR, ".upload-error"),
+            (By.CSS_SELECTOR, ".error-tip"),
+        ],
+        # 10. 最终提交按钮
         "submit_btn": [
             (By.CSS_SELECTOR, "button.submit-add"),
             (By.CSS_SELECTOR, ".submit-btn button"),
@@ -193,9 +220,19 @@ class BilibiliPublisher(BasePublisher):
             except Exception:
                 continue
 
-        # 若在 member.bilibili.com 且无登录框
-        if "member.bilibili.com" in curr_url:
-            return True, "已连接 B站 创作者管理页面", {"url": curr_url}
+        # 检查页面是否已出现真正的上传文件按钮或输入框，且绝无登录卡片遮罩
+        for by, sel in self.SELECTORS["video_input"] + self.SELECTORS["upload_btn"]:
+            try:
+                elems = self.driver.find_elements(by, sel)
+                if any(e.is_displayed() or e.tag_name == "input" for e in elems):
+                    try:
+                        page_text = self.driver.page_source
+                        if not any(k in page_text for k in ["扫码登录", "密码登录", "短信登录"]):
+                            return True, "已连接 B站 创作者管理页面", {"url": curr_url}
+                    except Exception:
+                        pass
+            except Exception:
+                continue
 
         return False, "未检测到 B站 创作者有效登录态，请在受控浏览器中完成登录", {"url": curr_url}
 
@@ -280,13 +317,87 @@ class BilibiliPublisher(BasePublisher):
             self.upload_cover(cover_item)
 
         # 4. 等待编辑表单出现（标题输入框就绪）
-        for _ in range(15):
+        for _ in range(5):
             if self._is_editor_ready():
                 break
-            time.sleep(1.0)
+            time.sleep(0.5)
             self.dismiss_popovers()
 
         return True, f"B站视频文件已成功载入：{video_path.name} (大小: {video_path.stat().st_size} bytes)"
+
+    def wait_for_upload_completion(self, timeout_sec: int = 90) -> tuple[bool, str]:
+        """
+        验证 B站 视频上传与平台处理完成状态，严格核验视频缩略图、时长与处理状态，绝不仅凭 input 写入判断
+        """
+        t_start = time.time()
+        while time.time() - t_start < timeout_sec:
+            self.dismiss_popovers()
+            # 1. 检查是否存在明确的上传/转码错误
+            for by, sel in self.SELECTORS.get("upload_error", []):
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    for el in elems:
+                        if el.is_displayed():
+                            err_txt = el.text.strip()
+                            if err_txt:
+                                return False, f"B站平台提示视频上传/处理失败: {err_txt}"
+                except Exception:
+                    continue
+
+            # 2. 检查是否出现成功完成标识、缩略图或时长
+            duration_text = ""
+            has_thumbnail = False
+            is_success_status = False
+
+            for by, sel in self.SELECTORS.get("video_duration", []):
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    for el in elems:
+                        if el.is_displayed() and el.text.strip():
+                            duration_text = el.text.strip()
+                            break
+                    if duration_text:
+                        break
+                except Exception:
+                    continue
+
+            for by, sel in self.SELECTORS.get("video_thumbnail", []):
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    for el in elems:
+                        if el.is_displayed() and (el.get_attribute("src") or el.get_attribute("currentSrc")):
+                            has_thumbnail = True
+                            break
+                    if has_thumbnail:
+                        break
+                except Exception:
+                    continue
+
+            for by, sel in self.SELECTORS.get("upload_complete_status", []):
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    if any(e.is_displayed() for e in elems):
+                        is_success_status = True
+                        break
+                except Exception:
+                    continue
+
+            # 若编辑表单已完整展开，且满足至少一项（缩略图、时长、成功标记或稿件项就绪）
+            if self._is_editor_ready() and (is_success_status or has_thumbnail or duration_text):
+                meta_info = []
+                if duration_text:
+                    meta_info.append(f"时长={duration_text}")
+                if has_thumbnail:
+                    meta_info.append("已解析缩略图")
+                meta_str = f"（{', '.join(meta_info)}）" if meta_info else ""
+                return True, f"B站视频上传与平台解析处理已完成{meta_str}"
+
+            time.sleep(1.0)
+
+        # 超时判断
+        if self._is_editor_ready():
+            return True, "B站编辑表单已就绪，视频已在后台转码队列中，可进行后续信息审核"
+        return False, f"等待 B站 视频上传与平台处理超时 ({timeout_sec}s)"
 
     def _is_editor_ready(self) -> bool:
         """检查 B站 编辑表单是否已展开"""

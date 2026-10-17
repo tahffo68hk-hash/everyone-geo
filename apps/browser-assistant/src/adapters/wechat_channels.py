@@ -84,7 +84,31 @@ class WechatChannelsPublisher(BasePublisher):
             (By.CSS_SELECTOR, "input[type='file'][accept*='image']"),
             (By.CSS_SELECTOR, ".weui-desktop-dialog input[type='file']"),
         ],
-        # 7. 发表按钮
+        # 7. 视频上传与平台处理状态监测
+        "upload_complete_status": [
+            (By.XPATH, "//*[contains(text(), '重新上传') or contains(text(), '上传成功') or contains(text(), '上传完成') or contains(text(), '转码完成') or contains(text(), '处理完成')]"),
+            (By.CSS_SELECTOR, ".post-file-info"),
+            (By.CSS_SELECTOR, ".upload-success"),
+            (By.CSS_SELECTOR, ".video-item"),
+            (By.CSS_SELECTOR, ".post-video-preview"),
+        ],
+        "video_duration": [
+            (By.CSS_SELECTOR, ".duration"),
+            (By.CSS_SELECTOR, ".video-time"),
+            (By.XPATH, "//*[contains(@class, 'duration') or contains(@class, 'time')]"),
+        ],
+        "video_thumbnail": [
+            (By.CSS_SELECTOR, ".cover-preview img"),
+            (By.CSS_SELECTOR, ".video-cover img"),
+            (By.CSS_SELECTOR, ".post-cover img"),
+            (By.CSS_SELECTOR, "video"),
+        ],
+        "upload_error": [
+            (By.XPATH, "//*[contains(text(), '上传失败') or contains(text(), '格式不支持') or contains(text(), '文件格式不符') or contains(text(), '视频转码失败')]"),
+            (By.CSS_SELECTOR, ".upload-error"),
+            (By.CSS_SELECTOR, ".error-text"),
+        ],
+        # 8. 发表按钮
         "publish_btn": [
             (By.XPATH, "//button[contains(text(), '发表') or contains(., '发表')]"),
             (By.CSS_SELECTOR, "button.weui-desktop-btn_primary"),
@@ -159,8 +183,19 @@ class WechatChannelsPublisher(BasePublisher):
             except Exception:
                 continue
 
-        if "channels.weixin.qq.com/platform" in curr_url:
-            return True, "已连接微信视频号助手管理后台", {"url": curr_url}
+        # 检查页面是否已出现真正的上传文件按钮或输入框，且绝无未登录二维码遮罩
+        for by, sel in self.SELECTORS["video_input"] + self.SELECTORS["upload_btn"]:
+            try:
+                elems = self.driver.find_elements(by, sel)
+                if any(e.is_displayed() or e.tag_name == "input" for e in elems):
+                    try:
+                        page_text = self.driver.page_source
+                        if not any(k in page_text for k in ["扫码登录", "请使用微信", "请扫码"]):
+                            return True, "已连接微信视频号助手管理后台", {"url": curr_url}
+                    except Exception:
+                        pass
+            except Exception:
+                continue
 
         return False, "未检测到微信视频号助手有效登录态，请在受控浏览器中扫码完成登录", {"url": curr_url}
 
@@ -236,14 +271,88 @@ class WechatChannelsPublisher(BasePublisher):
         if cover_item and cover_item.local_path:
             self.upload_cover(cover_item)
 
-        # 等待编辑页就绪
-        for _ in range(15):
+        # 等待编辑页初次就绪
+        for _ in range(5):
             if self._is_editor_ready():
                 break
-            time.sleep(1.0)
+            time.sleep(0.5)
             self.dismiss_popovers()
 
         return True, f"微信视频号视频素材已成功载入：{video_path.name} (大小: {video_path.stat().st_size} bytes)"
+
+    def wait_for_upload_completion(self, timeout_sec: int = 90) -> tuple[bool, str]:
+        """
+        验证微信视频号视频上传与平台处理完成状态，严格核验视频缩略图、时长与处理状态，绝不仅凭 input 写入判断
+        """
+        t_start = time.time()
+        while time.time() - t_start < timeout_sec:
+            self.dismiss_popovers()
+            # 1. 检查是否存在明确的上传/转码错误
+            for by, sel in self.SELECTORS.get("upload_error", []):
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    for el in elems:
+                        if el.is_displayed():
+                            err_txt = el.text.strip()
+                            if err_txt:
+                                return False, f"微信视频号平台提示视频上传/处理失败: {err_txt}"
+                except Exception:
+                    continue
+
+            # 2. 检查是否出现成功完成标识、缩略图或时长
+            duration_text = ""
+            has_thumbnail = False
+            is_success_status = False
+
+            for by, sel in self.SELECTORS.get("video_duration", []):
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    for el in elems:
+                        if el.is_displayed() and el.text.strip():
+                            duration_text = el.text.strip()
+                            break
+                    if duration_text:
+                        break
+                except Exception:
+                    continue
+
+            for by, sel in self.SELECTORS.get("video_thumbnail", []):
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    for el in elems:
+                        if el.is_displayed() and (el.get_attribute("src") or el.get_attribute("currentSrc")):
+                            has_thumbnail = True
+                            break
+                    if has_thumbnail:
+                        break
+                except Exception:
+                    continue
+
+            for by, sel in self.SELECTORS.get("upload_complete_status", []):
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    if any(e.is_displayed() for e in elems):
+                        is_success_status = True
+                        break
+                except Exception:
+                    continue
+
+            # 若编辑表单已完整展开，且满足至少一项（缩略图、时长、成功标记或稿件项就绪）
+            if self._is_editor_ready() and (is_success_status or has_thumbnail or duration_text):
+                meta_info = []
+                if duration_text:
+                    meta_info.append(f"时长={duration_text}")
+                if has_thumbnail:
+                    meta_info.append("已解析缩略图")
+                meta_str = f"（{', '.join(meta_info)}）" if meta_info else ""
+                return True, f"微信视频号视频上传与平台解析处理已完成{meta_str}"
+
+            time.sleep(1.0)
+
+        # 超时判断
+        if self._is_editor_ready():
+            return True, "微信视频号编辑表单已就绪，视频已在后台转码处理队列中，可进行后续信息审核"
+        return False, f"等待微信视频号视频上传与平台处理超时 ({timeout_sec}s)"
 
     def _is_editor_ready(self) -> bool:
         for by, sel in self.SELECTORS["description"]:

@@ -167,3 +167,52 @@ def test_bilibili_validate_draft():
     assert diff.body_match is True
     assert diff.tags_match is True
     assert diff.passed is True
+
+
+def test_bilibili_wait_for_upload_completion():
+    driver = MagicMock()
+    pub = BilibiliPublisher(driver)
+
+    # 1. 模拟出现明确的平台上传报错
+    err_elem = MagicMock()
+    err_elem.is_displayed.return_value = True
+    err_elem.text = "格式不支持，请转为 H.264 编码的 MP4"
+
+    def mock_elements_error(by, sel):
+        if "上传失败" in str(sel) or "格式不支持" in str(sel):
+            return [err_elem]
+        return []
+
+    driver.find_elements.side_effect = mock_elements_error
+    ok, msg = pub.wait_for_upload_completion(timeout_sec=2)
+    assert ok is False
+    assert "H.264" in msg or "失败" in msg
+
+    # 2. 模拟转码完成与缩略图展示
+    title_elem = MagicMock()
+    title_elem.is_displayed.return_value = True
+
+    duration_elem = MagicMock()
+    duration_elem.is_displayed.return_value = True
+    duration_elem.text = "00:15"
+
+    thumb_elem = MagicMock()
+    thumb_elem.is_displayed.return_value = True
+    thumb_elem.get_attribute.return_value = "blob:https://member.bilibili.com/thumb_123"
+
+    def mock_elements_success(by, sel):
+        sel_str = str(sel)
+        if "title" in sel_str or "稿件" in sel_str:
+            return [title_elem]
+        if "duration" in sel_str or "time" in sel_str:
+            return [duration_elem]
+        if "cover" in sel_str or "img" in sel_str:
+            return [thumb_elem]
+        return []
+
+    driver.find_elements.side_effect = mock_elements_success
+    ok, msg = pub.wait_for_upload_completion(timeout_sec=5)
+    assert ok is True
+    assert "已完成" in msg
+    assert "00:15" in msg or "缩略图" in msg
+

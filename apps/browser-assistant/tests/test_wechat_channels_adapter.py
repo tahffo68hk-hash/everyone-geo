@@ -156,3 +156,52 @@ def test_wechat_channels_validate_draft():
     assert diff.body_match is True
     assert diff.tags_match is True
     assert diff.passed is True
+
+
+def test_wechat_channels_wait_for_upload_completion():
+    driver = MagicMock()
+    pub = WechatChannelsPublisher(driver)
+
+    # 1. 模拟平台上传报错
+    err_elem = MagicMock()
+    err_elem.is_displayed.return_value = True
+    err_elem.text = "文件格式不符，请上传合法的 MP4/MOV 格式"
+
+    def mock_elements_error(by, sel):
+        if "上传失败" in str(sel) or "文件格式不符" in str(sel):
+            return [err_elem]
+        return []
+
+    driver.find_elements.side_effect = mock_elements_error
+    ok, msg = pub.wait_for_upload_completion(timeout_sec=2)
+    assert ok is False
+    assert "格式不符" in msg or "失败" in msg
+
+    # 2. 模拟转码完成与视频信息就绪
+    desc_elem = MagicMock()
+    desc_elem.is_displayed.return_value = True
+
+    duration_elem = MagicMock()
+    duration_elem.is_displayed.return_value = True
+    duration_elem.text = "01:15"
+
+    thumb_elem = MagicMock()
+    thumb_elem.is_displayed.return_value = True
+    thumb_elem.get_attribute.return_value = "https://channels.weixin.qq.com/preview/cover.jpg"
+
+    def mock_elements_success(by, sel):
+        sel_str = str(sel)
+        if "description" in sel_str or "editor" in sel_str:
+            return [desc_elem]
+        if "duration" in sel_str or "time" in sel_str:
+            return [duration_elem]
+        if "cover" in sel_str or "img" in sel_str or "video" in sel_str:
+            return [thumb_elem]
+        return []
+
+    driver.find_elements.side_effect = mock_elements_success
+    ok, msg = pub.wait_for_upload_completion(timeout_sec=5)
+    assert ok is True
+    assert "已完成" in msg
+    assert "01:15" in msg or "缩略图" in msg
+

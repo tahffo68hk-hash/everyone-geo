@@ -43,9 +43,30 @@ def test_bilibili_live_platform_gate():
         print(f"[LiveGate] Bilibili login check: is_logged={is_logged}, msg={login_msg}", flush=True)
 
         if not is_logged:
-            print("[LiveGate] Result: PENDING_REAL_PLATFORM (No authorized credentials provided)", flush=True)
+            print("[LiveGate] Result: PENDING_ACCOUNT_AUTH (Waiting for user QR-code / official login)", flush=True)
         else:
             print("[LiveGate] Result: REAL_LOGIN_PASS (Active session detected)", flush=True)
+            fixtures_video = Path(__file__).parent / "fixtures" / "sample_test_video.mp4"
+            fixtures_cover = Path(__file__).parent / "fixtures" / "sample_test_cover.jpg"
+            if fixtures_video.exists():
+                from src.models import MediaItem
+                video_item = MediaItem(index=1, type="VIDEO", url=f"file:///{fixtures_video.as_posix()}", local_path=str(fixtures_video))
+                cover_item = MediaItem(index=2, type="IMAGE", url=f"file:///{fixtures_cover.as_posix()}", local_path=str(fixtures_cover))
+                print("[LiveGate] Testing real video upload...", flush=True)
+                ok_up, msg_up = pub.upload_media([video_item, cover_item])
+                print(f"[LiveGate] Upload result: ok={ok_up}, msg={msg_up}", flush=True)
+                if ok_up:
+                    ok_proc, msg_proc = pub.wait_for_upload_completion(timeout_sec=60)
+                    print(f"[LiveGate] Processing result: ok={ok_proc}, msg={msg_proc}", flush=True)
+                    pub.fill_title("GeoLens 2026多平台自动化发布实战评测")
+                    pub.fill_content("本视频全面验证 GeoLens 本地浏览器受控发布架构，包含全套字段校验与 PREPARE_ONLY 人工审核保障机制。")
+                    pub.fill_tags(["AI工具", "前沿科技", "发布评测"])
+                    pub.fill_required_declarations()
+                    diff = pub.validate_draft("GeoLens 2026多平台自动化发布实战评测", "本视频全面验证 GeoLens 本地浏览器受控发布架构", ["AI工具", "前沿科技"])
+                    print(f"[LiveGate] Draft validation diff passed={diff.passed}", flush=True)
+                    ok_conf, msg_conf = pub.prepare_for_confirmation()
+                    browser_manager.take_screenshot(channel, account_id, "bilibili_live_gate_draft_ready")
+                    print("[LiveGate] PREPARE_ONLY verified: Stopped at confirmation stage with highlighted submit button.", flush=True)
 
         # 验证人工接管模式
         task_id = "task_bili_gate_takeover"

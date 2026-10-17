@@ -214,36 +214,12 @@ class TaskManager:
         if not verification_note or not verification_note.strip():
             return False, "必须提供明确的人工核验说明 (verification_note) 以记录证明依据"
 
-        # 真实性与防 Mock 检查
+        # 真实性与防 Mock 检查：严格按真实 Hostname 检验，杜绝子串匹配绕过
         if canonical_url:
-            c_low = canonical_url.lower().strip()
-            if any(bad in c_low for bad in ["mock://", "fake://", "example.com/mock", "mock_", "fake_"]):
-                return False, "禁止使用虚假/Mock 外部链接作为发布资产的证明证据"
-
-            if state.channel != "SIMULATION" and any(bad in c_low for bad in ["localhost", "127.0.0.1", "[::1]", "0.0.0.0"]):
-                return False, "真实平台发布凭证禁止使用 localhost 或本地回环地址"
-
-            # 平台域名归属约束
-            if state.channel == "XIAOHONGSHU" and not any(d in c_low for d in ["xiaohongshu.com", "xhslink.com"]):
-                return False, "小红书发布落地链接必须包含 xiaohongshu.com 或 xhslink.com 域名"
-            elif state.channel == "ZHIHU" and "zhihu.com" not in c_low:
-                return False, "知乎专栏发布链接必须包含 zhihu.com 域名"
-            elif state.channel == "BILIBILI" and not any(d in c_low for d in ["bilibili.com", "b23.tv"]):
-                return False, "B站发布链接必须包含 bilibili.com 或 b23.tv 域名"
-            elif state.channel == "DOUYIN" and not any(d in c_low for d in ["douyin.com", "iesdouyin.com"]):
-                return False, "抖音发布链接必须包含 douyin.com 或 iesdouyin.com 域名"
-            elif state.channel == "WECHAT_CHANNELS" and not any(d in c_low for d in ["weixin.qq.com", "qq.com"]):
-                return False, "微信视频号发布链接必须包含 weixin.qq.com 或 qq.com 域名"
-            elif state.channel == "KUAISHOU" and not any(d in c_low for d in ["kuaishou.com", "kwai.com"]):
-                return False, "快手发布链接必须包含 kuaishou.com 或 kwai.com 域名"
-            elif state.channel == "WEIBO" and not any(d in c_low for d in ["weibo.com", "weibo.cn"]):
-                return False, "微博发布链接必须包含 weibo.com 或 weibo.cn 域名"
-            elif state.channel == "BAIJIAHAO" and "baidu.com" not in c_low:
-                return False, "百家号发布链接必须包含 baidu.com 域名"
-            elif state.channel in ["WECHAT_OFFICIAL_ACCOUNT"] and not any(d in c_low for d in ["mp.weixin.qq.com", "weixin.qq.com", "qq.com"]):
-                return False, "微信公众号发布链接必须包含 weixin.qq.com 或 qq.com 域名"
-            elif state.channel == "TOUTIAO" and "toutiao.com" not in c_low:
-                return False, "今日头条发布链接必须包含 toutiao.com 域名"
+            from .security import validate_canonical_url_hostname
+            ok_url, msg_url = validate_canonical_url_hostname(canonical_url, state.channel)
+            if not ok_url:
+                return False, msg_url
 
         norm_status = target_status.upper().strip() if target_status else "PUBLISHED"
         with state.lock:
@@ -276,10 +252,11 @@ class TaskManager:
 
     def _prepare_local_media_items(self, media_items: list[MediaItem], task_id: str) -> list[MediaItem]:
         """
-        确保素材（图片/视频/封面）在本地有实际文件路径，供 WebDriver input[type=file] 上传
-        若仅有远程 URL，自动缓存到 TEMP_DIR；若为 file://，自动解析为本地绝对路径
+        确保素材（图片/视频/封面）在本地有实际安全受权的文件路径，供 WebDriver input[type=file] 上传
+        若仅有远程 URL，自动缓存到 TEMP_DIR；若为 file:// 或本地路径，通过 validate_media_file_path 执行白名单与防越权校验
         """
         from .config import TEMP_DIR
+        from .security import validate_media_file_path
         from pathlib import Path
         import urllib.request
         import ssl
@@ -296,25 +273,29 @@ class TaskManager:
                 notes=item.notes
             )
 
-            # 1. 优先解析 file:// 协议本地路径
-            if new_item.url and new_item.url.startswith("file://"):
+            candidate_path = None
+            # 1. 优先使用明确的本地路径
+            if new_item.local_path and Path(new_item.local_path).is_absolute():
+                candidate_path = new_item.local_path
+            elif new_item.url and new_item.url.startswith("file://"):
                 fpath = new_item.url[7:]
                 if fpath.startswith("/") and len(fpath) > 3 and fpath[2] == ":":
                     fpath = fpath[1:]
-                p = Path(fpath)
-                if p.exists() and p.stat().st_size > 0:
-                    new_item.local_path = str(p.resolve())
-                    new_item.size_bytes = p.stat().st_size
+                candidate_path = fpath
+            elif new_item.local_path:
+                candidate_path = new_item.local_path
+
+            if candidate_path:
+                ok_path, msg_path, safe_p = validate_media_file_path(candidate_path, new_item.type)
+                if ok_path and safe_p:
+                    new_item.local_path = str(safe_p)
+                    new_item.size_bytes = safe_p.stat().st_size
                     prepared.append(new_item)
                     continue
+                else:
+                    new_item.notes = f"{new_item.notes or ''} [路径安全拦截: {msg_path}]"
 
-            # 2. 如果本地路径已存在有效文件
-            if new_item.local_path and Path(new_item.local_path).exists() and Path(new_item.local_path).stat().st_size > 0:
-                new_item.size_bytes = Path(new_item.local_path).stat().st_size
-                prepared.append(new_item)
-                continue
-
-            # 3. 如果是 http/https 远程 URL，下载缓存
+            # 2. 如果是 http/https 远程 URL，下载缓存并校验
             if new_item.url and new_item.url.startswith(("http://", "https://")):
                 try:
                     parsed = urlparse(new_item.url)
@@ -336,9 +317,11 @@ class TaskManager:
                             content = resp.read()
                             if content and len(content) > 0:
                                 cached_file.write_bytes(content)
-                    if cached_file.exists() and cached_file.stat().st_size > 0:
-                        new_item.local_path = str(cached_file)
-                        new_item.size_bytes = cached_file.stat().st_size
+                    if cached_file.exists():
+                        ok_cache, msg_cache, safe_cache = validate_media_file_path(cached_file, new_item.type)
+                        if ok_cache and safe_cache:
+                            new_item.local_path = str(safe_cache)
+                            new_item.size_bytes = safe_cache.stat().st_size
                 except Exception:
                     pass
             prepared.append(new_item)
@@ -432,8 +415,31 @@ class TaskManager:
                 prepared_items = self._prepare_local_media_items(req.media_items, req.task_id)
                 ok, msg = publisher.upload_media(prepared_items)
                 duration = int((time.time() - t0) * 1000)
+                if not ok and publisher.is_video_channel():
+                    state.status = TaskStatus.MANUAL_REQUIRED
+                    state.error_message = msg
+                    state.add_log(StepName.UPLOAD_MEDIA, "视频上传失败", StepStatus.FAILED, f"{msg}。已保留当前受控浏览器，请人工接管", duration)
+                    return
                 state.add_log(StepName.UPLOAD_MEDIA, "素材上传完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
                 time.sleep(1.2)  # 等待前端切片渲染与编辑器表单展开
+
+                # 视频渠道强制核验平台处理、缩略图与转码状态
+                if publisher.is_video_channel() and ok:
+                    state.add_log(StepName.UPLOAD_MEDIA, "视频处理监测", StepStatus.RUNNING, "正在检测平台视频切片、转码解析与缩略图状态...")
+                    t_up = time.time()
+                    ok_up = False
+                    msg_up = ""
+                    try:
+                        ok_up, msg_up = publisher.wait_for_upload_completion(timeout_sec=90)
+                    except Exception as e:
+                        msg_up = f"视频上传处理检测异常: {e}"
+                    dur_up = int((time.time() - t_up) * 1000)
+                    if not ok_up:
+                        state.status = TaskStatus.MANUAL_REQUIRED
+                        state.error_message = msg_up
+                        state.add_log(StepName.UPLOAD_MEDIA, "视频转码处理异常", StepStatus.FAILED, f"{msg_up}。请在受控浏览器中人工核查", dur_up)
+                        return
+                    state.add_log(StepName.UPLOAD_MEDIA, "视频转码就绪", StepStatus.SUCCESS, msg_up, dur_up)
 
                 if not self._wait_if_paused(state):
                     return
