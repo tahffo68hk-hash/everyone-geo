@@ -13,6 +13,7 @@ from .douyin import DouyinPublisher
 from .wechat_channels import WechatChannelsPublisher
 from .kuaishou import KuaishouPublisher
 from .weibo import WeiboPublisher
+from .baijiahao import BaijiahaoPublisher
 from .fallback import FallbackPublisher, CREATOR_URL_MAP
 
 
@@ -28,6 +29,7 @@ class PublisherRegistry:
         "WECHAT_CHANNELS": WechatChannelsPublisher,
         "KUAISHOU": KuaishouPublisher,
         "WEIBO": WeiboPublisher,
+        "BAIJIAHAO": BaijiahaoPublisher,
     }
 
     @classmethod
