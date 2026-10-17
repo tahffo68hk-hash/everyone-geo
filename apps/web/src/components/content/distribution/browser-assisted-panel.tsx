@@ -174,7 +174,7 @@ export function BrowserAssistedPanel({
       } catch (err: any) {
         if (!unmounted) {
           setAssistantOnline(false);
-          setConnectError("未检测到本地浏览器助手。请在命令行运行 START_ASSISTANT.cmd 启动服务。");
+          setConnectError("本地受控浏览器发布助手未连接。受控 Chrome 需在您的桌面运行以便您亲自审核与发布。请在项目根目录运行 START_ASSISTANT.cmd 启动服务。");
         }
       } finally {
         if (!unmounted) setConnecting(false);
@@ -246,6 +246,10 @@ export function BrowserAssistedPanel({
   // 启动浏览器
   async function handleLaunchBrowser() {
     if (!activeChannelKey) return;
+    if (assistantOnline === false) {
+      alert("本地浏览器助手未连接！受控 Chrome 必须由本地助手唤起才能在您的桌面显示。\n\n请在项目根目录运行 START_ASSISTANT.cmd 启动服务后再试。");
+      return;
+    }
     try {
       const res = await assistantClient.launchBrowser(activeChannelKey, "default", false);
       setBrowserRunning(true);
@@ -357,6 +361,10 @@ export function BrowserAssistedPanel({
   async function handleStartPublishTask() {
     if (!selectedDraft) {
       alert("请先在左侧选择需要发布的草稿内容");
+      return;
+    }
+    if (assistantOnline === false) {
+      alert("本地浏览器助手未连接！受控 Chrome 必须由本地助手唤起才能在您的桌面显示。\n\n请在项目根目录运行 START_ASSISTANT.cmd 启动服务后再试。");
       return;
     }
     const taskId = `geo-task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -595,9 +603,24 @@ export function BrowserAssistedPanel({
       </div>
 
       {connectError && (
-        <div className="p-3 text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-lg flex items-center justify-between">
-          <span>⚠️ {connectError}</span>
-          <span className="font-mono text-[11px] bg-amber-100 px-2 py-0.5 rounded">pnpm assistant</span>
+        <div className="p-3.5 text-xs bg-amber-50 text-amber-900 border border-amber-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-2.5 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⚠️</span>
+            <span>{connectError}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="font-mono text-[11px] bg-amber-100/80 text-amber-900 border border-amber-300/60 px-2.5 py-1 rounded-md font-semibold select-all">
+              START_ASSISTANT.cmd
+            </span>
+            <button
+              type="button"
+              onClick={handleReconnect}
+              disabled={connecting}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-xs font-medium transition"
+            >
+              {connecting ? "探测中..." : "重新探测"}
+            </button>
+          </div>
         </div>
       )}
 
