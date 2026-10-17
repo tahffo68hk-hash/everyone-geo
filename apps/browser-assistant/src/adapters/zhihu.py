@@ -376,6 +376,7 @@ class ZhihuPublisher(BasePublisher):
     def prepare_for_confirmation(self) -> tuple[bool, str]:
         """滚动到知乎发布按钮并高亮提示，绝不自动越权点击提交"""
         try:
+            self.inject_preview_guard_banner("知乎专栏")
             pub_btn = None
             for by, sel in self.SELECTORS["publish_btn"]:
                 try:

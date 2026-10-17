@@ -174,75 +174,128 @@ class KuaishouPublisher(BasePublisher):
             return False, f"打开快手发布页失败：{e}"
 
     def upload_media(self, media_items: list[MediaItem]) -> tuple[bool, str]:
-        """上传视频素材及封面"""
+        """上传视频素材或多图图文，及封面"""
         if not media_items:
             return False, "未提供任何视频或素材文件"
 
         video_item = None
         cover_item = None
+        image_items = []
         for item in media_items:
             mtype = (item.type or "").upper()
             if mtype == "VIDEO" or (item.local_path and Path(item.local_path).suffix.lower() in [".mp4", ".mov", ".flv", ".webm", ".mkv"]):
                 if not video_item:
                     video_item = item
-            elif mtype in ["COVER", "IMAGE"]:
+            elif mtype in ["COVER"]:
+                if not cover_item:
+                    cover_item = item
+            elif mtype in ["IMAGE"]:
+                image_items.append(item)
                 if not cover_item:
                     cover_item = item
 
         if not video_item and media_items:
-            video_item = media_items[0]
-
-        if not video_item or not video_item.local_path:
-            return False, "未找到有效的本地视频文件路径"
-
-        video_path = Path(video_item.local_path).resolve()
-        if not video_path.exists() or video_path.stat().st_size == 0:
-            return False, f"本地视频文件不存在或为空: {video_path}"
+            first_path = media_items[0].local_path or ""
+            if Path(first_path).suffix.lower() in [".mp4", ".mov", ".flv", ".webm", ".mkv"]:
+                video_item = media_items[0]
 
         self.dismiss_popovers()
 
-        file_input = None
-        for by, sel in self.SELECTORS["video_input"]:
+        # === A. 视频模式 ===
+        if video_item:
+            if not video_item.local_path:
+                return False, "未找到有效的本地视频文件路径"
+
+            video_path = Path(video_item.local_path).resolve()
+            if not video_path.exists() or video_path.stat().st_size == 0:
+                return False, f"本地视频文件不存在或为空: {video_path}"
+
+            file_input = self.find_file_input_cross_frames("video")
+            if not file_input:
+                for by, sel in self.SELECTORS["video_input"]:
+                    try:
+                        inputs = self.driver.find_elements(by, sel)
+                        for inp in inputs:
+                            accept = (inp.get_attribute("accept") or "").lower()
+                            if "video" in accept or accept == "" or "mp4" in accept:
+                                file_input = inp
+                                break
+                        if file_input:
+                            break
+                    except Exception:
+                        continue
+
+            if not file_input:
+                try:
+                    file_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+                except Exception:
+                    pass
+
+            if not file_input:
+                return False, "未能定位到快手视频上传 input 元素"
+
             try:
-                inputs = self.driver.find_elements(by, sel)
-                for inp in inputs:
-                    accept = (inp.get_attribute("accept") or "").lower()
-                    if "video" in accept or accept == "" or "mp4" in accept:
-                        file_input = inp
-                        break
-                if file_input:
+                file_input.send_keys(str(video_path))
+                time.sleep(2.0)
+                self.dismiss_popovers()
+            except Exception as e:
+                return False, f"向快手上传视频文件失败：{e}"
+
+            # 尝试设置封面
+            if cover_item and cover_item.local_path:
+                self.upload_cover(cover_item)
+
+            # 等待编辑页就绪
+            for _ in range(15):
+                if self._is_editor_ready():
                     break
-            except Exception:
-                continue
+                time.sleep(1.0)
+                self.dismiss_popovers()
 
-        if not file_input:
+            return True, f"快手视频素材已成功载入：{video_path.name} (大小: {video_path.stat().st_size} bytes)"
+
+        # === B. 图文模式 ===
+        if image_items:
+            # 切换「图文」tab
+            for tab_sel in ["//div[contains(@role, 'tab') and contains(text(), '图文')]", "//*[contains(text(), '图文')]", "div[role='tablist'] div:nth-child(2)"]:
+                try:
+                    tabs = self.driver.find_elements(By.XPATH, tab_sel) if tab_sel.startswith("//") else self.driver.find_elements(By.CSS_SELECTOR, tab_sel)
+                    for tab in tabs:
+                        if tab.is_displayed():
+                            tab.click()
+                            time.sleep(1.0)
+                            break
+                except Exception:
+                    pass
+
+            img_input = self.find_file_input_cross_frames("image")
+            if not img_input:
+                for by, sel in self.SELECTORS["video_input"]:
+                    try:
+                        inputs = self.driver.find_elements(by, sel)
+                        if inputs:
+                            img_input = inputs[0]
+                            break
+                    except Exception:
+                        continue
+
+            if not img_input:
+                return False, "未能定位到快手图文上传 input 元素"
+
+            valid_paths = [str(Path(img.local_path).resolve()) for img in image_items if img.local_path and Path(img.local_path).exists()]
+            if not valid_paths:
+                return False, "未找到有效的本地图文图片路径"
+
             try:
-                file_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-            except Exception:
-                pass
+                img_input.send_keys("\n".join(valid_paths))
+                time.sleep(2.0)
+                self.dismiss_popovers()
+            except Exception as e:
+                return False, f"向快手上传图文素材失败：{e}"
 
-        if not file_input:
-            return False, "未能定位到快手视频上传 input 元素"
+            return True, f"快手图文素材已成功载入：共 {len(valid_paths)} 张图片"
 
-        try:
-            file_input.send_keys(str(video_path))
-            time.sleep(2.5)
-            self.dismiss_popovers()
-        except Exception as e:
-            return False, f"向快手上传视频文件失败：{e}"
-
-        # 尝试设置封面
-        if cover_item and cover_item.local_path:
-            self.upload_cover(cover_item)
-
-        # 等待编辑页就绪
-        for _ in range(15):
-            if self._is_editor_ready():
-                break
-            time.sleep(1.0)
-            self.dismiss_popovers()
-
-        return True, f"快手视频素材已成功载入：{video_path.name} (大小: {video_path.stat().st_size} bytes)"
+        return False, "未找到可上传的有效素材"
 
     def _is_editor_ready(self) -> bool:
         for by, sel in self.SELECTORS["description"]:
@@ -360,18 +413,7 @@ class KuaishouPublisher(BasePublisher):
             return False, "未能定位到快手作品描述输入框"
 
         try:
-            desc_elem.click()
-            time.sleep(0.2)
-            if desc_elem.get_attribute("contenteditable") == "true":
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, desc_elem, safe_body)
-            else:
-                desc_elem.send_keys(Keys.CONTROL, "a")
-                desc_elem.send_keys(Keys.BACKSPACE)
-                self.js_set_value(desc_elem, safe_body)
+            self.set_field_text(desc_elem, safe_body)
             time.sleep(0.3)
             return True, f"快手作品描述已填入（共 {len(safe_body)} 字）"
         except Exception as e:
@@ -406,12 +448,8 @@ class KuaishouPublisher(BasePublisher):
             time.sleep(0.2)
             if desc_elem.get_attribute("contenteditable") == "true":
                 curr = desc_elem.text
-                new_t = curr + tags_str
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, desc_elem, new_t)
+                new_t = (curr + tags_str).strip()
+                self.js_set_value(desc_elem, new_t)
             else:
                 desc_elem.send_keys(tags_str)
             time.sleep(0.3)
@@ -492,6 +530,7 @@ class KuaishouPublisher(BasePublisher):
     def prepare_for_confirmation(self) -> tuple[bool, str]:
         """停留在最终发布确认阶段，高亮【发布】按钮，绝不自动越权提交"""
         self.dismiss_popovers()
+        self.inject_preview_guard_banner("快手创作者服务平台")
         try:
             for by, sel in self.SELECTORS["publish_btn"]:
                 elems = self.driver.find_elements(by, sel)

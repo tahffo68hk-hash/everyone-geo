@@ -179,18 +179,7 @@ class WeiboPublisher(BasePublisher):
             return False, "未能定位到微博新鲜事正文输入框"
 
         try:
-            editor.click()
-            time.sleep(0.2)
-            if editor.get_attribute("contenteditable") == "true":
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, editor, safe_body)
-            else:
-                editor.send_keys(Keys.CONTROL, "a")
-                editor.send_keys(Keys.BACKSPACE)
-                self.js_set_value(editor, safe_body)
+            self.set_field_text(editor, safe_body)
             time.sleep(0.3)
             return True, f"微博正文已填入（共 {len(safe_body)} 字）"
         except Exception as e:
@@ -267,12 +256,8 @@ class WeiboPublisher(BasePublisher):
             time.sleep(0.2)
             if editor.get_attribute("contenteditable") == "true":
                 curr = editor.text
-                new_t = curr + tags_str
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, editor, new_t)
+                new_t = (curr + tags_str).strip()
+                self.js_set_value(editor, new_t)
             else:
                 editor.send_keys(tags_str)
             time.sleep(0.3)
@@ -336,6 +321,7 @@ class WeiboPublisher(BasePublisher):
     def prepare_for_confirmation(self) -> tuple[bool, str]:
         """停留在最终发布确认阶段，高亮【发送】按钮，绝不自动越权提交"""
         self.dismiss_popovers()
+        self.inject_preview_guard_banner("微博")
         try:
             for by, sel in self.SELECTORS["send_btn"]:
                 elems = self.driver.find_elements(by, sel)

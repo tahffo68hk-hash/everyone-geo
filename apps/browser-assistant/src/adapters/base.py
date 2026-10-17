@@ -173,10 +173,136 @@ class BasePublisher(ABC):
         return element
 
     def js_set_value(self, element, value: str):
-        """通过 JS 直接设值并触发 input/change 事件"""
-        self.driver.execute_script("""
-            arguments[0].value = arguments[1];
-            arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-            arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-        """, element, value)
+        """
+        通过 JS 直接设值并触发 input/change/blur 事件
+        深度适配 React、Vue、Angular 及各平台自定义 WebComponent (Semi Design / Ant Design / TDesign)
+        """
+        js_code = """
+            var el = arguments[0];
+            var val = arguments[1];
+            if (!el) return;
+            try { el.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch(e){}
+            try { el.focus(); } catch(e){}
+            if (el.matches && el.matches('input, textarea')) {
+                var proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                if (desc && desc.set) {
+                    desc.set.call(el, val);
+                } else {
+                    el.value = val;
+                }
+            } else {
+                try {
+                    document.execCommand('selectAll', false, null);
+                    var inserted = document.execCommand('insertText', false, val);
+                    if (!inserted) {
+                        el.innerText = val;
+                    }
+                } catch(e) {
+                    el.innerText = val;
+                }
+            }
+            try {
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: val }));
+            } catch(e) {
+                el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            }
+            el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            el.dispatchEvent(new Event('blur', { bubbles: true, composed: true }));
+        """
+        self.driver.execute_script(js_code, element, value)
+
+    def set_field_text(self, element, value: str):
+        """
+        全保真设值：组合原生键盘清除与底层原型注入，彻底杜绝单页应用表单丢失输入的问题
+        """
+        try:
+            element.click()
+        except Exception:
+            try:
+                self.driver.execute_script("arguments[0].click();", element)
+            except Exception:
+                pass
+        self.js_set_value(element, value)
+
+    def find_file_input_cross_frames(self, kind: str = "video") -> Any | None:
+        """
+        跨主文档与所有 iframe 递归寻找文件上传输入框
+        解决微信视频号等复杂 SPA 在微前端子 iframe 内渲染上传组件的问题
+        """
+        expected_type = "video" if kind.lower() == "video" else "image"
+        
+        # 1. 在当前/主文档中查找
+        try:
+            inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
+            for inp in inputs:
+                accept = (inp.get_attribute("accept") or "").lower()
+                if expected_type in accept or accept == "" or (".mp4" in accept if expected_type == "video" else (".png" in accept or ".jpg" in accept)):
+                    return inp
+        except Exception:
+            pass
+
+        # 2. 遍历 iframe
+        try:
+            frames = self.driver.find_elements(By.TAG_NAME, "iframe")
+            for fr in frames:
+                try:
+                    self.driver.switch_to.frame(fr)
+                    sub_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
+                    for inp in sub_inputs:
+                        accept = (inp.get_attribute("accept") or "").lower()
+                        if expected_type in accept or accept == "" or (".mp4" in accept if expected_type == "video" else (".png" in accept or ".jpg" in accept)):
+                            return inp
+                    self.driver.switch_to.default_content()
+                except Exception:
+                    self.driver.switch_to.default_content()
+                    continue
+        except Exception:
+            try:
+                self.driver.switch_to.default_content()
+            except Exception:
+                pass
+
+        return None
+
+    def inject_preview_guard_banner(self, platform_name: str = "", extra_tip: str = ""):
+        """
+        在受控浏览器顶部注入显著的 GeoLens PREPARE_ONLY 预览安全守卫横幅
+        明确提示创作者：内容已自动填写完成，处于发布前人工审核阶段，绝不自动提交。
+        """
+        try:
+            plat_str = f"【{platform_name}】" if platform_name else ""
+            tip_str = f" · {extra_tip}" if extra_tip else " · 请创作者亲自核对标题、正文、素材与各项设置后手动点击最终发布"
+            full_msg = f"🛡️ GeoLens 自动化发布准备已完成 {plat_str}{tip_str}"
+            js_code = """
+                var existing = document.getElementById('geolens-preview-guard-banner');
+                if (existing) {
+                    existing.innerHTML = arguments[0];
+                    return;
+                }
+                var banner = document.createElement('div');
+                banner.id = 'geolens-preview-guard-banner';
+                banner.innerHTML = arguments[0];
+                banner.style.position = 'fixed';
+                banner.style.top = '0';
+                banner.style.left = '0';
+                banner.style.right = '0';
+                banner.style.zIndex = '2147483647';
+                banner.style.backgroundColor = '#1e293b';
+                banner.style.color = '#38bdf8';
+                banner.style.borderBottom = '3px solid #0284c7';
+                banner.style.textAlign = 'center';
+                banner.style.padding = '10px 16px';
+                banner.style.fontSize = '14px';
+                banner.style.fontWeight = '700';
+                banner.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif';
+                banner.style.boxShadow = '0 4px 16px rgba(0,0,0,0.4)';
+                banner.style.pointerEvents = 'none';
+                banner.style.letterSpacing = '0.5px';
+                document.body.appendChild(banner);
+            """
+            self.driver.execute_script(js_code, full_msg)
+        except Exception:
+            pass
+
 

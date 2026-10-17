@@ -183,14 +183,7 @@ class BaijiahaoPublisher(BasePublisher):
             return False, "未能定位到百家号文章标题输入框"
 
         try:
-            title_input.click()
-            time.sleep(0.2)
-            title_input.send_keys(Keys.CONTROL, "a")
-            title_input.send_keys(Keys.BACKSPACE)
-            time.sleep(0.2)
-            self.js_set_value(title_input, safe_title)
-            title_input.send_keys(Keys.SPACE)
-            title_input.send_keys(Keys.BACKSPACE)
+            self.set_field_text(title_input, safe_title)
             time.sleep(0.3)
             msg = f"百家号标题已填入：{safe_title}"
             if truncated:
@@ -221,18 +214,7 @@ class BaijiahaoPublisher(BasePublisher):
             return False, "未能定位到百家号富文本编辑器"
 
         try:
-            editor.click()
-            time.sleep(0.2)
-            if editor.get_attribute("contenteditable") == "true":
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, editor, safe_body)
-            else:
-                editor.send_keys(Keys.CONTROL, "a")
-                editor.send_keys(Keys.BACKSPACE)
-                self.js_set_value(editor, safe_body)
+            self.set_field_text(editor, safe_body)
             time.sleep(0.3)
             return True, f"百家号正文已填入（共 {len(safe_body)} 字）"
         except Exception as e:
@@ -244,15 +226,16 @@ class BaijiahaoPublisher(BasePublisher):
             return True, "纯文案发布，无需上传素材"
 
         self.dismiss_popovers()
-        file_input = None
-        for by, sel in self.SELECTORS["media_input"]:
-            try:
-                inputs = self.driver.find_elements(by, sel)
-                if inputs:
-                    file_input = inputs[0]
-                    break
-            except Exception:
-                continue
+        file_input = self.find_file_input_cross_frames("image")
+        if not file_input:
+            for by, sel in self.SELECTORS["media_input"]:
+                try:
+                    inputs = self.driver.find_elements(by, sel)
+                    if inputs:
+                        file_input = inputs[0]
+                        break
+                except Exception:
+                    continue
 
         if not file_input:
             try:
@@ -353,6 +336,7 @@ class BaijiahaoPublisher(BasePublisher):
     def prepare_for_confirmation(self) -> tuple[bool, str]:
         """停留在最终发布确认阶段，高亮【发布】按钮，绝不自动越权提交"""
         self.dismiss_popovers()
+        self.inject_preview_guard_banner("百度百家号")
         try:
             for by, sel in self.SELECTORS["publish_btn"]:
                 elems = self.driver.find_elements(by, sel)

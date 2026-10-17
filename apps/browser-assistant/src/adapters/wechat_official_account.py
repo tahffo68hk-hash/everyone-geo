@@ -298,6 +298,7 @@ class WechatOfficialAccountPublisher(BasePublisher):
     def prepare_for_confirmation(self) -> tuple[bool, str]:
         """停留在【保存为草稿】或审核区域，绝不点击群发"""
         self.dismiss_popovers()
+        self.inject_preview_guard_banner("微信公众平台", "请创作者亲自核对图文排版、封面与摘要后手动保存草稿或群发")
         try:
             for by, sel in self.SELECTORS["draft_btn"]:
                 elems = self.driver.find_elements(by, sel)

@@ -20,6 +20,18 @@ from .base import BasePublisher
 from ..models import MediaItem, ValidationDiff
 
 
+def format_str_for_short_title(origin_title: str) -> str:
+    allowed_special_chars = "《》“”:+?%°"
+    filtered_chars = [char if char.isalnum() or char in allowed_special_chars else " " if char == "," else "" for char in origin_title]
+    formatted_string = "".join(filtered_chars).strip()
+    if len(formatted_string) > 15:
+        formatted_string = formatted_string[:15]
+    if len(formatted_string) < 7:
+        filler = "，精彩内容分享"
+        formatted_string = (formatted_string + filler)[:7] if formatted_string else "精彩视频内容分享"
+    return formatted_string
+
+
 class WechatChannelsPublisher(BasePublisher):
     """微信视频号助手发布适配器"""
 
@@ -200,10 +212,34 @@ class WechatChannelsPublisher(BasePublisher):
         return False, "未检测到微信视频号助手有效登录态，请在受控浏览器中扫码完成登录", {"url": curr_url}
 
     def open_editor(self) -> tuple[bool, str]:
-        """打开微信视频号发表页"""
+        """打开微信视频号发表页（先尝试平台首页点击【发表视频】，再等待进入 post/create）"""
         try:
-            self.driver.get(self.CREATOR_URL)
-            time.sleep(2.0)
+            curr = (self.driver.current_url or "").lower()
+            if "channels.weixin.qq.com/platform/post/create" not in curr:
+                self.driver.get(self.HOME_URL)
+                time.sleep(1.5)
+                self.dismiss_popovers()
+                # 寻找「发表视频」入口
+                for sel in [
+                    (By.CSS_SELECTOR, "button.weui-desktop-btn"),
+                    (By.XPATH, "//button[contains(text(), '发表视频') or contains(., '发表视频')]"),
+                    (By.XPATH, "//*[contains(@class, 'weui-desktop-btn') and contains(text(), '发表视频')]")
+                ]:
+                    try:
+                        elems = self.driver.find_elements(*sel)
+                        for el in elems:
+                            if el.is_displayed() and "发表视频" in (el.text or ""):
+                                el.click()
+                                time.sleep(1.5)
+                                break
+                    except Exception:
+                        continue
+
+            # 若仍未进入 post/create，直接导航到 CREATOR_URL
+            if "post/create" not in (self.driver.current_url or "").lower():
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(2.0)
+
             self.dismiss_popovers()
             return True, "已在受控浏览器打开微信视频号发布页面"
         except Exception as e:
@@ -237,19 +273,20 @@ class WechatChannelsPublisher(BasePublisher):
 
         self.dismiss_popovers()
 
-        file_input = None
-        for by, sel in self.SELECTORS["video_input"]:
-            try:
-                inputs = self.driver.find_elements(by, sel)
-                for inp in inputs:
-                    accept = (inp.get_attribute("accept") or "").lower()
-                    if "video" in accept or accept == "" or "mp4" in accept:
-                        file_input = inp
+        file_input = self.find_file_input_cross_frames("video")
+        if not file_input:
+            for by, sel in self.SELECTORS["video_input"]:
+                try:
+                    inputs = self.driver.find_elements(by, sel)
+                    for inp in inputs:
+                        accept = (inp.get_attribute("accept") or "").lower()
+                        if "video" in accept or accept == "" or "mp4" in accept:
+                            file_input = inp
+                            break
+                    if file_input:
                         break
-                if file_input:
-                    break
-            except Exception:
-                continue
+                except Exception:
+                    continue
 
         if not file_input:
             try:
@@ -405,14 +442,11 @@ class WechatChannelsPublisher(BasePublisher):
             return False, f"封面上传失败：{e}"
 
     def fill_title(self, title: str) -> tuple[bool, str]:
-        """填写短标题（建议 20 字以内）"""
+        """填写短标题（建议 20 字以内短标题，符合视频号 7-15 字平台规范）"""
         self.dismiss_popovers()
         max_len = 20
-        truncated = False
-        safe_title = title.strip()
-        if len(safe_title) > max_len:
-            safe_title = safe_title[:max_len]
-            truncated = True
+        truncated = len(title.strip()) > max_len
+        safe_title = format_str_for_short_title(title)
 
         title_input = None
         for by, sel in self.SELECTORS["title"]:
@@ -431,14 +465,7 @@ class WechatChannelsPublisher(BasePublisher):
             return True, "当前视频号页面无独立短标题字段或已合并入主描述"
 
         try:
-            title_input.click()
-            time.sleep(0.2)
-            title_input.send_keys(Keys.CONTROL, "a")
-            title_input.send_keys(Keys.BACKSPACE)
-            time.sleep(0.2)
-            self.js_set_value(title_input, safe_title)
-            title_input.send_keys(Keys.SPACE)
-            title_input.send_keys(Keys.BACKSPACE)
+            self.set_field_text(title_input, safe_title)
             time.sleep(0.3)
             msg = f"短标题已填入：{safe_title}"
             if truncated:
@@ -450,6 +477,16 @@ class WechatChannelsPublisher(BasePublisher):
     def fill_content(self, body: str) -> tuple[bool, str]:
         """填写视频描述"""
         self.dismiss_popovers()
+        # 清除可能弹出的账号切换对话框
+        try:
+            for btn in self.driver.find_elements(By.CSS_SELECTOR, ".changeAccount-dialog button, .changeAccount-dialog .weui-desktop-dialog__close-btn"):
+                if btn.is_displayed():
+                    btn.click()
+                    time.sleep(0.3)
+                    break
+        except Exception:
+            pass
+
         safe_body = body.strip()
 
         desc_elem = None
@@ -469,18 +506,7 @@ class WechatChannelsPublisher(BasePublisher):
             return False, "未能定位到微信视频号描述输入框"
 
         try:
-            desc_elem.click()
-            time.sleep(0.2)
-            if desc_elem.get_attribute("contenteditable") == "true":
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, desc_elem, safe_body)
-            else:
-                desc_elem.send_keys(Keys.CONTROL, "a")
-                desc_elem.send_keys(Keys.BACKSPACE)
-                self.js_set_value(desc_elem, safe_body)
+            self.set_field_text(desc_elem, safe_body)
             time.sleep(0.3)
             return True, f"视频描述已填入（共 {len(safe_body)} 字）"
         except Exception as e:
@@ -515,12 +541,8 @@ class WechatChannelsPublisher(BasePublisher):
             time.sleep(0.2)
             if desc_elem.get_attribute("contenteditable") == "true":
                 curr = desc_elem.text
-                new_t = curr + tags_str
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, desc_elem, new_t)
+                new_t = (curr + tags_str).strip()
+                self.js_set_value(desc_elem, new_t)
             else:
                 desc_elem.send_keys(tags_str)
             time.sleep(0.3)
@@ -601,6 +623,7 @@ class WechatChannelsPublisher(BasePublisher):
     def prepare_for_confirmation(self) -> tuple[bool, str]:
         """停留在最终发布确认阶段，高亮【发表】按钮，绝不自动越权提交"""
         self.dismiss_popovers()
+        self.inject_preview_guard_banner("微信视频号")
         try:
             for by, sel in self.SELECTORS["publish_btn"]:
                 elems = self.driver.find_elements(by, sel)

@@ -398,6 +398,50 @@ export function BrowserAssistedPanel({
     }
   }
 
+  // 一键载入本地真实测试素材 (可解码 MP4 视频与高清封面)
+  function handleLoadTestFixtures() {
+    const videoFixturePath = "D:\\dev\\geo-platform\\apps\\browser-assistant\\tests\\fixtures\\sample_test_video.mp4";
+    const coverFixturePath = "D:\\dev\\geo-platform\\apps\\browser-assistant\\tests\\fixtures\\sample_test_cover.jpg";
+
+    if (isVideoChannel) {
+      setMediaItems([
+        {
+          index: 1,
+          type: "VIDEO",
+          url: "file:///D:/dev/geo-platform/apps/browser-assistant/tests/fixtures/sample_test_video.mp4",
+          local_path: videoFixturePath,
+          notes: "测试成片 (H.264 / 1080p 标准 MP4)",
+        },
+        {
+          index: 2,
+          type: "COVER",
+          url: "file:///D:/dev/geo-platform/apps/browser-assistant/tests/fixtures/sample_test_cover.jpg",
+          local_path: coverFixturePath,
+          notes: "视频横版封面 (16:9 / 1080p JPG)",
+        },
+      ]);
+      setCopyFeedback("已一键载入本地测试成片与封面 (sample_test_video.mp4, sample_test_cover.jpg)！");
+    } else {
+      setMediaItems([
+        {
+          index: 1,
+          type: "COVER",
+          url: "file:///D:/dev/geo-platform/apps/browser-assistant/tests/fixtures/sample_test_cover.jpg",
+          local_path: coverFixturePath,
+          notes: "测试封面首图 (高清 JPG)",
+        },
+        {
+          index: 2,
+          type: "IMAGE",
+          url: "file:///D:/dev/geo-platform/apps/browser-assistant/tests/fixtures/sample_test_cover.jpg",
+          local_path: coverFixturePath,
+          notes: "测试插图 2 (高清 JPG)",
+        },
+      ]);
+      setCopyFeedback("已一键载入本地测试配图 (sample_test_cover.jpg)！");
+    }
+  }
+
   // 下载完整人工发布包 (ZIP)
   async function handleDownloadPackageZip() {
     setDownloadingZip(true);
@@ -853,6 +897,14 @@ export function BrowserAssistedPanel({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleLoadTestFixtures}
+                    className="text-xs text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-200 flex items-center gap-1 font-medium transition shadow-xs"
+                    title="一键载入本地可解码的真实 MP4 视频与高清封面 (sample_test_video.mp4 / sample_test_cover.jpg)，快速验证浏览器自动化"
+                  >
+                    🧪 一键载入测试素材
+                  </button>
                   <button
                     type="button"
                     onClick={() => setShowAddMediaInput(!showAddMediaInput)}

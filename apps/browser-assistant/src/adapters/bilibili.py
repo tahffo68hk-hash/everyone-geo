@@ -295,11 +295,8 @@ class BilibiliPublisher(BasePublisher):
                 continue
 
         if not file_input:
-            # 降级尝试通过通用 input[type='file']
-            try:
-                file_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-            except Exception:
-                pass
+            # 降级尝试通过跨 frame 深度检索
+            file_input = self.find_file_input_cross_frames("video")
 
         if not file_input:
             return False, "未能定位到 B站 视频上传文件输入框"
@@ -487,15 +484,7 @@ class BilibiliPublisher(BasePublisher):
             return False, "未能定位到 B站 稿件标题输入框"
 
         try:
-            title_input.click()
-            time.sleep(0.2)
-            # 清空现有标题
-            title_input.send_keys(Keys.CONTROL, "a")
-            title_input.send_keys(Keys.BACKSPACE)
-            time.sleep(0.2)
-            self.js_set_value(title_input, safe_title)
-            title_input.send_keys(Keys.SPACE)
-            title_input.send_keys(Keys.BACKSPACE)
+            self.set_field_text(title_input, safe_title)
             time.sleep(0.3)
             msg = f"标题已成功填入：{safe_title}"
             if truncated:
@@ -529,19 +518,7 @@ class BilibiliPublisher(BasePublisher):
             return True, "未找到独立简介框或当前界面未展开简介区域，跳过"
 
         try:
-            desc_elem.click()
-            time.sleep(0.2)
-            # 判断是否为 contenteditable
-            if desc_elem.get_attribute("contenteditable") == "true":
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, desc_elem, safe_body)
-            else:
-                desc_elem.send_keys(Keys.CONTROL, "a")
-                desc_elem.send_keys(Keys.BACKSPACE)
-                self.js_set_value(desc_elem, safe_body)
+            self.set_field_text(desc_elem, safe_body)
             time.sleep(0.3)
             return True, f"视频简介已填入（共 {len(safe_body)} 字）"
         except Exception as e:
@@ -603,6 +580,24 @@ class BilibiliPublisher(BasePublisher):
             return True, "自制声明已保持默认"
         except Exception as e:
             return True, f"声明设置跳过：{e}"
+
+    def fill_category(self, category: str) -> tuple[bool, str]:
+        """设置 B站 分区/分类"""
+        if not category:
+            return True, "未指定分区，采用平台自动识别分区"
+        try:
+            part_entries = self.driver.find_elements(By.XPATH, f"//*[contains(@class, 'select-item') or contains(@class, 'type-item')][contains(text(), '{category}')]")
+            for entry in part_entries:
+                if entry.is_displayed():
+                    try:
+                        entry.click()
+                        return True, f"已选择 B站 分区：{category}"
+                    except Exception:
+                        self.driver.execute_script("arguments[0].click();", entry)
+                        return True, f"已选择 B站 分区：{category}"
+            return True, f"未找到精确匹配的分区 '{category}'，保留默认分区设置"
+        except Exception as e:
+            return True, f"设置分区跳过：{e}"
 
     def validate_draft(
         self,
@@ -701,6 +696,7 @@ class BilibiliPublisher(BasePublisher):
         严格执行 PREPARE_ONLY 原则，绝不越权自动点击提交
         """
         self.dismiss_popovers()
+        self.inject_preview_guard_banner("哔哩哔哩 B站")
         try:
             for by, sel in self.SELECTORS["submit_btn"]:
                 elems = self.driver.find_elements(by, sel)

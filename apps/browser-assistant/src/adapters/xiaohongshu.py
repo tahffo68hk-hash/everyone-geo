@@ -392,12 +392,67 @@ class XiaohongshuPublisher(BasePublisher):
 
     def upload_media(self, media_items: list[MediaItem]) -> tuple[bool, str]:
         """
-        自动上传素材图片 (1-9 张图文限制)
-        借鉴 social-auto-upload 验证成果：严格按编号顺序依次上传，避免异步并发打乱顺序
+        自动上传素材（支持 1-9 张图文笔记或短视频成片）
+        保持图文发布回归基线，同时扩展短视频上传能力
         """
         if not media_items:
-            return True, "无图片素材需上传"
+            return True, "无图片或视频素材需上传"
 
+        # 检查是否包含视频素材
+        video_item = None
+        for m in media_items:
+            mtype = (m.type or "").upper()
+            if mtype == "VIDEO" or (m.local_path and Path(m.local_path).suffix.lower() in [".mp4", ".mov", ".flv", ".webm", ".mkv"]):
+                video_item = m
+                break
+
+        self.dismiss_popovers()
+
+        # === 视频模式 ===
+        if video_item:
+            # 切换到【上传视频】Tab
+            for v_sel in [
+                "//div[contains(@class, 'tab') and (contains(text(), '上传视频') or contains(., '上传视频'))]",
+                "//span[contains(text(), '上传视频')]",
+                "//*[contains(text(), '上传视频')]"
+            ]:
+                try:
+                    tabs = self.driver.find_elements(By.XPATH, v_sel)
+                    for t in tabs:
+                        if t.is_displayed():
+                            t.click()
+                            time.sleep(0.8)
+                            break
+                except Exception:
+                    pass
+
+            vid_input = self.find_file_input_cross_frames("video")
+            if not vid_input:
+                for by, sel in self.SELECTORS["image_file_input"]:
+                    try:
+                        inputs = self.driver.find_elements(by, sel)
+                        if inputs:
+                            vid_input = inputs[0]
+                            break
+                    except Exception:
+                        pass
+
+            if not vid_input:
+                return False, "未能定位到小红书视频上传输入框"
+
+            video_path = Path(video_item.local_path).resolve()
+            if not video_path.exists() or video_path.stat().st_size == 0:
+                return False, f"本地视频文件不存在或为空: {video_path}"
+
+            try:
+                vid_input.send_keys(str(video_path))
+                time.sleep(2.0)
+                self.dismiss_popovers()
+                return True, f"小红书视频素材已成功载入：{video_path.name}"
+            except Exception as e:
+                return False, f"向小红书上传视频失败：{e}"
+
+        # === 图文模式（基线保留） ===
         image_items = [m for m in media_items if m.type == "IMAGE"]
         if not image_items:
             return True, "无适用图片素材需上传"
@@ -405,8 +460,6 @@ class XiaohongshuPublisher(BasePublisher):
         # 小红书图文最多 9 张图片
         if len(image_items) > 9:
             image_items = image_items[:9]
-
-        self.dismiss_popovers()
 
         file_input = None
         for by, sel in self.SELECTORS["image_file_input"]:
@@ -566,6 +619,7 @@ class XiaohongshuPublisher(BasePublisher):
         将控制权完全留给创作者核验与自行提交。
         """
         self.dismiss_popovers()
+        self.inject_preview_guard_banner("小红书创作者服务平台")
         try:
             pub_btn = None
             for by, sel in self.SELECTORS["publish_btn"]:

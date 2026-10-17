@@ -219,75 +219,154 @@ class DouyinPublisher(BasePublisher):
             return False, f"打开抖音创作页失败：{e}"
 
     def upload_media(self, media_items: list[MediaItem]) -> tuple[bool, str]:
-        """上传视频素材及封面"""
+        """上传视频素材或多图图文，及封面图"""
         if not media_items:
             return False, "未提供任何视频或素材文件"
 
         video_item = None
         cover_item = None
+        image_items = []
         for item in media_items:
             mtype = (item.type or "").upper()
             if mtype == "VIDEO" or (item.local_path and Path(item.local_path).suffix.lower() in [".mp4", ".mov", ".flv", ".webm", ".mkv"]):
                 if not video_item:
                     video_item = item
-            elif mtype in ["COVER", "IMAGE"]:
+            elif mtype in ["COVER"]:
+                if not cover_item:
+                    cover_item = item
+            elif mtype in ["IMAGE"]:
+                image_items.append(item)
                 if not cover_item:
                     cover_item = item
 
+        # 若未找到明确的视频项，但有素材且第一个素材是视频扩展名
         if not video_item and media_items:
-            video_item = media_items[0]
-
-        if not video_item or not video_item.local_path:
-            return False, "未找到有效的本地视频文件路径"
-
-        video_path = Path(video_item.local_path).resolve()
-        if not video_path.exists() or video_path.stat().st_size == 0:
-            return False, f"本地视频文件不存在或为空: {video_path}"
+            first_path = media_items[0].local_path or ""
+            if Path(first_path).suffix.lower() in [".mp4", ".mov", ".flv", ".webm", ".mkv"]:
+                video_item = media_items[0]
 
         self.dismiss_popovers()
 
-        file_input = None
-        for by, sel in self.SELECTORS["video_input"]:
+        # === A. 视频模式 ===
+        if video_item:
+            if not video_item.local_path:
+                return False, "未找到有效的本地视频文件路径"
+
+            video_path = Path(video_item.local_path).resolve()
+            if not video_path.exists() or video_path.stat().st_size == 0:
+                return False, f"本地视频文件不存在或为空: {video_path}"
+
+            file_input = self.find_file_input_cross_frames("video")
+            if not file_input:
+                for by, sel in self.SELECTORS["video_input"]:
+                    try:
+                        inputs = self.driver.find_elements(by, sel)
+                        for inp in inputs:
+                            accept = (inp.get_attribute("accept") or "").lower()
+                            if "video" in accept or accept == "" or "mp4" in accept:
+                                file_input = inp
+                                break
+                        if file_input:
+                            break
+                    except Exception:
+                        continue
+
+            if not file_input:
+                try:
+                    file_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+                except Exception:
+                    pass
+
+            if not file_input:
+                return False, "未能定位到抖音视频上传文件输入框"
+
             try:
-                inputs = self.driver.find_elements(by, sel)
-                for inp in inputs:
-                    accept = (inp.get_attribute("accept") or "").lower()
-                    if "video" in accept or accept == "" or "mp4" in accept:
-                        file_input = inp
+                file_input.send_keys(str(video_path))
+                time.sleep(2.0)
+                self.dismiss_popovers()
+
+                # 等待路由跳转至发布页 (content/post/video 或 content/publish)
+                t_route = time.time()
+                while time.time() - t_route < 12.0:
+                    curr = (self.driver.current_url or "").lower()
+                    if "content/post/video" in curr or "content/publish" in curr:
                         break
-                if file_input:
+                    time.sleep(0.5)
+                    self.dismiss_popovers()
+            except Exception as e:
+                return False, f"向抖音上传视频文件失败：{e}"
+
+            # 尝试设置封面
+            if cover_item and cover_item.local_path:
+                self.upload_cover(cover_item)
+
+            # 等待编辑页初次就绪
+            for _ in range(5):
+                if self._is_editor_ready():
                     break
-            except Exception:
-                continue
+                time.sleep(0.5)
+                self.dismiss_popovers()
 
-        if not file_input:
+            return True, f"抖音视频文件已成功载入：{video_path.name} (大小: {video_path.stat().st_size} bytes)"
+
+        # === B. 图文笔记模式 (多图) ===
+        if image_items:
+            # 寻找「发布图文」Tab 或按钮
+            for tab_sel in ["//div[contains(text(), '发布图文')]", "//span[contains(text(), '发布图文')]", "//*[text()='发布图文']"]:
+                try:
+                    tabs = self.driver.find_elements(By.XPATH, tab_sel)
+                    for tab in tabs:
+                        if tab.is_displayed():
+                            tab.click()
+                            time.sleep(1.0)
+                            break
+                except Exception:
+                    pass
+
+            img_input = self.find_file_input_cross_frames("image")
+            if not img_input:
+                for by, sel in self.SELECTORS["video_input"]:
+                    try:
+                        inputs = self.driver.find_elements(by, sel)
+                        if inputs:
+                            img_input = inputs[0]
+                            break
+                    except Exception:
+                        continue
+
+            if not img_input:
+                return False, "未能定位到抖音图文上传输入框"
+
+            valid_paths = []
+            for img in image_items[:35]:
+                if img.local_path:
+                    p = Path(img.local_path).resolve()
+                    if p.exists() and p.stat().st_size > 0:
+                        valid_paths.append(str(p))
+
+            if not valid_paths:
+                return False, "未找到有效的本地图文图片路径"
+
             try:
-                file_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-            except Exception:
-                pass
+                # 传入首张或全部图片
+                img_input.send_keys("\n".join(valid_paths))
+                time.sleep(2.0)
+                self.dismiss_popovers()
 
-        if not file_input:
-            return False, "未能定位到抖音视频上传文件输入框"
+                # 等待跳转至图文发布页
+                t_route = time.time()
+                while time.time() - t_route < 12.0:
+                    curr = (self.driver.current_url or "").lower()
+                    if "content/post/image" in curr:
+                        break
+                    time.sleep(0.5)
+                    self.dismiss_popovers()
+            except Exception as e:
+                return False, f"向抖音上传图文素材失败：{e}"
 
-        try:
-            file_input.send_keys(str(video_path))
-            time.sleep(2.5)
-            self.dismiss_popovers()
-        except Exception as e:
-            return False, f"向抖音上传视频文件失败：{e}"
+            return True, f"抖音图文素材已成功载入：共 {len(valid_paths)} 张图片"
 
-        # 尝试设置封面
-        if cover_item and cover_item.local_path:
-            self.upload_cover(cover_item)
-
-        # 等待编辑页初次就绪
-        for _ in range(5):
-            if self._is_editor_ready():
-                break
-            time.sleep(0.5)
-            self.dismiss_popovers()
-
-        return True, f"抖音视频文件已成功载入：{video_path.name} (大小: {video_path.stat().st_size} bytes)"
+        return False, "未找到可上传的有效视频或图片素材"
 
     def wait_for_upload_completion(self, timeout_sec: int = 90) -> tuple[bool, str]:
         """
@@ -485,25 +564,14 @@ class DouyinPublisher(BasePublisher):
             return False, "未找到抖音作品简介输入框"
 
         try:
-            desc_elem.click()
-            time.sleep(0.2)
-            if desc_elem.get_attribute("contenteditable") == "true":
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, desc_elem, safe_body)
-            else:
-                desc_elem.send_keys(Keys.CONTROL, "a")
-                desc_elem.send_keys(Keys.BACKSPACE)
-                self.js_set_value(desc_elem, safe_body)
+            self.set_field_text(desc_elem, safe_body)
             time.sleep(0.3)
             return True, f"抖音作品简介已填入（共 {len(safe_body)} 字）"
         except Exception as e:
             return False, f"写入抖音作品简介失败：{e}"
 
     def fill_tags(self, tags: list[str]) -> tuple[bool, str]:
-        """将话题标签追加到简介框中 (以 #tag 格式)"""
+        """将话题标签追加到简介框中 (以 #tag 格式)，并清理话题弹层"""
         if not tags:
             return True, "未提供标签，跳过"
 
@@ -531,14 +599,27 @@ class DouyinPublisher(BasePublisher):
             time.sleep(0.2)
             if desc_elem.get_attribute("contenteditable") == "true":
                 current_text = desc_elem.text
-                new_text = current_text + tags_str
-                self.driver.execute_script("""
-                    arguments[0].innerText = arguments[1];
-                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                """, desc_elem, new_text)
+                new_text = (current_text + tags_str).strip()
+                self.js_set_value(desc_elem, new_text)
             else:
                 desc_elem.send_keys(tags_str)
+
+            try:
+                desc_elem.send_keys(Keys.SPACE)
+                time.sleep(0.1)
+                desc_elem.send_keys(Keys.ESCAPE)
+            except Exception:
+                pass
+
+            # 清理残留的提及弹层与遮罩
+            self.driver.execute_script("""
+                try {
+                    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+                    document.querySelectorAll('.shepherd-element,.shepherd-modal-overlay-container').forEach(function(e){ e.remove(); });
+                    document.querySelectorAll('[class*="mention-wrapper"]').forEach(function(e){ var p=e.closest('.semi-portal'); (p||e).remove(); });
+                    document.querySelectorAll('.semi-portal').forEach(function(e){ if(!e.querySelector('.semi-modal, .semi-modal-content')) e.remove(); });
+                } catch(e) {}
+            """)
             time.sleep(0.3)
             return True, f"已在作品简介末尾追加话题标签：{tags_str.strip()}"
         except Exception as e:
@@ -619,6 +700,7 @@ class DouyinPublisher(BasePublisher):
     def prepare_for_confirmation(self) -> tuple[bool, str]:
         """停留在最终发布确认阶段，高亮【发布】按钮但绝不越权自动点击"""
         self.dismiss_popovers()
+        self.inject_preview_guard_banner("抖音创作者平台")
         try:
             for by, sel in self.SELECTORS["publish_btn"]:
                 elems = self.driver.find_elements(by, sel)
