@@ -11,8 +11,11 @@ CREATOR_URL_MAP = {
     "BILIBILI": "https://member.bilibili.com/",
     "DOUYIN": "https://creator.douyin.com/",
     "WECHAT_CHANNELS": "https://channels.weixin.qq.com/",
+    "KUAISHOU": "https://cp.kuaishou.com/article/publish/video",
     "WEIBO": "https://weibo.com/",
+    "BAIJIAHAO": "https://baijiahao.baidu.com/builder/rc/edit?type=news",
     "WECHAT_OFFICIAL_ACCOUNT": "https://mp.weixin.qq.com/",
+    "TOUTIAO": "https://mp.toutiao.com/profile_v4/graphic/publish",
 }
 
 
@@ -22,8 +25,11 @@ LOGIN_URL_MAP = {
     "BILIBILI": "https://passport.bilibili.com/login",
     "DOUYIN": "https://creator.douyin.com/",
     "WECHAT_CHANNELS": "https://channels.weixin.qq.com/",
+    "KUAISHOU": "https://cp.kuaishou.com/",
     "WEIBO": "https://weibo.com/",
+    "BAIJIAHAO": "https://baijiahao.baidu.com/",
     "WECHAT_OFFICIAL_ACCOUNT": "https://mp.weixin.qq.com/",
+    "TOUTIAO": "https://mp.toutiao.com/auth/page/login",
 }
 
 

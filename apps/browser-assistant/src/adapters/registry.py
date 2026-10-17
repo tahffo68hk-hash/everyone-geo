@@ -14,6 +14,8 @@ from .wechat_channels import WechatChannelsPublisher
 from .kuaishou import KuaishouPublisher
 from .weibo import WeiboPublisher
 from .baijiahao import BaijiahaoPublisher
+from .wechat_official_account import WechatOfficialAccountPublisher
+from .toutiao import ToutiaoPublisher
 from .fallback import FallbackPublisher, CREATOR_URL_MAP
 
 
@@ -30,6 +32,8 @@ class PublisherRegistry:
         "KUAISHOU": KuaishouPublisher,
         "WEIBO": WeiboPublisher,
         "BAIJIAHAO": BaijiahaoPublisher,
+        "WECHAT_OFFICIAL_ACCOUNT": WechatOfficialAccountPublisher,
+        "TOUTIAO": ToutiaoPublisher,
     }
 
     @classmethod
@@ -54,7 +58,11 @@ class PublisherRegistry:
     @classmethod
     def get_supported_channels(cls) -> list[dict]:
         """返回所有支持的渠道能力清单"""
-        all_channels = ["ZHIHU", "SIMULATION", "XIAOHONGSHU", "BILIBILI", "DOUYIN", "WECHAT_CHANNELS", "WEIBO"]
+        all_channels = [
+            "ZHIHU", "SIMULATION", "XIAOHONGSHU", "BILIBILI", "DOUYIN",
+            "WECHAT_CHANNELS", "KUAISHOU", "WEIBO", "BAIJIAHAO",
+            "WECHAT_OFFICIAL_ACCOUNT", "TOUTIAO"
+        ]
         results = []
         for ch in all_channels:
             is_auto = ch in cls._REGISTRY
