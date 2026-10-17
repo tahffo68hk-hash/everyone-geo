@@ -83,9 +83,8 @@ export default function MonitorPage() {
           : (data.projects[0]?.id ?? "");
         setProjectId(preferredId);
         const preferredProject = data.projects.find((p) => p.id === preferredId);
-        setQueryIds(preferredProject?.queries.slice(0, 5).map((query) => query.id) ?? []);
-        const mockEngines = data.engines.filter((engine) => engine.provider === "mock");
-        setEngineIds(mockEngines.slice(0, 2).map((engine) => engine.id));
+        // 生产门禁：不默认勾选任何引擎，必须由用户明确选择
+        setEngineIds([]);
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setOptionsError(errorText(error));
@@ -203,27 +202,71 @@ export default function MonitorPage() {
                   </div>
                 )}
               </fieldset>
-              <fieldset disabled={creating}>
+              <fieldset disabled={creating} className="space-y-4">
                 <legend className="mb-2 text-sm font-medium">检测引擎（已选 {engineIds.length} 项）</legend>
-                {options.engines.some((engine) => engine.provider !== "mock" && !engine.configured) && (
-                  <p role="status" className="mb-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-900">DeepSeek 模型服务未配置或未启用（需 ENABLE_REAL_PROVIDERS=true 且配置 DEEPSEEK_API_KEY）。真实引擎暂不可选，模拟引擎不受影响。</p>
-                )}
-                {!options.engines.length ? <p className="text-sm text-slate-500">{EMPTY_TEXT.engines}</p> : (
-                  <div className="flex flex-wrap gap-4">
-                    {options.engines.map((engine) => {
-                      const real = engine.provider !== "mock";
-                      const unavailable = real && !engine.configured;
-                      return (
-                        <label key={engine.id} className={`flex items-center gap-2 text-sm ${unavailable ? "opacity-60" : ""}`}>
-                          <input type="checkbox" disabled={unavailable} checked={engineIds.includes(engine.id)} onChange={() => toggle(engine.id, engineIds, setEngineIds)} />
-                          {engine.name}
-                          {real
-                            ? <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-800">{unavailable ? "真实数据 · 未配置" : `真实数据 · ${formatSourceType(engine.sourceType)}`}</span>
-                            : <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">演示数据（Mock/Demo）</span>}
-                          {real && engine.model ? <span className="text-xs text-slate-400">{engine.model}</span> : null}
-                        </label>
-                      );
-                    })}
+                {!options.engines.length ? (
+                  <p className="text-sm text-slate-500">{EMPTY_TEXT.engines}</p>
+                ) : (
+                  <div className="space-y-4">
+                    {/* 1. 正式监测引擎 */}
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-800">正式检测引擎（第三方 API 真实调用）</span>
+                        <span className="text-[11px] text-slate-500">产生实际 API 费用</span>
+                      </div>
+                      {options.engines.filter((e) => e.provider !== "mock").length === 0 ||
+                      options.engines.some((e) => e.provider !== "mock" && !e.configured) ? (
+                        <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 mb-2">
+                          当前真实 AI 引擎未就绪（需配置 <code className="font-mono bg-white px-1 rounded">ENABLE_REAL_PROVIDERS=true</code> 且填入对应 API 密钥）。未配置时不可选。
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap gap-4">
+                        {options.engines.filter((e) => e.provider !== "mock").map((engine) => {
+                          const unavailable = !engine.configured;
+                          return (
+                            <label key={engine.id} className={`flex items-center gap-2 text-sm ${unavailable ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+                              <input
+                                type="checkbox"
+                                disabled={unavailable}
+                                checked={engineIds.includes(engine.id)}
+                                onChange={() => toggle(engine.id, engineIds, setEngineIds)}
+                              />
+                              <span className="font-medium text-slate-800">{engine.name}</span>
+                              <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${unavailable ? "bg-slate-200 text-slate-600" : "bg-blue-100 text-blue-800"}`}>
+                                {unavailable ? "未配置密钥" : `真实数据 · ${formatSourceType(engine.sourceType)}`}
+                              </span>
+                              {engine.model ? <span className="text-xs text-slate-400 font-mono">{engine.model}</span> : null}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 2. 离线模拟引擎 */}
+                    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/30 p-3">
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-700">开发测试模拟（离线 Mock / 零费用）</span>
+                        <span className="text-[11px] text-slate-400">仅供开发调试与流程演练</span>
+                      </div>
+                      <p className="mb-2 text-[11px] text-slate-500">
+                        离线模拟不会产生任何外部 API 调用或费用，结果仅为本地样例数据，不可用于正式 GEO 报告与商业决策。
+                      </p>
+                      <div className="flex flex-wrap gap-4">
+                        {options.engines.filter((e) => e.provider === "mock").map((engine) => (
+                          <label key={engine.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={engineIds.includes(engine.id)}
+                              onChange={() => toggle(engine.id, engineIds, setEngineIds)}
+                            />
+                            <span className="text-slate-800">{engine.name}</span>
+                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
+                              开发模拟（Mock）
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
               </fieldset>

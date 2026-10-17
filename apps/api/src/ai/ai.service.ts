@@ -127,7 +127,53 @@ export class AiService {
   // ============================================================
 
   async generateQuerySet(userId: string, projectId: string, dto: GenerateQuerySetDto) {
-    const project = await this.tenant.assertUserInProject(userId, projectId);
+    const userProject = await this.tenant.assertUserInProject(userId, projectId);
+    const project = await this.prisma.client.project.findUnique({
+      where: { id: userProject.id },
+    });
+
+    // 自动补齐缺失的项目与品牌上下文，确保 AI 获得完整行业、品类与业务背景
+    let brandProfile: any = null;
+    try {
+      brandProfile = await this.prisma.client.brand.findFirst({
+        where: { projectId: userProject.id },
+      });
+    } catch {
+      // 容错：允许在无已存 target profile 时执行
+    }
+
+    let competitors: Array<{ name: string }> = [];
+    try {
+      competitors = await this.prisma.client.competitor.findMany({
+        where: { projectId: userProject.id },
+        select: { name: true },
+      });
+    } catch {
+      // 容错
+    }
+
+    const resolvedBrandName = dto.brandName?.trim() || brandProfile?.name?.trim() || project?.name || "";
+    const resolvedCategory = dto.category?.trim() || brandProfile?.productCategory?.trim() || project?.industry?.trim() || "";
+    const resolvedIndustry = dto.industry?.trim() || project?.industry?.trim() || "";
+    const resolvedEntityType = dto.entityType?.trim() || brandProfile?.entityType?.trim() || "BRAND";
+    const resolvedAudience = dto.targetAudience?.trim() || project?.targetAudience?.trim() || "";
+    const resolvedDesc = dto.businessDesc?.trim() || brandProfile?.description?.trim() || project?.description?.trim() || "";
+    const resolvedCompetitors = (dto.competitors && dto.competitors.length > 0)
+      ? dto.competitors
+      : competitors.map((c) => c.name);
+
+    const enrichedDto: GenerateQuerySetDto = {
+      ...dto,
+      brandName: resolvedBrandName,
+      productName: dto.productName?.trim() || (brandProfile?.products?.[0] ?? ""),
+      category: resolvedCategory,
+      entityType: resolvedEntityType,
+      industry: resolvedIndustry,
+      targetAudience: resolvedAudience,
+      businessDesc: resolvedDesc,
+      competitors: resolvedCompetitors,
+    };
+
     const result = await this.gateway.generateStructured<{
       querySetName: string;
       description: string;
@@ -139,8 +185,8 @@ export class AiService {
         rationale: string;
       }>;
     }>({
-      organizationId: project.organizationId,
-      projectId: project.id,
+      organizationId: userProject.organizationId,
+      projectId: userProject.id,
       userId,
       feature: "query_set_generation",
       provider: dto.provider,
@@ -148,30 +194,21 @@ export class AiService {
       temperature: dto.temperature,
       maxTokens: dto.maxTokens,
       promptVersion: PROMPT_VERSIONS.QUERY_SET_GENERATION,
-      input: dto,
+      input: enrichedDto,
     });
 
-    // 事实校验：严格确保 Discovery 类别的问题不包含本品品牌词或别名
+    // 事实校验：严格确保 Discovery 类别的问题不包含本品品牌词或别名，但绝不能把品类/专业核心词作为违禁词
     if (result.data?.queries) {
       const forbiddenWords: string[] = [];
-      if (dto.brandName?.trim()) forbiddenWords.push(dto.brandName.trim());
-      if (dto.productName?.trim()) forbiddenWords.push(dto.productName.trim());
+      if (resolvedBrandName) forbiddenWords.push(resolvedBrandName);
 
-      try {
-        const brandProfile = await this.prisma.client.brand.findFirst({
-          where: { projectId: project.id },
-        });
-        if (brandProfile?.name?.trim()) forbiddenWords.push(brandProfile.name.trim());
-        if (brandProfile?.aliases) {
-          for (const a of brandProfile.aliases) {
-            if (typeof a === "string" && a.trim()) forbiddenWords.push(a.trim());
-          }
+      if (brandProfile?.aliases) {
+        for (const a of brandProfile.aliases) {
+          if (typeof a === "string" && a.trim()) forbiddenWords.push(a.trim());
         }
-      } catch {
-        // 如果 target-profile 尚未持久化到 db，不中断流程
       }
 
-      // 如果品牌名包含大学/学院/企业/机构前缀，提取前缀防止污染（如"中南民族大学医学信息工程" -> "中南民族大学"）
+      // 提取主体/机构前缀（如"中南民族大学医学信息工程" -> "中南民族大学"）
       for (const w of [...forbiddenWords]) {
         const orgMatch = w.match(/^(.*?(?:大学|学院|学校|研究所|研究院|集团|科技|软件|电子))/);
         if (orgMatch && orgMatch[1] && orgMatch[1].length >= 3) {
@@ -179,10 +216,34 @@ export class AiService {
         }
       }
 
-      const uniqueForbidden = Array.from(new Set(forbiddenWords.map(w => w.toLowerCase())));
+      // 明确品类/专业关键词白名单：品类词绝不能作为违禁词过滤
+      const categoryKeywords = [
+        resolvedCategory,
+        project?.industry,
+        brandProfile?.productCategory,
+      ]
+        .filter((c): c is string => typeof c === "string" && c.trim().length >= 2)
+        .map((c) => c.trim().toLowerCase());
+
+      // 若品牌名形如 "中南民族大学医学信息工程"，提取后半截专业名纳入品类白名单
+      const compoundMatch = resolvedBrandName.match(/^(.*?(?:大学|学院|学校|研究所|研究院|集团|有限责任公司|有限公司))(.*)$/);
+      if (compoundMatch && compoundMatch[2] && compoundMatch[2].trim().length >= 2) {
+        categoryKeywords.push(compoundMatch[2].trim().toLowerCase());
+      }
+
+      const uniqueForbidden = Array.from(new Set(forbiddenWords.map((w) => w.trim().toLowerCase())))
+        .filter((w) => {
+          if (w.length < 2) return false;
+          // 严禁将品类词/专业词列为违禁词
+          if (categoryKeywords.some((cat) => cat === w || cat.includes(w))) {
+            return false;
+          }
+          return true;
+        });
+
       for (const q of result.data.queries) {
         const qLower = q.text.toLowerCase();
-        const containsBrand = uniqueForbidden.some(w => qLower.includes(w));
+        const containsBrand = uniqueForbidden.some((w) => qLower.includes(w));
         if (containsBrand && q.queryType === "DISCOVERY") {
           // 自动纠偏为 BRANDED 类别，避免发现型问题出现品牌污染
           q.queryType = "BRANDED";

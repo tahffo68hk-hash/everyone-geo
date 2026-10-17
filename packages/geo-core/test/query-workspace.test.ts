@@ -231,3 +231,46 @@ test('R1-D10. 连续 kebab 品牌保持命中（nova-flow-crm 同时含别名与
   const r = detectTargetContamination('nova-flow-crm 对比评测', NOVA_TARGET);
   assert.equal(r.status, 'TARGET_MENTIONED');
 });
+
+// ---- M8E Archetype Domain Queries (Education / Consumer Hardware / SaaS) ----
+test('M8E-Domain. Education Major (医学信息工程) queries are natural and free of awkward tool phrasing', () => {
+  const rows = buildQueries({
+    category: '医学信息工程',
+    scenario: ['学科选校'],
+    intents: ['RECOMMEND', 'HOW_TO', 'COMPARE', 'PROBLEM_SOLVING', 'INFORMATIONAL'],
+    audience: ['高考考生'],
+  }, { canonicalName: '中南民族大学' });
+
+  assert.ok(rows.length >= 5);
+  // 必须全部为 DISCOVERY，且不含目标高校名称
+  assert.ok(rows.every(r => r.queryType === 'DISCOVERY'));
+  assert.ok(rows.every(r => r.contamination.status === 'CLEAN'));
+  assert.ok(rows.every(r => !r.text.includes('中南民族大学')));
+  // 必须保留专业关键词
+  assert.ok(rows.every(r => r.text.includes('医学信息工程')));
+  // 绝不能出现 "医学信息工程有哪些值得推荐的工具？" 或 "哪些医学信息工程工具"
+  assert.ok(rows.every(r => !r.text.includes('医学信息工程有哪些值得推荐的工具')));
+  assert.ok(rows.every(r => !r.text.includes('医学信息工程工具')));
+  // 包含院校推荐或课程相关自然提问
+  assert.ok(rows.some(r => r.text.includes('院校推荐') || r.text.includes('优质高校')));
+  assert.ok(rows.some(r => r.text.includes('课程') || r.text.includes('技能')));
+});
+
+test('M8E-Domain. Consumer Hardware (洗地机) queries adopt household phrasing', () => {
+  const rows = buildQueries({
+    category: '洗地机',
+    scenario: ['木地板清洁'],
+    intents: ['RECOMMEND', 'HOW_TO', 'COMPARE', 'PROBLEM_SOLVING', 'INFORMATIONAL'],
+    audience: ['养宠家庭'],
+  }, { canonicalName: '追觅' });
+
+  assert.ok(rows.length >= 5);
+  assert.ok(rows.every(r => r.queryType === 'DISCOVERY'));
+  assert.ok(rows.every(r => r.contamination.status === 'CLEAN'));
+  assert.ok(rows.every(r => !r.text.includes('追觅')));
+  assert.ok(rows.every(r => r.text.includes('洗地机')));
+  // 绝不能出现 "洗地机有哪些值得推荐的工具"
+  assert.ok(rows.every(r => !r.text.includes('洗地机有哪些值得推荐的工具')));
+  assert.ok(rows.some(r => r.text.includes('口碑') || r.text.includes('选购')));
+});
+

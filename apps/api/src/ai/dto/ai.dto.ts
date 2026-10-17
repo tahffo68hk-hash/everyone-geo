@@ -68,6 +68,14 @@ export class GenerateQuerySetDto extends BaseAiOptionsDto {
 
   @IsOptional()
   @IsString()
+  entityType?: string;
+
+  @IsOptional()
+  @IsString()
+  industry?: string;
+
+  @IsOptional()
+  @IsString()
   targetAudience?: string;
 
   @IsOptional()

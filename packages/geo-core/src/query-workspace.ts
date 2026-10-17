@@ -211,27 +211,143 @@ export interface BuilderQueryRow {
 
 const INTENT_ORDER: BuilderIntent[] = ['RECOMMEND', 'HOW_TO', 'COMPARE', 'PROBLEM_SOLVING', 'INFORMATIONAL'];
 
-/** 模板（category 自然融入；target 品牌永不进入模板）。 */
+export type DomainArchetype = 'EDUCATION' | 'CONSUMER_HARDWARE' | 'ENTERPRISE_SOFTWARE' | 'GENERAL';
+
+export function detectDomainArchetype(category: string, scenario?: string): DomainArchetype {
+  const combined = `${category} ${scenario ?? ''}`.trim();
+  const isSoftwareSuffix = /(?:AI|软件|系统|平台|工具|app|saas|crm|erp)$/i.test(category.trim());
+
+  if (!isSoftwareSuffix && /(?:专业|大学|学院|教育|考研|高考|学科|高校|招生|选科|课程|工程)/i.test(combined)) {
+    return 'EDUCATION';
+  }
+  if (!isSoftwareSuffix && /(?:洗地机|扫地机|吸尘器|家电|数码|手机|硬件|耳机|电视|空调|冰箱|洗衣机|相机|汽车)/i.test(combined)) {
+    return 'CONSUMER_HARDWARE';
+  }
+  if (/(?:SaaS|CRM|ERP|软件|系统|平台|数字化|协同|管理工具)/i.test(combined)) {
+    return 'ENTERPRISE_SOFTWARE';
+  }
+  return 'GENERAL';
+}
+
+/** 模板（category 自然融入；target 品牌永不进入模板；根据行业特征动态适配自然问法）。 */
 export const QUERY_TEMPLATES: Record<BuilderIntent, Array<(ctx: { category: string; scenario?: string; audience?: string; modifier?: string }) => string>> = {
   RECOMMEND: [
-    ({ category }) => `${category}有哪些值得推荐的工具？`,
-    ({ category, scenario, audience }) => (audience ? `${audience}做${scenario ?? '相关工作'}可以使用哪些${category}？` : `做${scenario ?? '相关工作'}可以使用哪些${category}？`),
-    ({ category, scenario }) => `做${scenario ?? '相关工作'}有什么${category}推荐？`,
+    ({ category, scenario }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') return `${category}有哪些实力强、口碑好的院校推荐？`;
+      if (domain === 'CONSUMER_HARDWARE') return `${category}有哪些口碑和性能比较好的推荐？`;
+      return `${category}有哪些值得推荐的工具？`;
+    },
+    ({ category, scenario, audience }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') {
+        return audience
+          ? `${audience}报考${category}有什么院校或方向推荐？`
+          : `做${scenario ?? '相关规划'}有什么${category}院校或方向推荐？`;
+      }
+      if (domain === 'CONSUMER_HARDWARE') {
+        return audience
+          ? `${audience}家用适合选购哪些${category}？`
+          : `做${scenario ?? '家庭清洁'}可以使用哪些${category}？`;
+      }
+      return (audience ? `${audience}做${scenario ?? '相关工作'}可以使用哪些${category}？` : `做${scenario ?? '相关工作'}可以使用哪些${category}？`);
+    },
+    ({ category, scenario }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') {
+        return scenario
+          ? `在${scenario}方向上，${category}有哪些优质高校推荐？`
+          : `想深入了解${category}，有哪些优质高校或方向推荐？`;
+      }
+      if (domain === 'CONSUMER_HARDWARE') {
+        return scenario
+          ? `针对${scenario}场景，有什么高性价比${category}推荐？`
+          : `日常选购有什么高口碑${category}推荐？`;
+      }
+      return `做${scenario ?? '相关工作'}有什么${category}推荐？`;
+    },
   ],
   HOW_TO: [
-    ({ category, scenario, audience }) => (audience ? `${audience}怎么用${category}完成${scenario ?? '任务'}？` : `怎么用${category}完成${scenario ?? '任务'}？`),
-    ({ category, scenario }) => `做${scenario ?? '任务'}一般需要哪些${category}工具？`,
+    ({ category, scenario, audience }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') {
+        return audience
+          ? `${audience}怎么深入学好${category}并做好职业规划？`
+          : `怎么学好${category}并掌握核心专业技能？`;
+      }
+      if (domain === 'CONSUMER_HARDWARE') {
+        return audience
+          ? `${audience}怎么挑选适合自己的${category}？`
+          : `怎么挑选${category}才能不踩坑？重点看哪些核心指标？`;
+      }
+      return (audience ? `${audience}怎么用${category}完成${scenario ?? '任务'}？` : `怎么用${category}完成${scenario ?? '任务'}？`);
+    },
+    ({ category, scenario }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') {
+        return scenario
+          ? `围绕${scenario}，学习${category}需要重点掌握哪些核心知识？`
+          : `报考与学习${category}一般需要具备哪些学科基础？`;
+      }
+      if (domain === 'CONSUMER_HARDWARE') {
+        return scenario
+          ? `针对${scenario}，选购和使用${category}需要注意哪些事项？`
+          : `选购主流${category}一般需要重点了解哪些核心功能？`;
+      }
+      return `做${scenario ?? '任务'}一般需要哪些${category}工具？`;
+    },
   ],
   COMPARE: [
-    ({ category, scenario }) => `做${scenario ?? '任务'}时不同类型的${category}怎么选？`,
-    ({ category }) => `几款常见的${category}哪个更适合新手？`,
+    ({ category, scenario }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') {
+        return scenario
+          ? `在${scenario}领域，不同高校开设的${category}有什么特色区别？`
+          : `不同高校开设的${category}专业该怎么对比选校？`;
+      }
+      if (domain === 'CONSUMER_HARDWARE') {
+        return scenario
+          ? `在${scenario}使用场景下，不同类型的${category}怎么选？`
+          : `市面上不同价位与类型的${category}该怎么选？`;
+      }
+      return `做${scenario ?? '任务'}时不同类型的${category}怎么选？`;
+    },
+    ({ category, scenario }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') return `${category}和相近学科专业相比有哪些核心优势与区别？`;
+      if (domain === 'CONSUMER_HARDWARE') return `几款常见的${category}横评对比，哪个更适合普通家庭？`;
+      return `几款常见的${category}哪个更适合新手？`;
+    },
   ],
   PROBLEM_SOLVING: [
-    ({ category, scenario, audience, modifier }) => (audience ? `${audience}做${scenario ?? '任务'}${modifier ? `遇到${modifier}` : ''}可以用什么${category}解决？` : `做${scenario ?? '任务'}${modifier ? `遇到${modifier}` : ''}可以用什么${category}解决？`),
+    ({ category, scenario, audience, modifier }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') {
+        return audience
+          ? `${audience}学${category}${modifier ? `遇到${modifier}` : ''}毕业后就业前景怎么样？`
+          : `学${category}${modifier ? `在${modifier}情况下` : ''}主要有哪些对口就业出路？`;
+      }
+      if (domain === 'CONSUMER_HARDWARE') {
+        return audience
+          ? `${audience}使用${category}${modifier ? `遇到${modifier}` : ''}该怎么解决与避坑？`
+          : `选购与使用${category}${modifier ? `遇到${modifier}` : ''}该怎么避免踩坑？`;
+      }
+      return (audience ? `${audience}做${scenario ?? '任务'}${modifier ? `遇到${modifier}` : ''}可以用什么${category}解决？` : `做${scenario ?? '任务'}${modifier ? `遇到${modifier}` : ''}可以用什么${category}解决？`);
+    },
   ],
   INFORMATIONAL: [
-    ({ category }) => `${category}一般包含哪些能力？`,
-    ({ category, scenario }) => `${category}在${scenario ?? '这类场景'}中能做什么？`,
+    ({ category, scenario }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') return `${category}主要学习哪些核心课程与知识体系？`;
+      if (domain === 'CONSUMER_HARDWARE') return `优质的${category}一般具备哪些核心功能与指标？`;
+      return `${category}一般包含哪些能力？`;
+    },
+    ({ category, scenario }) => {
+      const domain = detectDomainArchetype(category, scenario);
+      if (domain === 'EDUCATION') return `${category}在${scenario ?? '实际产业与就业岗位'}中主要对应哪些应用方向？`;
+      if (domain === 'CONSUMER_HARDWARE') return `${category}在${scenario ?? '日常清洁与实际居家'}中的使用体验如何？`;
+      return `${category}在${scenario ?? '这类场景'}中能做什么？`;
+    },
   ],
 };
 

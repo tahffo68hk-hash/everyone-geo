@@ -17,7 +17,31 @@ type Target = {
   entityType: string; productCategory: string | null; website: string | null;
   description: string | null; aliases: Alias[];
 };
-type PreviewRow = { text: string; queryType: string; targetCheck: string; matchedAlias: string | null };
+type PreviewRow = {
+  text: string;
+  category?: string;
+  intent?: string;
+  queryType: string;
+  targetCheck: string;
+  matchedAlias: string | null;
+  rationale?: string;
+};
+
+type AiProviderInfo = {
+  provider: string;
+  configured: boolean;
+  enabled: boolean;
+  hasKey: boolean;
+  realModeAllowed: boolean;
+  availability: string;
+  defaultModel: string;
+  baseUrl: string;
+};
+
+type AiProviderStatusResponse = {
+  realProvidersEnabled: boolean;
+  providers: AiProviderInfo[];
+};
 
 const STEPS = ["项目信息", "监测对象", "问题集"] as const;
 
@@ -46,7 +70,9 @@ function NewProjectInner() {
   const [importText, setImportText] = useState("");
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiUseReal, setAiUseReal] = useState(false);
+  const [aiProviderStatus, setAiProviderStatus] = useState<AiProviderStatusResponse | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<string>("auto");
+  const [allowMockDev, setAllowMockDev] = useState<boolean>(false);
   const [undoRows, setUndoRows] = useState<PreviewRow[] | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
@@ -58,6 +84,18 @@ function NewProjectInner() {
         if (!orgId && d.organizations[0]) setOrgId(d.organizations[0]!.id);
       })
       .catch((e) => setError(friendlyError(e)));
+
+    api<AiProviderStatusResponse>("/ai/status")
+      .then((status) => {
+        setAiProviderStatus(status);
+        const configuredReal = status.providers.find((p) => p.provider !== "mock" && p.configured && p.enabled);
+        if (configuredReal) {
+          setSelectedProvider(configuredReal.provider);
+        } else {
+          setSelectedProvider("mock");
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   const goError = (e: unknown) => setError(friendlyError(e));
@@ -181,7 +219,7 @@ function NewProjectInner() {
   }
 
   // ---------- Step 3 ----------
-  // AI 一键生成并导入问题集
+  // AI 生成并导入问题集
   async function generateAiQuerySet() {
     if (!project) return;
     setAiGenerating(true);
@@ -209,9 +247,23 @@ function NewProjectInner() {
         setTarget(savedTarget);
       }
 
-      // 2. 聚拢前两步填写的全部有效字段
+      // 2. 检查可用 Provider 与用户授权门禁
+      const realProviders = aiProviderStatus?.providers.filter((p) => p.provider !== "mock" && p.configured && p.enabled) ?? [];
+      const hasReal = realProviders.length > 0;
+
+      let providerToUse = selectedProvider;
+      if (!hasReal) {
+        if (!allowMockDev) {
+          setError("当前未配置任何可用真实 AI 引擎。请联系管理员配置 DEEPSEEK_API_KEY 或 QWEN_API_KEY。如需仅在本地进行功能演练，请勾选「离线开发模拟」。");
+          setAiGenerating(false);
+          return;
+        }
+        providerToUse = "mock";
+      }
+
+      // 3. 聚拢前两步填写的全部有效字段，包含 entityType / industry
       const brandName = targetForm.canonicalName.trim();
-      const category = targetForm.productCategory.trim() || form.industry.trim() || "行业品类";
+      const category = targetForm.productCategory.trim() || form.industry.trim() || "通用品类";
       const descParts = [form.description.trim(), targetForm.description.trim()].filter(Boolean);
       const competitors = target?.aliases?.map((a) => a.alias).filter(Boolean) ?? [];
 
@@ -234,11 +286,13 @@ function NewProjectInner() {
           brandName,
           productName: brandName,
           category,
+          entityType: targetForm.entityType,
+          industry: form.industry.trim() || undefined,
           businessDesc: descParts.join("；") || undefined,
           scenarios: form.industry.trim() || category,
           competitors: competitors.length > 0 ? competitors : undefined,
           queryCount: 8,
-          provider: aiUseReal ? "auto" : "mock",
+          provider: providerToUse,
         }),
       });
 
@@ -247,13 +301,30 @@ function NewProjectInner() {
         throw new Error("AI 未能返回有效问题，请重试或在下方直接手动录入。");
       }
 
-      // 3. 严格去重、空值过滤、长度过滤 (5-200字符) 与品牌词复检
+      // 4. 严格去重、空值过滤、长度过滤 (5-200字符) 与品牌词复检（保护品类词/专业词）
       const currentTexts = new Set(previewRows.map((r) => r.text.trim().toLowerCase()));
-      const brandKeywords = [brandName.toLowerCase(), ...competitors.map((c) => c.toLowerCase())];
+      const brandKeywords: string[] = [brandName.toLowerCase()];
+      for (const c of competitors) {
+        if (c.trim()) brandKeywords.push(c.trim().toLowerCase());
+      }
       const orgMatch = brandName.match(/^(.*?(?:大学|学院|学校|研究所|研究院|集团|科技|软件|电子))/);
       if (orgMatch && orgMatch[1] && orgMatch[1].length >= 3) {
         brandKeywords.push(orgMatch[1].toLowerCase());
       }
+
+      // 明确品类/专业关键词白名单：品类词绝不能作为违禁词过滤
+      const categoryKeywords: string[] = [category.toLowerCase(), form.industry.trim().toLowerCase()].filter(Boolean);
+      const compoundMatch = brandName.match(/^(.*?(?:大学|学院|学校|研究所|研究院|集团|有限责任公司|有限公司))(.*)$/);
+      if (compoundMatch && compoundMatch[2] && compoundMatch[2].trim().length >= 2) {
+        categoryKeywords.push(compoundMatch[2].trim().toLowerCase());
+      }
+
+      const sanitizedBrandKeywords = Array.from(new Set(brandKeywords))
+        .filter((w) => {
+          if (w.length < 2) return false;
+          if (categoryKeywords.some((cat) => cat === w || cat.includes(w))) return false;
+          return true;
+        });
 
       const newRows: PreviewRow[] = [];
       for (const q of queries) {
@@ -264,14 +335,17 @@ function NewProjectInner() {
         currentTexts.add(lower);
 
         // 品牌污染校验
-        const mentionsBrand = brandKeywords.some((bk) => lower.includes(bk));
+        const mentionsBrand = sanitizedBrandKeywords.some((bk) => lower.includes(bk));
         const finalType = mentionsBrand ? "BRANDED_SANITY" : q.queryType === "BRANDED" ? "BRANDED_SANITY" : "DISCOVERY";
 
         newRows.push({
           text,
+          category: q.category,
+          intent: q.intent,
           queryType: finalType,
           targetCheck: mentionsBrand ? "TARGET_MENTIONED" : "CLEAN",
           matchedAlias: mentionsBrand ? brandName : null,
+          rationale: q.rationale,
         });
       }
 
@@ -287,8 +361,9 @@ function NewProjectInner() {
 
       const discCount = mergedRows.filter((r) => r.queryType !== "BRANDED_SANITY").length;
       const brandedCount = mergedRows.filter((r) => r.queryType === "BRANDED_SANITY").length;
+      const engineNote = providerToUse === "mock" ? "（开发离线模拟生成）" : `（真实 AI [${providerToUse}] 构思）`;
       setNotice(
-        `AI 已生成并导入 ${newRows.length} 条业务问题（当前总计 ${mergedRows.length} 条：自然发现 ${discCount} 条 · 品牌认知 ${brandedCount} 条）。您可自由编辑、删除或撤销。`,
+        `AI ${engineNote} 已生成并导入 ${newRows.length} 条业务问题（当前总计 ${mergedRows.length} 条：自然发现 ${discCount} 条 · 品牌认知 ${brandedCount} 条）。您可自由编辑、删除或撤销。`,
       );
     } catch (err) {
       setError(`AI 生成暂不可用（${friendlyError(err)}）。已保留当前录入状态，您可以直接手动添加问题。`);
@@ -373,9 +448,9 @@ function NewProjectInner() {
             queries: previewRows.map((r) => ({
               queryText: r.text,
               category: r.queryType === "BRANDED_SANITY" ? "sanity-control" : "tool-discovery",
-              intent: "问题集生成",
+              intent: r.intent || (r.queryType === "BRANDED_SANITY" ? "COMMERCIAL" : "INFORMATIONAL"),
               queryType: r.queryType === "BRANDED_SANITY" ? "BRANDED_SANITY" : "DISCOVERY",
-              source: "AI_GENERATED",
+              source: "BUILDER",
             })),
           }),
         },
@@ -556,60 +631,140 @@ function NewProjectInner() {
             </label>
           </div>
 
-          {/* AI 一键生成并导入推荐区 */}
-          <div className="rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50/70 via-sky-50/50 to-blue-50/60 p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-base">✨</span>
-                  <h3 className="text-sm font-semibold text-slate-800">AI 一键生成并导入问题集</h3>
-                  <span className="rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-700">推荐</span>
+          {/* AI 问题集构思与真实 Provider 门禁 */}
+          {(() => {
+            const realProviders = aiProviderStatus?.providers.filter((p) => p.provider !== "mock" && p.configured && p.enabled) ?? [];
+            const hasReal = realProviders.length > 0;
+
+            if (hasReal) {
+              return (
+                <div className="rounded-xl border border-teal-200 bg-gradient-to-r from-teal-50/70 via-sky-50/50 to-blue-50/60 p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">✨</span>
+                        <h3 className="text-sm font-semibold text-slate-800">真实 AI 业务问题集构思</h3>
+                        <span className="rounded bg-teal-100 px-2 py-0.5 text-[10px] font-medium text-teal-800">
+                          真实模型就绪
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        基于监测对象「{target.canonicalName}」、品类「{target.productCategory || form.industry || "通用品类"}」与业务描述，调用真实大模型构思高价值搜索问题。
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-600">
+                        <span className="text-slate-500">选择调用引擎：</span>
+                        <select
+                          value={selectedProvider}
+                          onChange={(e) => setSelectedProvider(e.target.value)}
+                          disabled={aiGenerating || busy}
+                          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm"
+                          aria-label="选择真实 AI 引擎"
+                        >
+                          {realProviders.map((p) => (
+                            <option key={p.provider} value={p.provider}>
+                              {p.provider === "deepseek" ? "DeepSeek" : p.provider === "qwen" ? "通义千问" : p.provider} ({p.defaultModel})
+                            </option>
+                          ))}
+                        </select>
+                        <span className="rounded bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 border border-amber-200">
+                          ⚠️ 真实外部调用（预计消耗 ~500 Tokens）
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 pt-1">
+                      {undoRows !== null && (
+                        <button
+                          type="button"
+                          onClick={undoAiImport}
+                          disabled={aiGenerating || busy}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          撤销导入
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void generateAiQuerySet()}
+                        disabled={aiGenerating || busy}
+                        className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-teal-800 disabled:opacity-50 flex items-center gap-1.5 transition"
+                      >
+                        {aiGenerating ? (
+                          <>
+                            <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                            </svg>
+                            <span>真实 AI 正在构思…</span>
+                          </>
+                        ) : (
+                          <span>授权并调用 AI 生成问题集</span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <p className="mt-1 text-xs text-slate-600">
-                  基于您在前两步填写的名称「{target.canonicalName}」、品类「{target.productCategory || "未填"}」与业务描述，由 AI 自动生成贴合真实用户搜索意图的高价值问题。
-                </p>
+              );
+            }
+
+            return (
+              <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50/60 via-slate-50 to-orange-50/50 p-4 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-amber-600 text-sm mt-0.5">⚠️</span>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-slate-800">当前未配置可用真实 AI 引擎</h3>
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                        未配置
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      后端尚未配置或未启用任何真实 AI Provider（需配置 <code className="font-mono bg-slate-100 px-1 rounded">ENABLE_REAL_PROVIDERS=true</code> 且填入 <code className="font-mono bg-slate-100 px-1 rounded">DEEPSEEK_API_KEY</code> 或 <code className="font-mono bg-slate-100 px-1 rounded">QWEN_API_KEY</code>）。为保证数据真实性与合规性，系统严禁冒充真实 AI 结果。
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      建议直接在下方手动录入或使用模板构建您的高价值业务问题。
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-amber-200/70 pt-3">
+                  <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allowMockDev}
+                      onChange={(e) => setAllowMockDev(e.target.checked)}
+                      disabled={aiGenerating || busy}
+                      className="rounded border-slate-300"
+                    />
+                    <span className="font-medium text-slate-700">离线开发模拟模式：</span>
+                    <span className="text-slate-500">允许以本地 Mock 引擎生成示例问题（仅供开发测试流程演练，零费用，非真实结果）</span>
+                  </label>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {undoRows !== null && (
+                      <button
+                        type="button"
+                        onClick={undoAiImport}
+                        disabled={aiGenerating || busy}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        撤销导入
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void generateAiQuerySet()}
+                      disabled={!allowMockDev || aiGenerating || busy}
+                      className="rounded-lg bg-slate-700 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-40 flex items-center gap-1.5 transition"
+                    >
+                      {aiGenerating ? (
+                        <span>正在离线生成…</span>
+                      ) : (
+                        <span>以开发模拟方式生成问题（离线 Mock）</span>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {undoRows !== null && (
-                  <button
-                    type="button"
-                    onClick={undoAiImport}
-                    disabled={aiGenerating || busy}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                  >
-                    撤销本次导入
-                  </button>
-                )}
-                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={aiUseReal}
-                    disabled={aiGenerating || busy}
-                    onChange={(e) => setAiUseReal(e.target.checked)}
-                  />
-                  <span>使用真实 AI（产生 API 费用）</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void generateAiQuerySet()}
-                  disabled={aiGenerating || busy}
-                  className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1.5 transition"
-                >
-                  {aiGenerating ? (
-                    <>
-                      <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                      </svg>
-                      <span>AI 正在构思业务问题…</span>
-                    </>
-                  ) : (
-                    <span>{aiUseReal ? "真实 AI 推荐并导入" : "AI 一键生成并导入（模拟）"}</span>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* 问题预览与管理列表 */}
           {previewRows.length > 0 && (

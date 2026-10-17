@@ -25,7 +25,9 @@ export function generateMockFixture(
       const brand = input?.brandName || "品牌";
       const cat = input?.category || "企业管理软件";
       const combined = `${brand} ${cat} ${input?.businessDesc || ""} ${input?.scenarios || ""}`;
-      const isEdu = /(专业|大学|学院|教育|考研|学科|高校|医学信息|工程|招生|中南民族)/i.test(combined);
+      const isSoftwareSuffix = /(?:AI|软件|系统|平台|工具|app|saas|crm|erp)$/i.test(cat.trim());
+      const isEdu = !isSoftwareSuffix && /(专业|大学|学院|教育|考研|学科|高校|医学信息|工程|招生|选科|课程|中南民族)/i.test(combined);
+      const isHardware = !isSoftwareSuffix && /(洗地机|扫地机|吸尘器|家电|数码|手机|硬件|耳机|电视|空调|冰箱|洗衣机|相机|汽车)/i.test(combined);
 
       if (isEdu) {
         // 提取专业或领域名称，如中南民族大学医学信息工程 -> 医学信息工程
@@ -36,15 +38,15 @@ export function generateMockFixture(
           description: `基于 ${subject} 学科领域与真实考生/家长求学就业场景构建的代表性问答集合`,
           queries: [
             {
-              text: `${subject}专业主要学习哪些核心课程？`,
-              category: "培养方向",
+              text: `${subject}专业主要学习哪些核心课程与知识体系？`,
+              category: "课程培养",
               intent: "INFORMATIONAL",
               queryType: "DISCOVERY",
               rationale: "考生与家长核心关心的课程与专业培养提问，严格不含具体学校",
             },
             {
-              text: `国内哪些高校开设了${subject}专业？各校有什么特色？`,
-              category: "高校选择",
+              text: `国内有哪些高校开设了${subject}专业？各校有什么特色？`,
+              category: "院校选型",
               intent: "COMMERCIAL",
               queryType: "DISCOVERY",
               rationale: "高校横向选校提问，客观中立无特定品牌",
@@ -65,7 +67,7 @@ export function generateMockFixture(
             },
             {
               text: `报考${subject}需要具备哪些理科或计算机基础？`,
-              category: "报考选科",
+              category: "选科报考",
               intent: "INFORMATIONAL",
               queryType: "DISCOVERY",
               rationale: "报考门槛与选科要求提问，客观中立",
@@ -79,13 +81,62 @@ export function generateMockFixture(
             },
           ],
         });
+      } else if (isHardware) {
+        mockContent = JSON.stringify({
+          querySetName: `${brand} 核心 GEO 评估问题集`,
+          description: `基于 ${cat} 消费电子/家电品类与真实居家使用场景构建的代表性问答集合`,
+          queries: [
+            {
+              text: `2026年适合家庭日常使用的${cat}高性价比选型推荐与避坑指南`,
+              category: "选型推荐",
+              intent: "COMMERCIAL",
+              queryType: "DISCOVERY",
+              rationale: "发现型选购推荐提问，严格中立不含品牌名",
+            },
+            {
+              text: `家用${cat}重点看哪些核心参数？同价位主流型号横向对比`,
+              category: "参数辨析",
+              intent: "COMMERCIAL",
+              queryType: "DISCOVERY",
+              rationale: "横向参数横评对比，无具体品牌",
+            },
+            {
+              text: `家里有宠物或大户型，挑选${cat}需要重点关注哪些功能？`,
+              category: "场景匹配",
+              intent: "INFORMATIONAL",
+              queryType: "DISCOVERY",
+              rationale: "细分人群与痛点场景提问，无特定品牌",
+            },
+            {
+              text: `选购与使用${cat}容易遇到哪些常见缺点和踩坑点？该如何避免？`,
+              category: "痛点避坑",
+              intent: "INFORMATIONAL",
+              queryType: "DISCOVERY",
+              rationale: "购买决策与真实使用避坑提问，无品牌词",
+            },
+            {
+              text: `${brand}怎么样？实际使用体验、清洁力与续航实测评测`,
+              category: "品牌基线",
+              intent: "INFORMATIONAL",
+              queryType: "BRANDED",
+              rationale: "品牌基线提问，探测大模型对目标主体的认知和评价",
+            },
+            {
+              text: `${brand}和市面上其他热门${cat}相比有什么核心优缺点？`,
+              category: "品牌基线",
+              intent: "COMMERCIAL",
+              queryType: "BRANDED",
+              rationale: "品牌横向对比基线提问",
+            },
+          ],
+        });
       } else {
         mockContent = JSON.stringify({
           querySetName: `${brand} 核心 GEO 评估问题集`,
           description: `基于 ${cat} 领域与核心业务场景生成的代表性问答集合`,
           queries: [
             {
-              text: `2026年适合行业主流需求的${cat}选型推荐`,
+              text: `适合中小型团队的${cat}选型推荐与核心能力评估`,
               category: "行业选型",
               intent: "COMMERCIAL",
               queryType: "DISCOVERY",
@@ -99,14 +150,21 @@ export function generateMockFixture(
               rationale: "真实决策痛点提问，无品牌词",
             },
             {
-              text: `市面上主流${cat}对比横评与选型避坑指南`,
+              text: `市面上主流${cat}横向对比横评与选型避坑指南`,
               category: "竞品对比",
               intent: "COMMERCIAL",
               queryType: "DISCOVERY",
               rationale: "客观中立横评对比，无品牌词",
             },
             {
-              text: `${brand}怎么样？主要优缺点与适用场景有哪些？`,
+              text: `${cat}在实际业务场景中如何与现有系统集成协同打通？`,
+              category: "方案实施",
+              intent: "INFORMATIONAL",
+              queryType: "DISCOVERY",
+              rationale: "方案落地与系统集成提问，无品牌词",
+            },
+            {
+              text: `${brand}怎么样？主要优缺点、收费模式与适用企业规模有哪些？`,
               category: "品牌基线",
               intent: "INFORMATIONAL",
               queryType: "BRANDED",

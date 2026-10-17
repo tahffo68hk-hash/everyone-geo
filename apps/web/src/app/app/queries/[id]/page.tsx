@@ -126,8 +126,15 @@ function SuiteInner() {
     api<{ projects: Project[]; engines: Engine[] }>("/monitor-tasks/options")
       .then(d => {
         setEngines(d.engines);
-        const defaultEngine = d.engines.find(e => e.provider === "mock") || d.engines[0];
-        if (defaultEngine) setEngineId(defaultEngine.id);
+        const realEngine = d.engines.find(e => e.provider !== "mock" && e.configured);
+        if (realEngine) {
+          setEngineId(realEngine.id);
+          setRunType("real");
+        } else {
+          const fallbackEngine = d.engines.find(e => e.provider === "mock") || d.engines[0];
+          if (fallbackEngine) setEngineId(fallbackEngine.id);
+          setRunType("demo");
+        }
       })
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -511,8 +518,32 @@ function SuiteInner() {
               <div className="flex justify-between"><dt className="text-slate-500">问题集</dt><dd className="font-medium">{suite.name} {formatVersion(suite.version)}</dd></div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-slate-500">AI 模型</dt>
-                <select value={engineId} onChange={e => setEngineId(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" aria-label="AI 模型">
-                  {engines.map(en => <option key={en.id} value={en.id}>{en.name}（{en.provider}）{en.configured ? "" : " [未配置]"}</option>)}
+                <select
+                  value={engineId}
+                  onChange={e => {
+                    const nextId = e.target.value;
+                    setEngineId(nextId);
+                    const chosen = engines.find(eng => eng.id === nextId);
+                    if (chosen?.provider === "mock") setRunType("demo");
+                    else if (chosen?.configured) setRunType("real");
+                  }}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                  aria-label="AI 模型"
+                >
+                  <optgroup label="正式检测引擎（真实 API 调用）">
+                    {engines.filter(en => en.provider !== "mock").map(en => (
+                      <option key={en.id} value={en.id} disabled={!en.configured}>
+                        {en.name}（{en.provider}）{en.configured ? " [已配置]" : " [未配置 API Key]"}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="开发测试模拟（离线 Mock / 零费用）">
+                    {engines.filter(en => en.provider === "mock").map(en => (
+                      <option key={en.id} value={en.id}>
+                        {en.name}（离线模拟）
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
               <div className="flex items-center justify-between gap-2">
