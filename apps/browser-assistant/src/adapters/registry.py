@@ -8,6 +8,7 @@ from .base import BasePublisher
 from .zhihu import ZhihuPublisher
 from .simulation import LocalSimulationPublisher
 from .xiaohongshu import XiaohongshuPublisher
+from .bilibili import BilibiliPublisher
 from .fallback import FallbackPublisher, CREATOR_URL_MAP
 
 
@@ -18,6 +19,7 @@ class PublisherRegistry:
         "ZHIHU": ZhihuPublisher,
         "SIMULATION": LocalSimulationPublisher,
         "XIAOHONGSHU": XiaohongshuPublisher,
+        "BILIBILI": BilibiliPublisher,
     }
 
     @classmethod

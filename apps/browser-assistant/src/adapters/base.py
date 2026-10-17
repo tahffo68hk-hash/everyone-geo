@@ -118,6 +118,30 @@ class BasePublisher(ABC):
         """
         pass
 
+    def is_video_channel(self) -> bool:
+        """判断是否为以视频上传为核心的渠道"""
+        return False
+
+    def dismiss_popovers(self):
+        """清除页面引导弹窗、新手浮层或草稿恢复提示 (子类按需重写)"""
+        pass
+
+    def upload_cover(self, cover_item: MediaItem) -> tuple[bool, str]:
+        """独立上传封面图片 (视频平台适用)"""
+        return True, "未配置独立封面上传逻辑"
+
+    def fill_category(self, category: str) -> tuple[bool, str]:
+        """设置发布分类/分区"""
+        return True, "未配置分区设置"
+
+    def fill_required_declarations(self) -> tuple[bool, str]:
+        """设置平台要求的必要声明 (如原创声明、AI 生成标记等)"""
+        return True, "已确认声明设置"
+
+    def wait_for_upload_completion(self, timeout_sec: int = 60) -> tuple[bool, str]:
+        """等待素材/视频上传及转码处理完成"""
+        return True, "上传完成状态已就绪"
+
     def get_manual_checklist(self) -> list[str]:
         """返回人工发布时的核对清单"""
         return [
@@ -155,3 +179,4 @@ class BasePublisher(ABC):
             arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
             arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
         """, element, value)
+

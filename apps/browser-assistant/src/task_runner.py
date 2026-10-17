@@ -62,15 +62,20 @@ class TaskExecutionState:
         )
         
         # 获取真实创作者链接
-        creator_url = "https://www.zhihu.com/creator"
-        if self.channel == "ZHIHU":
-            creator_url = "https://zhuanlan.zhihu.com/write"
-        elif self.channel == "SIMULATION":
-            creator_url = "http://127.0.0.1:8765/static/simulation-editor.html"
-        elif self.channel == "XIAOHONGSHU":
-            creator_url = "https://creator.xiaohongshu.com/publish/publish?source=official"
-        elif self.channel == "BILIBILI":
-            creator_url = "https://member.bilibili.com/"
+        creator_url_map = {
+            "ZHIHU": "https://zhuanlan.zhihu.com/write",
+            "SIMULATION": "http://127.0.0.1:8765/static/simulation-editor.html",
+            "XIAOHONGSHU": "https://creator.xiaohongshu.com/publish/publish?source=official",
+            "BILIBILI": "https://member.bilibili.com/platform/upload/video/frame",
+            "DOUYIN": "https://creator.douyin.com/creator-micro/content/upload",
+            "WECHAT_CHANNELS": "https://channels.weixin.qq.com/platform/post/create",
+            "KUAISHOU": "https://cp.kuaishou.com/article/publish/video",
+            "WEIBO": "https://weibo.com/",
+            "BAIJIAHAO": "https://baijiahao.baidu.com/builder/rc/edit?type=news",
+            "WECHAT_OFFICIAL_ACCOUNT": "https://mp.weixin.qq.com/",
+            "TOUTIAO": "https://mp.toutiao.com/profile_v4/graphic/publish",
+        }
+        creator_url = creator_url_map.get(self.channel, "https://www.zhihu.com/creator")
 
         self.manual_package = ManualPublishPackage(
             channel=self.channel,
@@ -223,8 +228,22 @@ class TaskManager:
                 return False, "小红书发布落地链接必须包含 xiaohongshu.com 或 xhslink.com 域名"
             elif state.channel == "ZHIHU" and "zhihu.com" not in c_low:
                 return False, "知乎专栏发布链接必须包含 zhihu.com 域名"
-            elif state.channel == "BILIBILI" and "bilibili.com" not in c_low:
-                return False, "B站发布链接必须包含 bilibili.com 域名"
+            elif state.channel == "BILIBILI" and not any(d in c_low for d in ["bilibili.com", "b23.tv"]):
+                return False, "B站发布链接必须包含 bilibili.com 或 b23.tv 域名"
+            elif state.channel == "DOUYIN" and not any(d in c_low for d in ["douyin.com", "iesdouyin.com"]):
+                return False, "抖音发布链接必须包含 douyin.com 或 iesdouyin.com 域名"
+            elif state.channel == "WECHAT_CHANNELS" and not any(d in c_low for d in ["weixin.qq.com", "qq.com"]):
+                return False, "微信视频号发布链接必须包含 weixin.qq.com 或 qq.com 域名"
+            elif state.channel == "KUAISHOU" and not any(d in c_low for d in ["kuaishou.com", "kwai.com"]):
+                return False, "快手发布链接必须包含 kuaishou.com 或 kwai.com 域名"
+            elif state.channel == "WEIBO" and not any(d in c_low for d in ["weibo.com", "weibo.cn"]):
+                return False, "微博发布链接必须包含 weibo.com 或 weibo.cn 域名"
+            elif state.channel == "BAIJIAHAO" and "baidu.com" not in c_low:
+                return False, "百家号发布链接必须包含 baidu.com 域名"
+            elif state.channel in ["WECHAT_OFFICIAL_ACCOUNT"] and not any(d in c_low for d in ["mp.weixin.qq.com", "weixin.qq.com", "qq.com"]):
+                return False, "微信公众号发布链接必须包含 weixin.qq.com 或 qq.com 域名"
+            elif state.channel == "TOUTIAO" and "toutiao.com" not in c_low:
+                return False, "今日头条发布链接必须包含 toutiao.com 域名"
 
         norm_status = target_status.upper().strip() if target_status else "PUBLISHED"
         with state.lock:
@@ -257,8 +276,8 @@ class TaskManager:
 
     def _prepare_local_media_items(self, media_items: list[MediaItem], task_id: str) -> list[MediaItem]:
         """
-        确保图片素材在本地有实际文件路径，供 WebDriver input[type=file] 上传
-        若仅有远程 URL，自动缓存到 TEMP_DIR
+        确保素材（图片/视频/封面）在本地有实际文件路径，供 WebDriver input[type=file] 上传
+        若仅有远程 URL，自动缓存到 TEMP_DIR；若为 file://，自动解析为本地绝对路径
         """
         from .config import TEMP_DIR
         from pathlib import Path
@@ -276,35 +295,52 @@ class TaskManager:
                 mime_type=item.mime_type,
                 notes=item.notes
             )
-            if item.type == "IMAGE":
-                # 如果本地路径已存在有效文件
-                if item.local_path and Path(item.local_path).exists() and Path(item.local_path).stat().st_size > 0:
+
+            # 1. 优先解析 file:// 协议本地路径
+            if new_item.url and new_item.url.startswith("file://"):
+                fpath = new_item.url[7:]
+                if fpath.startswith("/") and len(fpath) > 3 and fpath[2] == ":":
+                    fpath = fpath[1:]
+                p = Path(fpath)
+                if p.exists() and p.stat().st_size > 0:
+                    new_item.local_path = str(p.resolve())
+                    new_item.size_bytes = p.stat().st_size
                     prepared.append(new_item)
                     continue
 
-                # 如果是 http/https 远程 URL，下载缓存
-                if item.url and item.url.startswith(("http://", "https://")):
-                    try:
-                        parsed = urlparse(item.url)
-                        p_ext = Path(parsed.path).suffix.lower()
+            # 2. 如果本地路径已存在有效文件
+            if new_item.local_path and Path(new_item.local_path).exists() and Path(new_item.local_path).stat().st_size > 0:
+                new_item.size_bytes = Path(new_item.local_path).stat().st_size
+                prepared.append(new_item)
+                continue
+
+            # 3. 如果是 http/https 远程 URL，下载缓存
+            if new_item.url and new_item.url.startswith(("http://", "https://")):
+                try:
+                    parsed = urlparse(new_item.url)
+                    p_ext = Path(parsed.path).suffix.lower()
+                    if new_item.type == "VIDEO":
+                        ext = p_ext if p_ext in [".mp4", ".mov", ".webm", ".avi", ".flv", ".mkv"] else ".mp4"
+                    else:
                         ext = p_ext if p_ext in [".png", ".jpg", ".jpeg", ".webp"] else ".jpg"
-                        cached_file = TEMP_DIR / f"{task_id[:8]}_{item.index}{ext}"
-                        if not cached_file.exists() or cached_file.stat().st_size == 0:
-                            ctx = ssl.create_default_context()
-                            ctx.check_hostname = False
-                            ctx.verify_mode = ssl.CERT_NONE
-                            req = urllib.request.Request(
-                                item.url,
-                                headers={"User-Agent": "Mozilla/5.0 GeoLens-Assistant/2.0"}
-                            )
-                            with urllib.request.urlopen(req, timeout=12, context=ctx) as resp:
-                                content = resp.read()
-                                if content and len(content) > 0:
-                                    cached_file.write_bytes(content)
-                        if cached_file.exists() and cached_file.stat().st_size > 0:
-                            new_item.local_path = str(cached_file)
-                    except Exception:
-                        pass
+                    cached_file = TEMP_DIR / f"{task_id[:8]}_{new_item.index}{ext}"
+                    if not cached_file.exists() or cached_file.stat().st_size == 0:
+                        ctx = ssl.create_default_context()
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                        req = urllib.request.Request(
+                            new_item.url,
+                            headers={"User-Agent": "Mozilla/5.0 GeoLens-Assistant/2.0"}
+                        )
+                        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                            content = resp.read()
+                            if content and len(content) > 0:
+                                cached_file.write_bytes(content)
+                    if cached_file.exists() and cached_file.stat().st_size > 0:
+                        new_item.local_path = str(cached_file)
+                        new_item.size_bytes = cached_file.stat().st_size
+                except Exception:
+                    pass
             prepared.append(new_item)
         return prepared
 
@@ -369,7 +405,8 @@ class TaskManager:
 
             # 3. 步骤 2: 打开创作页面
             state.current_step = StepName.OPEN_EDITOR
-            state.add_log(StepName.OPEN_EDITOR, "切换创作页面", StepStatus.RUNNING, "正在切换至图文发布模式...")
+            mode_desc = "视频发布模式" if publisher.is_video_channel() else "图文发布模式"
+            state.add_log(StepName.OPEN_EDITOR, "切换创作页面", StepStatus.RUNNING, f"正在切换至 {mode_desc}...")
             t0 = time.time()
             ok, msg = publisher.open_editor()
             duration = int((time.time() - t0) * 1000)
@@ -383,25 +420,28 @@ class TaskManager:
             if not self._wait_if_paused(state):
                 return
 
-            # 小红书图文模式要求先上传至少一张图片，页面才会展现标题与正文输入区
-            if channel == "XIAOHONGSHU":
-                # 步骤: 上传素材与配图
+            # 视频平台以及小红书均要求先上传素材以唤起主编辑表单
+            upload_media_first = getattr(publisher, "upload_media_first", False) or publisher.is_video_channel() or channel in ["XIAOHONGSHU", "BILIBILI", "DOUYIN", "WECHAT_CHANNELS", "KUAISHOU"]
+
+            if upload_media_first:
+                # 步骤: 上传素材与配图/视频
                 state.current_step = StepName.UPLOAD_MEDIA
-                state.add_log(StepName.UPLOAD_MEDIA, "上传素材配图", StepStatus.RUNNING, f"正在准备并按序上传 {len(req.media_items)} 张素材图片以激活图文编辑器...")
+                media_desc = "视频及封面素材" if publisher.is_video_channel() else "配图素材"
+                state.add_log(StepName.UPLOAD_MEDIA, "上传素材", StepStatus.RUNNING, f"正在准备并上传 {len(req.media_items)} 项{media_desc}以激活编辑器...")
                 t0 = time.time()
                 prepared_items = self._prepare_local_media_items(req.media_items, req.task_id)
                 ok, msg = publisher.upload_media(prepared_items)
                 duration = int((time.time() - t0) * 1000)
                 state.add_log(StepName.UPLOAD_MEDIA, "素材上传完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
-                time.sleep(1.2)  # 等待小红书前端完成切片与编辑器展开
+                time.sleep(1.2)  # 等待前端切片渲染与编辑器表单展开
 
                 if not self._wait_if_paused(state):
                     return
 
                 # 步骤: 填写标题
                 state.current_step = StepName.FILL_TITLE
-                title_display = req.title[:20] if len(req.title) > 20 else req.title
-                state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.RUNNING, f"正在输入标题（限长 20 字）：{title_display}...")
+                title_display = req.title[:30] if len(req.title) > 30 else req.title
+                state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.RUNNING, f"正在输入标题：{title_display}...")
                 t0 = time.time()
                 ok, msg = publisher.fill_title(req.title)
                 duration = int((time.time() - t0) * 1000)
@@ -415,25 +455,26 @@ class TaskManager:
                 if not self._wait_if_paused(state):
                     return
 
-                # 步骤: 填写正文富文本
+                # 步骤: 填写正文富文本 / 视频描述
                 state.current_step = StepName.FILL_CONTENT
-                state.add_log(StepName.FILL_CONTENT, "填写正文", StepStatus.RUNNING, f"正在写入正文内容（共 {len(req.body)} 字）...")
+                content_desc = "视频简介描述" if publisher.is_video_channel() else "正文内容"
+                state.add_log(StepName.FILL_CONTENT, f"填写{content_desc}", StepStatus.RUNNING, f"正在写入{content_desc}（共 {len(req.body)} 字）...")
                 t0 = time.time()
                 ok, msg = publisher.fill_content(req.body)
                 duration = int((time.time() - t0) * 1000)
                 if not ok:
                     state.status = TaskStatus.MANUAL_REQUIRED
                     state.error_message = msg
-                    state.add_log(StepName.FILL_CONTENT, "填写正文失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    state.add_log(StepName.FILL_CONTENT, f"填写{content_desc}失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
                     return
-                state.add_log(StepName.FILL_CONTENT, "正文填写成功", StepStatus.SUCCESS, msg, duration)
+                state.add_log(StepName.FILL_CONTENT, f"{content_desc}填写成功", StepStatus.SUCCESS, msg, duration)
 
                 if not self._wait_if_paused(state):
                     return
             else:
                 # 步骤: 填写标题
                 state.current_step = StepName.FILL_TITLE
-                title_display = req.title[:20] if len(req.title) > 20 else req.title
+                title_display = req.title[:30] if len(req.title) > 30 else req.title
                 state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.RUNNING, f"正在输入标题：{title_display}...")
                 t0 = time.time()
                 ok, msg = publisher.fill_title(req.title)
@@ -483,6 +524,12 @@ class TaskManager:
             ok, msg = publisher.fill_tags(req.tags)
             duration = int((time.time() - t0) * 1000)
             state.add_log(StepName.FILL_TAGS, "标签填写完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
+
+            # 附加：必要声明与分区设置 (如自制声明、AI生成标记)
+            try:
+                publisher.fill_required_declarations()
+            except Exception:
+                pass
 
             if not self._wait_if_paused(state):
                 return
