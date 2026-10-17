@@ -92,5 +92,23 @@ def test_xiaohongshu_live_platform_gate():
         print("[LiveGate] Driver closed cleanly after test.", flush=True)
 
 
+def test_xiaohongshu_open_login_page():
+    """验证 open_login_page() 能够正确跳转至小红书登录扫码页"""
+    channel = "XIAOHONGSHU"
+    account_id = "real_gate_tester"
+    browser_manager.close_driver(channel, account_id)
+    driver = browser_manager.get_or_create_driver(channel, account_id, headless=True)
+    try:
+        pub = XiaohongshuPublisher(driver)
+        ok, msg = pub.open_login_page()
+        assert ok is True
+        assert "扫码登录" in msg or "就绪" in msg
+        current_url = driver.current_url.lower()
+        assert "creator" in current_url or "login" in current_url
+    finally:
+        browser_manager.close_driver(channel, account_id)
+
+
 if __name__ == "__main__":
     test_xiaohongshu_live_platform_gate()
+    test_xiaohongshu_open_login_page()

@@ -47,6 +47,17 @@ export function BrowserAssistedPanel({
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginMsg, setLoginMsg] = useState("");
   const [checkingLogin, setCheckingLogin] = useState(false);
+  const [openingLogin, setOpeningLogin] = useState(false);
+  const [loginPollingActive, setLoginPollingActive] = useState(false);
+  const loginPollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (loginPollTimerRef.current) {
+        clearInterval(loginPollTimerRef.current);
+      }
+    };
+  }, []);
 
   // 任务执行状态
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
@@ -269,6 +280,62 @@ export function BrowserAssistedPanel({
       setLoginMsg(`检测失败：${e.message}`);
     } finally {
       setCheckingLogin(false);
+    }
+  }
+
+  // 调起受控 Chrome 打开官方登录/扫码页并自动监听扫码状态
+  async function handleOpenLoginPage() {
+    if (!activeChannelKey) return;
+    if (loginPollTimerRef.current) {
+      clearInterval(loginPollTimerRef.current);
+      loginPollTimerRef.current = null;
+    }
+    setOpeningLogin(true);
+    setConnectError(null);
+    try {
+      const res = await assistantClient.openLoginPage(activeChannelKey, "default");
+      setBrowserRunning(true);
+      setLoginMsg(res.message || "已调起官方创作者扫码登录页面，请在受控 Chrome 窗口中完成扫码");
+
+      // 开启自动轮询登录状态（每 2.5 秒检测一次，最多持续 60 秒）
+      setLoginPollingActive(true);
+      let attempts = 0;
+      const maxAttempts = 24; // ~60s
+      loginPollTimerRef.current = setInterval(async () => {
+        attempts += 1;
+        try {
+          const checkRes = await assistantClient.checkLogin(activeChannelKey, "default");
+          if (checkRes.is_logged_in) {
+            setIsLoggedIn(true);
+            setLoginChecked(true);
+            setLoginMsg(checkRes.message || "检测到登录成功！");
+            if (loginPollTimerRef.current) {
+              clearInterval(loginPollTimerRef.current);
+              loginPollTimerRef.current = null;
+            }
+            setLoginPollingActive(false);
+          } else if (attempts >= maxAttempts) {
+            if (loginPollTimerRef.current) {
+              clearInterval(loginPollTimerRef.current);
+              loginPollTimerRef.current = null;
+            }
+            setLoginPollingActive(false);
+            setLoginMsg("扫码等待已超时。若已扫码完成，请点击【检查登录】刷新状态");
+          }
+        } catch {
+          if (attempts >= maxAttempts) {
+            if (loginPollTimerRef.current) {
+              clearInterval(loginPollTimerRef.current);
+              loginPollTimerRef.current = null;
+            }
+            setLoginPollingActive(false);
+          }
+        }
+      }, 2500);
+    } catch (e: any) {
+      alert(`调起扫码登录失败：${e.message}。请确保本地助手已启动。`);
+    } finally {
+      setOpeningLogin(false);
     }
   }
 
@@ -892,13 +959,65 @@ export function BrowserAssistedPanel({
                 <button
                   type="button"
                   onClick={handleCheckLogin}
-                  disabled={checkingLogin}
+                  disabled={checkingLogin || loginPollingActive}
                   className="text-blue-600 hover:underline font-medium"
                 >
                   {checkingLogin ? "检测中..." : "检查登录"}
                 </button>
               </div>
             </div>
+
+            {/* 扫码登录引导区 */}
+            {!isLoggedIn && (
+              <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded-lg flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-amber-900 flex items-center gap-1">
+                    <span>📱</span>
+                    <span>{activeChannel?.name || activeChannelKey} 创作者扫码</span>
+                  </div>
+                  {loginPollingActive && (
+                    <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-mono animate-pulse">
+                      正在检测扫码...
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-amber-800 leading-snug">
+                  点击按钮将唤起受控 Chrome 并直接打开官方创作者登录页，使用对应手机 App 扫码即可完成持久化授权。
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenLoginPage}
+                  disabled={openingLogin || !assistantOnline}
+                  className={`w-full py-2 rounded-md font-medium text-xs transition flex items-center justify-center gap-1.5 shadow-sm ${
+                    loginPollingActive
+                      ? "bg-amber-600 text-white animate-pulse"
+                      : "bg-amber-600 hover:bg-amber-700 text-white"
+                  }`}
+                >
+                  {openingLogin
+                    ? "正在调起浏览器..."
+                    : loginPollingActive
+                    ? "⏳ 浏览器已就绪，等待手机扫码中..."
+                    : "📱 调起浏览器扫码登录"}
+                </button>
+              </div>
+            )}
+
+            {isLoggedIn && (
+              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-800">
+                <span className="flex items-center gap-1 font-medium">
+                  <span>✅</span> 平台登录态持久化有效
+                </span>
+                <button
+                  type="button"
+                  onClick={handleOpenLoginPage}
+                  className="text-xs text-emerald-700 hover:underline"
+                  title="在受控 Chrome 打开创作者中心"
+                >
+                  打开创作者中心
+                </button>
+              </div>
+            )}
 
             {loginMsg && (
               <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
@@ -1052,13 +1171,21 @@ export function BrowserAssistedPanel({
                     <span>等待平台账号登录</span>
                   </div>
                   <p className="text-[11px] text-amber-800 leading-relaxed">
-                    检测到创作者账号尚未登录。受控 Chrome 窗口已保持打开，请在弹出的浏览器中完成扫码或密码登录。登录成功后，点击下方按钮继续自动填写。
+                    检测到创作者账号尚未登录。请点击下方【调起扫码登录页】，在弹出的受控 Chrome 窗口中使用手机 App 扫码登录。登录完成后系统将继续执行辅助填写。
                   </p>
-                  <div className="flex gap-2 pt-0.5">
+                  <div className="flex flex-wrap gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={handleOpenLoginPage}
+                      disabled={openingLogin}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-medium text-xs transition shadow-sm flex items-center gap-1"
+                    >
+                      {openingLogin ? "调起中..." : "📱 调起扫码登录页"}
+                    </button>
                     <button
                       type="button"
                       onClick={handleStartPublishTask}
-                      className="flex-1 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-medium text-xs transition shadow-sm"
+                      className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-xs transition shadow-sm"
                     >
                       已完成登录，重新检查并继续
                     </button>

@@ -36,6 +36,17 @@ class BasePublisher(ABC):
         """
         pass
 
+    def open_login_page(self) -> tuple[bool, str]:
+        """
+        打开对应平台的官方登录/扫码页面
+        :return: (success, status_message)
+        """
+        try:
+            self.driver.get(self.get_creator_url())
+            return True, f"已在受控浏览器打开 {self.get_channel_name()} 官方页面"
+        except Exception as e:
+            return False, f"打开登录页失败：{e}"
+
     @abstractmethod
     def open_editor(self) -> tuple[bool, str]:
         """

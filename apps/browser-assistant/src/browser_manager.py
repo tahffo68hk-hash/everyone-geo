@@ -157,14 +157,41 @@ class BrowserManager:
                 options.add_argument("--disable-gpu")
                 options.add_argument("--window-size=1920,1080")
             else:
-                options.add_argument("--window-size=1400,900")
+                options.add_argument("--start-maximized")
+                options.add_argument("--window-size=1440,960")
+                options.add_argument("--window-position=60,60")
 
             # 显式路径配置（若系统有特殊指定）
             if settings.chrome_binary_path and os.path.exists(settings.chrome_binary_path):
                 options.binary_location = settings.chrome_binary_path
 
+            # 优先定位本地 ChromeDriver 避免联网下载阻塞
+            def _resolve_service() -> Service | None:
+                custom_path = getattr(settings, "chromedriver_path", None) or os.environ.get("CHROMEDRIVER_PATH")
+                if custom_path and os.path.exists(custom_path):
+                    return Service(executable_path=custom_path)
+                which_path = shutil.which("chromedriver")
+                if which_path and os.path.exists(which_path):
+                    return Service(executable_path=which_path)
+                try:
+                    cache_pattern = Path.home() / ".cache" / "selenium" / "chromedriver"
+                    if cache_pattern.exists():
+                        drivers = sorted(
+                            cache_pattern.glob("**/chromedriver.exe"),
+                            key=lambda p: p.stat().st_mtime,
+                            reverse=True,
+                        )
+                        if drivers and drivers[0].exists():
+                            return Service(executable_path=str(drivers[0]))
+                except Exception:
+                    pass
+                return None
+
             # 使用看门狗线程启动 Chrome，防止底层 socket 连接无响应死锁
             def _launch():
+                srv = _resolve_service()
+                if srv:
+                    return webdriver.Chrome(service=srv, options=options)
                 return webdriver.Chrome(options=options)
 
             try:
@@ -179,6 +206,13 @@ class BrowserManager:
 
                 driver.set_page_load_timeout(settings.page_load_timeout_sec)
                 driver.implicitly_wait(1)
+
+                if not headless:
+                    try:
+                        driver.maximize_window()
+                        driver.switch_to.window(driver.current_window_handle)
+                    except Exception:
+                        pass
 
                 self._active_drivers[key] = driver
                 self._driver_configs[key] = {"headless": headless, "started_at": time.time()}

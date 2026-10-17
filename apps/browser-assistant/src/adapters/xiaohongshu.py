@@ -215,7 +215,16 @@ class XiaohongshuPublisher(BasePublisher):
             except Exception:
                 pass
 
-        return False, "未连接到小红书创作者平台页面", {}
+    def open_login_page(self) -> tuple[bool, str]:
+        """打开小红书创作者服务平台官方扫码/密码登录页"""
+        try:
+            curr_url = self.driver.current_url.lower()
+            if "creator.xiaohongshu.com/login" not in curr_url:
+                self.driver.get(self.LOGIN_URL)
+                time.sleep(1.0)
+            return True, "已在受控 Chrome 窗口打开小红书创作者扫码登录页"
+        except Exception as e:
+            return False, f"打开小红书登录页失败：{e}"
 
     def open_editor(self) -> tuple[bool, str]:
         """打开小红书创作者发布页面并确保处于【上传图文】状态"""

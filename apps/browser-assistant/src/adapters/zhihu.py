@@ -112,7 +112,16 @@ class ZhihuPublisher(BasePublisher):
                 return False, "知乎页面提示未登录，请完成登录", {}
             return True, "已在知乎会话内", {}
 
-        return False, "未连接到知乎域名页面", {}
+    def open_login_page(self) -> tuple[bool, str]:
+        """打开知乎扫码/密码登录页"""
+        try:
+            curr_url = self.driver.current_url.lower()
+            if "zhihu.com/signin" not in curr_url:
+                self.driver.get(self.SIGNIN_URL)
+                time.sleep(1.0)
+            return True, "已在受控 Chrome 窗口打开知乎登录页"
+        except Exception as e:
+            return False, f"打开知乎登录页失败：{e}"
 
     def open_editor(self) -> tuple[bool, str]:
         """打开知乎专栏写作页面"""

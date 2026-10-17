@@ -202,6 +202,19 @@ export class BrowserAssistantClient {
     });
   }
 
+  async openLoginPage(channel: string, accountId = "default") {
+    return this.request<{
+      success: boolean;
+      channel: string;
+      account_id: string;
+      message: string;
+      current_url?: string;
+    }>("/api/browser/open-login", {
+      method: "POST",
+      body: JSON.stringify({ channel, account_id: accountId }),
+    });
+  }
+
   async checkLogin(channel: string, accountId = "default") {
     return this.request<{
       channel: string;

@@ -16,6 +16,17 @@ CREATOR_URL_MAP = {
 }
 
 
+LOGIN_URL_MAP = {
+    "XIAOHONGSHU": "https://creator.xiaohongshu.com/login",
+    "ZHIHU": "https://www.zhihu.com/signin",
+    "BILIBILI": "https://passport.bilibili.com/login",
+    "DOUYIN": "https://creator.douyin.com/",
+    "WECHAT_CHANNELS": "https://channels.weixin.qq.com/",
+    "WEIBO": "https://weibo.com/",
+    "WECHAT_OFFICIAL_ACCOUNT": "https://mp.weixin.qq.com/",
+}
+
+
 class FallbackPublisher(BasePublisher):
     """人工发布回退适配器"""
     
@@ -29,6 +40,14 @@ class FallbackPublisher(BasePublisher):
 
     def get_creator_url(self) -> str:
         return self.creator_url
+
+    def open_login_page(self) -> tuple[bool, str]:
+        login_url = LOGIN_URL_MAP.get(self.channel, self.creator_url)
+        try:
+            self.driver.get(login_url)
+            return True, f"已在受控浏览器打开 {self.channel} 官方登录页面"
+        except Exception as e:
+            return False, f"打开 {self.channel} 登录页失败：{e}"
 
     def check_login(self) -> tuple[bool, str, dict[str, Any]]:
         curr_url = self.driver.current_url

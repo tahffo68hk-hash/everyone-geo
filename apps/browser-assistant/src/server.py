@@ -132,6 +132,29 @@ async def close_browser(payload: dict):
     return {"success": True, "closed": closed}
 
 
+@app.post("/api/browser/open-login", dependencies=[Depends(require_auth)])
+async def open_platform_login(payload: dict):
+    """
+    调起受控桌面 Chrome 浏览器并直接导航至官方扫码登录页面
+    供创作者通过手机 App 扫码登录，会话持久化保存在本地独立 Profile
+    """
+    channel = payload.get("channel", "XIAOHONGSHU")
+    account_id = payload.get("account_id", "default")
+    try:
+        driver = browser_manager.get_or_create_driver(channel, account_id, headless=False)
+        publisher = registry.get_publisher(channel, driver)
+        ok, msg = publisher.open_login_page()
+        return {
+            "success": ok,
+            "channel": channel,
+            "account_id": account_id,
+            "message": msg,
+            "current_url": driver.current_url
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @app.post("/api/browser/check-login", dependencies=[Depends(require_auth)])
 async def check_platform_login(payload: dict):
     channel = payload.get("channel", "ZHIHU")
@@ -141,6 +164,15 @@ async def check_platform_login(payload: dict):
         browser_manager.get_or_create_driver(channel, account_id, headless=False)
     driver = browser_manager.get_or_create_driver(channel, account_id)
     publisher = registry.get_publisher(channel, driver)
+
+    # 若当前处于空标签页，自动加载创作平台以提取登录态
+    try:
+        curr = driver.current_url.lower()
+        if not curr or curr in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            publisher.open_editor()
+    except Exception:
+        pass
+
     is_logged_in, msg, extra = publisher.check_login()
     return {
         "channel": channel,
