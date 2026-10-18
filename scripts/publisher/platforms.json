@@ -173,10 +173,11 @@
       ],
       "dismiss_draft": [".bcc-dialog button.bcc-button--default"],
       "video_input": [
+        ".bcc-upload-wrapper input[type='file']",
+        "input[type='file'][accept*='.mp4']",
         "input[type='file'][accept*='video']",
         ".upload-wrp input[type='file']",
-        "input.upload-file",
-        "input[type='file']"
+        "input.upload-file"
       ],
       "upload_btn": [".upload-btn-container", ".upload-wrp"],
       "title": [
@@ -222,7 +223,8 @@
         ".video-item img"
       ],
       "upload_error": [".upload-error", ".error-tip"],
-      "submit_btn": ["button.submit-add", ".submit-btn button"]
+      "submit_btn": ["button.submit-add", ".submit-btn button"],
+      "tag_item": ["#tag-container .label-item-v2-container"]
     }
   },
   "channels": {

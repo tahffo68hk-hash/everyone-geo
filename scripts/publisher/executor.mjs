@@ -112,7 +112,25 @@ export async function prepare(page, platform, payload, progress = () => {}) {
       `input[type="file"][accept*="${video ? "video" : "image"}"]`,
       'input[type="file"]',
     ];
-    const input = await find(page, inputs, false);
+    // SPA creator pages render the uploader after domcontentloaded; poll up to 30s.
+    let input = null;
+    for (let i = 0; i < 30 && !input; i++) {
+      input = await find(page, inputs, false);
+      if (!input) await delay(1000);
+    }
+    if (platform === "bilibili") {
+      // Uploader binds its change handler late; wait for the visible button,
+      // and decline the "restore unsubmitted video" banner (never resubmits old drafts).
+      await page
+        .getByText("上传视频", { exact: true })
+        .first()
+        .waitFor({ state: "visible", timeout: 30000 })
+        .catch(() => {});
+      const fresh = page.getByText("不用了", { exact: true }).first();
+      if (await fresh.isVisible().catch(() => false)) await fresh.click();
+      await delay(2000);
+      input = await find(page, inputs, false);
+    }
     if (!input) throw Error("找不到媒体上传入口，请人工打开编辑页或导出发布包");
     await input.setInputFiles(
       payload.media.map((m) => path.resolve("uploads", m.path)),
@@ -131,6 +149,17 @@ export async function prepare(page, platform, payload, progress = () => {}) {
     ];
     let done = false;
     for (let i = 0; i < 300; i++) {
+      // Re-attach once if the page never started processing the file.
+      if (
+        platform === "bilibili" &&
+        i === 10 &&
+        !(await find(page, s.upload_complete_status || []))
+      )
+        await (
+          await find(page, inputs, false)
+        )?.setInputFiles(
+          payload.media.map((m) => path.resolve("uploads", m.path)),
+        );
       if (await find(page, s.upload_error || []))
         throw Error("平台提示上传失败；请人工检查，不标记已填写");
       if (await find(page, complete)) {
@@ -162,8 +191,14 @@ export async function prepare(page, platform, payload, progress = () => {}) {
     if (await done.isVisible().catch(() => false)) await done.click();
   }
   progress("填写标题、正文与话题并回读");
-  let title = await find(page, titles),
+  // Edit forms render only after upload finishes; poll for the editor.
+  let title = null,
+    body = null;
+  for (let i = 0; i < 20 && !body; i++) {
+    title = await find(page, titles);
     body = await find(page, bodies);
+    if (!body) await delay(1000);
+  }
   if (!body)
     throw Error("未找到正文编辑器；公众号等平台请人工进入新建文章后重试");
   // Weibo and Kuaishou use one description field; preserve title in the body.
@@ -175,31 +210,46 @@ export async function prepare(page, platform, payload, progress = () => {}) {
     payload.body +
     (!tags && payload.tags ? "\n" + payload.tags : "");
   await body.fill(bodyValue);
+  let tagReadback = null;
   if (tags && payload.tags) {
-    if (platform === "bilibili")
-      for (const tag of payload.tags
+    if (platform === "bilibili") {
+      const wanted = payload.tags
         .split(/[\s#]+/)
         .filter(Boolean)
-        .slice(0, 10)) {
+        .slice(0, 10);
+      const itemSel =
+        (s.tag_item || [])[0] || "#tag-container .label-item-v2-container";
+      const current = () =>
+        page
+          .locator(itemSel)
+          .evaluateAll((els) => els.map((e) => e.innerText.trim()));
+      // Remove platform auto-suggested tags so only the user's tags remain.
+      for (let i = 0; i < 12; i++) {
+        const extra = (await current()).findIndex((t) => !wanted.includes(t));
+        if (extra < 0) break;
+        await page.locator(itemSel).nth(extra).locator(".close").click();
+        await delay(400);
+      }
+      for (const tag of wanted) {
+        if ((await current()).includes(tag)) continue;
+        await tags.click();
         await tags.fill(tag);
+        await delay(400);
         await tags.press("Enter");
+        await delay(800);
       }
-    else await tags.fill(payload.tags);
-    if (platform === "bilibili")
-      for (const tag of payload.tags
-        .split(/[\s#]+/)
-        .filter(Boolean)
-        .slice(0, 10)) {
-        if (!(await page.getByText(tag, { exact: true }).first().isVisible()))
-          throw Error("标签未生成，请人工确认");
-      }
+      tagReadback = await current();
+      const missing = wanted.filter((t) => !tagReadback.includes(t));
+      if (missing.length)
+        throw Error("标签未生成：" + missing.join("、") + "，请人工确认");
+    } else await tags.fill(payload.tags);
   }
   const read = async (l) =>
     l.evaluate((e) => ("value" in e ? e.value : e.innerText));
   const readback = {
     title: title ? await read(title) : null,
     body: await read(body),
-    tags: tags && platform !== "bilibili" ? await read(tags) : payload.tags,
+    tags: tagReadback ?? (tags ? await read(tags) : payload.tags),
     mediaCount: payload.media?.length || 0,
     mode: "PREPARE_ONLY",
     warnings: ["封面、分类、原创/AI声明及话题识别请人工审核；未点击最终提交"],
@@ -242,7 +292,12 @@ export async function executeBrowser(job, action, update, accountUpdate) {
       );
     // Recover Bilibili login via home before returning to the upload frame, as upstream.
     const ready = () => isLoggedIn(page, context, job.platform);
-    let logged = job.platform === "test" || (await ready());
+    let logged = job.platform === "test";
+    // Creator SPAs render the avatar/uploader after domcontentloaded; give them ~15s.
+    for (let i = 0; i < 15 && !logged; i++) {
+      logged = await ready();
+      if (!logged) await delay(1000);
+    }
     if (!logged) {
       accountUpdate("NEEDS_LOGIN");
       update({
@@ -274,9 +329,22 @@ export async function executeBrowser(job, action, update, accountUpdate) {
       });
     } else {
       update({ status: "FILLING", progress: "登录已确认，准备上传" });
-      const readback = await prepare(page, job.platform, payload, (p) =>
-        update({ progress: p }),
-      );
+      let readback;
+      try {
+        readback = await prepare(page, job.platform, payload, (p) =>
+          update({ progress: p }),
+        );
+      } catch (e) {
+        if (headed) {
+          update({
+            status: "FAILED",
+            error: "自动填写中断：" + String(e.message || e).slice(0, 400),
+            progress: "浏览器保留供人工接管；未执行发布",
+          });
+          await waitForTakeover(context);
+        }
+        throw e;
+      }
       if (process.env.GEOLENS_SCREENSHOT_PREFIX) {
         const shot = path.resolve(
           "screenshots",
@@ -293,8 +361,7 @@ export async function executeBrowser(job, action, update, accountUpdate) {
     }
     if (headed) {
       update({
-        progress:
-          "浏览器保留15分钟供人工接管；请在云桌面操作。最终发布由你手动完成",
+        progress: `浏览器保留${Math.round((+process.env.GEOLENS_TAKEOVER_MS || 15 * 60 * 1000) / 60000)}分钟供人工接管；请在云桌面操作。最终发布由你手动完成`,
       });
       await waitForTakeover(context);
     }
