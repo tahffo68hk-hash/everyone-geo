@@ -225,7 +225,8 @@
       "upload_error": [".upload-error", ".error-tip"],
       "submit_btn": ["button.submit-add", ".submit-btn button"],
       "tag_item": ["#tag-container .label-item-v2-container"]
-    }
+    },
+    "cover_note": "用户封面或首个推荐帧（不使用AI生成）；回读封面与创作声明，分类/分区仍需人工设置"
   },
   "channels": {
     "label": "微信视频号",

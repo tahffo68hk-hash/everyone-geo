@@ -1,0 +1,86 @@
+<!doctype html><meta charset="utf-8" />
+<div class="cover">
+  <div class="cover-content">
+    <div class="cover-main">
+      <div class="cover-module-main">
+        <div class="cover-slot"><div class="cover-empty">添加封面</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="cover-ai-recommend">
+  <div class="group-cards">
+    <div class="card ai-generate-btn">AI生成</div>
+    <div class="card">
+      <div
+        class="img-item-box img-item-cover"
+        style="width: 100px; height: 60px; background: grey"
+      >
+        推荐帧
+      </div>
+    </div>
+  </div>
+</div>
+<div class="creation-statement-container">
+  <div class="statement-content">
+    <div class="bcc-select">
+      <div class="bcc-select-input-wrap">
+        <input
+          class="bcc-select-input-inner"
+          readonly
+          placeholder="请选择符合您视频内容的创作声明"
+        />
+      </div>
+      <ul class="bcc-select-list-wrap" hidden></ul>
+    </div>
+  </div>
+  <div class="auth-content">
+    <span class="option-text">内容为自制：未经作者允许，禁止转载</span>
+  </div>
+</div>
+<button id="publish">立即投稿</button
+><input id="commercial" type="checkbox" />商业推广
+<script>
+  const $ = (s) => document.querySelector(s);
+  $(".ai-generate-btn").onclick = () => (document.body.dataset.ai = "true");
+  $("#publish").onclick = () => (document.body.dataset.published = "true");
+  $(".auth-content").onclick = () => (document.body.dataset.auth = "true");
+  function editor() {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.innerHTML =
+      '<input type="file" accept="image/*"><button>完成</button>';
+    dialog.querySelector("input").onchange = () =>
+      (document.body.dataset.uploaded = "true");
+    dialog.querySelector("button").onclick = () => {
+      $(".cover-slot").innerHTML =
+        '<img alt="cover" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=">';
+      dialog.remove();
+    };
+    document.body.append(dialog);
+  }
+  $(".cover-slot").onclick = editor;
+  $(".img-item-cover").onclick = editor;
+  const options = [
+    "内容无需标注",
+    "含AI生成内容",
+    "含虚构演绎内容",
+    "内容含营销信息",
+    "个人观点，仅供参考",
+    "内容为转载",
+  ];
+  for (const text of options) {
+    const li = document.createElement("li");
+    li.className = "bcc-option";
+    const span = document.createElement("span");
+    span.textContent = text;
+    li.append(span);
+    li.onclick = () => {
+      $("input.bcc-select-input-inner").value = text;
+      $(".bcc-select-list-wrap").hidden = true;
+    };
+    $(".bcc-select-list-wrap").append(li);
+  }
+  $(".bcc-select-input-wrap").onclick = () =>
+    ($(".bcc-select-list-wrap").hidden = false);
+</script>

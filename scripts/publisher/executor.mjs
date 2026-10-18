@@ -13,6 +13,116 @@ export function browserExecutable() {
   }
   return undefined;
 }
+export const declarations = [
+  "内容无需标注",
+  "含AI生成内容",
+  "含虚构演绎内容",
+  "内容含营销信息",
+  "个人观点，仅供参考",
+  "内容为转载",
+];
+export function pickDeclaration(payload = {}) {
+  const value =
+    payload.declaration === undefined ? declarations[0] : payload.declaration;
+  if (!declarations.includes(value))
+    throw Error("创作声明无效：请选择平台支持的声明");
+  return value;
+}
+const coverDialogs =
+  '[role="dialog"], .cover-editor, .bcc-dialog, .bcc-modal, .cover-editor-dialog';
+async function confirmCover(page, required) {
+  const dialog = page.locator(coverDialogs).filter({ visible: true }).first();
+  try {
+    await dialog.waitFor({
+      state: "visible",
+      timeout: required ? 10000 : 2000,
+    });
+  } catch {
+    if (required) throw Error("未找到封面编辑弹窗");
+    return;
+  }
+  await dialog
+    .getByRole("button", { name: /^(完成|确定)$/ })
+    .first()
+    .click();
+}
+export async function bilibiliCover(page, payload) {
+  try {
+    if (payload.cover) {
+      const root = await import("node:fs/promises");
+      const file = await root.realpath(
+        path.resolve("uploads", payload.cover.path),
+      );
+      if (path.dirname(file) !== (await root.realpath("uploads")))
+        throw Error("封面路径无效");
+      await page.locator(".cover .cover-slot").first().click();
+      const dialog = page
+        .locator(coverDialogs)
+        .filter({ visible: true })
+        .first();
+      await dialog
+        .locator(
+          'input[type="file"][accept*="image"], input[type="file"][accept*=".png"], input[type="file"][accept*=".jpg"]',
+        )
+        .first()
+        .setInputFiles(file);
+      await confirmCover(page, true);
+    } else {
+      const frame = page
+        .locator(
+          ".cover-ai-recommend .group-cards .card:not(.ai-generate-btn) .img-item-box.img-item-cover",
+        )
+        .first();
+      await frame.waitFor({ state: "visible", timeout: 30000 });
+      await frame.click();
+      await confirmCover(page, false);
+    }
+    await page.waitForFunction(
+      () => {
+        const slot = document.querySelector(".cover .cover-slot");
+        if (!slot || slot.querySelector(".cover-empty")) return false;
+        return (
+          !!slot.querySelector("img") ||
+          [slot, ...slot.querySelectorAll("*")].some(
+            (e) => getComputedStyle(e).backgroundImage !== "none",
+          )
+        );
+      },
+      null,
+      { timeout: 10000 },
+    );
+    return { source: payload.cover ? "user" : "recommended", set: true };
+  } catch {
+    throw Error("封面设置未能验证，请人工检查；不标记已填写");
+  }
+}
+export async function bilibiliDeclaration(page, payload) {
+  const value = pickDeclaration(payload);
+  try {
+    const container = page.locator(".creation-statement-container");
+    await container
+      .locator(".statement-content .bcc-select-input-wrap")
+      .click();
+    await container
+      .locator(".bcc-select-list-wrap li.bcc-option")
+      .filter({ has: page.getByText(value, { exact: true }) })
+      .click();
+    if (payload.selfMadeAuth === true) {
+      const auth = container
+        .locator(".auth-content .option-text")
+        .filter({ hasText: "内容为自制：未经作者允许，禁止转载" });
+      await auth.click();
+    }
+    if (
+      (await container.locator("input.bcc-select-input-inner").inputValue()) !==
+      value
+    )
+      throw Error("回读失败");
+    return value;
+  } catch {
+    throw Error("创作声明未能验证，请人工检查；不标记已填写");
+  }
+}
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const waitForTakeover = (context) =>
   new Promise((resolve) => {
@@ -170,7 +280,14 @@ export async function prepare(page, platform, payload, progress = () => {}) {
     }
     if (!done) throw Error("未能可靠确认上传完成；请人工检查，不标记已填写");
   }
-  if (payload.cover) {
+  const bilibiliReadback =
+    platform === "bilibili"
+      ? {
+          cover: await bilibiliCover(page, payload),
+          declaration: await bilibiliDeclaration(page, payload),
+        }
+      : {};
+  if (payload.cover && platform !== "bilibili") {
     progress("设置用户选择的封面");
     let input = await find(page, s.cover_input || [], false);
     if (!input) {
@@ -250,9 +367,12 @@ export async function prepare(page, platform, payload, progress = () => {}) {
     title: title ? await read(title) : null,
     body: await read(body),
     tags: tagReadback ?? (tags ? await read(tags) : payload.tags),
+    ...bilibiliReadback,
     mediaCount: payload.media?.length || 0,
     mode: "PREPARE_ONLY",
-    warnings: ["封面、分类、原创/AI声明及话题识别请人工审核；未点击最终提交"],
+    warnings: [
+      "分类、分区及话题识别仍需人工审核；封面与声明请复核；未点击最终提交",
+    ],
   };
   if (
     (title && readback.title !== payload.title) ||
@@ -356,7 +476,8 @@ export async function executeBrowser(job, action, update, accountUpdate) {
       update({
         status: "FILLED_AWAITING_REVIEW",
         readback: JSON.stringify(readback),
-        progress: "已回读校验，等待人工审核；封面/分类/声明请人工确认",
+        progress:
+          "已回读校验，等待人工审核；分类/分区请人工设置，封面与声明请复核",
       });
     }
     if (headed) {
