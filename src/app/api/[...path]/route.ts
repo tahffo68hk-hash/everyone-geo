@@ -14,6 +14,7 @@ import { session } from "@/lib/session";
 import {
   complete,
   defaults,
+  envKey,
   infer,
   parseQuestions,
   questionsPrompt,
@@ -241,7 +242,8 @@ async function handle(
         baseUrl: s.cfg.baseUrl,
         model: s.cfg.model,
         extra: s.cfg.extra,
-        hasKey: !!s.cfg.key,
+        hasKey: !!s.cfg.key || !!envKey(s.cfg.provider),
+        envKey: !!envKey(s.cfg.provider),
       });
     }
     if (path[0] === "test") {
@@ -338,7 +340,18 @@ async function handle(
           brand,
           b.confirmed === true,
         );
-        const p = parseQuestions(r.answer);
+        const p = parseQuestions(r.answer, brand.name);
+        if (
+          !String(brand.competitors || "")
+            .split(/[,，、\n]/)
+            .some((x) => x.trim())
+        ) {
+          const context = JSON.parse(run.context);
+          context.inferred_competitors = p.competitors;
+          db()
+            .prepare("UPDATE brands SET context=? WHERE id=?")
+            .run(JSON.stringify(context), run.brand_id);
+        }
         db()
           .prepare("INSERT OR REPLACE INTO query_sets VALUES(?,?,?,?,?)")
           .run(
@@ -406,10 +419,19 @@ async function handle(
               true,
             );
             const m = mention(r.answer, brand.name);
-            const competitors = String(brand.competitors || "")
+            const userCompetitors = String(brand.competitors || "")
               .split(/[,，、\n]/)
               .map((x) => x.trim())
-              .filter((x) => x && mention(r.answer, x).mentioned);
+              .filter(Boolean);
+            const candidates = userCompetitors.length
+              ? userCompetitors
+              : Array.isArray(brand.inferred_competitors)
+                ? brand.inferred_competitors
+                : [];
+            const competitors = candidates.filter(
+              (x: unknown) =>
+                typeof x === "string" && x && mention(r.answer, x).mentioned,
+            );
             db()
               .prepare(
                 "INSERT INTO responses VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

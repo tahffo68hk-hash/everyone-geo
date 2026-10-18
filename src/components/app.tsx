@@ -117,7 +117,12 @@ function Settings({ close }: { close: () => void }) {
           />
         </label>
         <label>
-          API Key {c.hasKey ? "（已配置，留空保留）" : ""}
+          API Key{" "}
+          {c.envKey
+            ? "（服务端环境变量已配置）"
+            : c.hasKey
+              ? "（已配置，留空保留）"
+              : ""}
           <input
             type="password"
             autoComplete="off"
@@ -327,6 +332,16 @@ export function Run({ id }: { id: string }) {
         <div>
           <h1>让问题更贴近你的用户</h1>
           <p>先确认品牌类别与监测问题，再开始逐题检测。</p>
+          {!String(data.run.context.competitors || "")
+            .split(/[,，、\n]/)
+            .some((x) => x.trim()) &&
+            Array.isArray(data.run.context.inferred_competitors) &&
+            data.run.context.inferred_competitors.length > 0 && (
+              <p>
+                AI 推断竞品（未核实）：
+                {data.run.context.inferred_competitors.join("、")}
+              </p>
+            )}
         </div>
         <span className="badge">{data.run.status}</span>
       </div>
@@ -487,6 +502,10 @@ export function Report({ id }: { id: string }) {
       .catch((e) => setErr(e.message));
   }, [id]);
   if (!d) return <p>{err || "正在读取报告…"}</p>;
+  const inferred = !String(d.run.context.competitors || "")
+    .split(/[,，、\n]/)
+    .some((x) => x.trim());
+  const competitorLabel = inferred ? "AI 推断竞品（未核实）" : "竞品";
   const m = d.metrics;
   const gaps = d.responses.filter((r: any) => !r.brand_mentioned);
   const strengths = d.responses.filter((r: any) => r.brand_mentioned);
@@ -573,7 +592,8 @@ export function Report({ id }: { id: string }) {
                       规范化字符起始位置：{r.mention_position ?? "—"}
                     </p>
                     <p className="small">
-                      竞品：{JSON.parse(r.competitors).join("、") || "未检出"}
+                      {competitorLabel}：
+                      {JSON.parse(r.competitors).join("、") || "未检出"}
                     </p>
                   </td>
                   <td>
@@ -632,14 +652,14 @@ export function Report({ id }: { id: string }) {
             条问题中检出品牌名称。文字提及本身不证明推荐、认可或事实正确。
           </p>
           <p>潜在缺口：{gaps.length} 条已回答问题未检出品牌名称。</p>
-          <h3>竞争品牌出现情况</h3>
+          <h3>{inferred ? competitorLabel : "竞争品牌出现情况"}</h3>
           {Object.entries(m.competitors).map(([name, count]) => (
             <p key={name}>
               {name} · {String(count)} 个回答
             </p>
           ))}
           {!Object.keys(m.competitors).length && (
-            <p>未检出用户配置的竞争品牌。</p>
+            <p>未检出{inferred ? "AI 推断的" : "用户配置的"}竞争品牌。</p>
           )}
         </section>
         <section className="card">

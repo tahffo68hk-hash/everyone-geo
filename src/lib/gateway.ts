@@ -92,6 +92,12 @@ export class MockTransport {
     return `【模拟数据/未真实验证】针对${b.category}，建议根据需求、成本、适用场景和可核实证据进行比较。${hash % 3 === 0 || prompt.includes(b.name) ? `${b.name}可以列为待核实的候选，不能据此认定实际能力。` : "目前缺少足够品牌证据，应补充公开说明。"}${b.competitors && hash % 2 === 0 ? `同样需要核实${b.competitors}的适用条件。` : ""}`;
   }
 }
+export function envKey(provider: Provider) {
+  if (provider === "deepseek") return process.env.DEEPSEEK_API_KEY;
+  if (provider === "qwen")
+    return process.env.DASHSCOPE_API_KEY ?? process.env.QWEN_API_KEY;
+  return undefined;
+}
 export async function complete(
   cfg: Config,
   prompt: string,
@@ -112,7 +118,8 @@ export async function complete(
       citations: [] as string[],
     };
   if (!confirmed) throw Error("真实调用需要明确费用确认");
-  if (!cfg.key) throw Error("请先在设置中配置 API Key");
+  const key = cfg.key ?? envKey(cfg.provider);
+  if (!key) throw Error("请先在设置中配置 API Key");
   const url = new URL(cfg.baseUrl);
   if (
     url.protocol !== "https:" ||
@@ -140,7 +147,7 @@ export async function complete(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.key}`,
+        Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
         ...extra,
@@ -189,9 +196,9 @@ export async function complete(
   };
 }
 export function questionsPrompt(b: any) {
-  return `${VERSION}\n品牌背景（仅用户提供，未核实）：${JSON.stringify(b)}\n推断类别并明确待确认。生成10条与类别相关的自然问题，覆盖${intents.join("、")}。7条DISCOVERY不得包含品牌名，3条BRANDED包含品牌名。格式：{"category":"推断类别","questions":[{"text":"问题","kind":"DISCOVERY或BRANDED","intent":"意图"}]}。`;
+  return `${VERSION}\n品牌背景（仅用户提供，未核实）：${JSON.stringify(b)}\n推断类别并明确待确认。生成10条与类别相关的自然问题，覆盖${intents.join("、")}。7条DISCOVERY不得包含品牌名，3条BRANDED包含品牌名。同时返回同类别最多6个可能的竞品品牌名（未核实）。格式：{"category":"推断类别","competitors":["竞品品牌名"],"questions":[{"text":"问题","kind":"DISCOVERY或BRANDED","intent":"意图"}]}。`;
 }
-export function parseQuestions(answer: string) {
+export function parseQuestions(answer: string, brand = "") {
   let p: any;
   try {
     p = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
@@ -208,5 +215,19 @@ export function parseQuestions(answer: string) {
     )
   )
     throw Error("问题必须为8–12条，且包含类型与意图");
-  return p as { category: string; questions: Question[] };
+  const competitors = (Array.isArray(p.competitors) ? p.competitors : [])
+    .filter((value: unknown): value is string => typeof value === "string")
+    .map((value: string) => value.trim())
+    .filter(
+      (value: string) =>
+        value.length >= 1 &&
+        value.length <= 40 &&
+        value.toLowerCase() !== brand.trim().toLowerCase(),
+    )
+    .slice(0, 8);
+  return { ...p, competitors } as {
+    category: string;
+    questions: Question[];
+    competitors: string[];
+  };
 }

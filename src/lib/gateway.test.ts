@@ -105,3 +105,80 @@ it("does not leak provider error body", async () => {
     ),
   ).rejects.toThrow("HTTP 401");
 });
+
+it("sanitizes optional inferred competitors and excludes the brand", () => {
+  const questions = Array.from({ length: 10 }, () => ({
+    text: "Which brand?",
+    kind: "DISCOVERY",
+    intent: "comparison",
+  }));
+  const parse = (competitors?: unknown) =>
+    parseQuestions(
+      JSON.stringify({ category: "software", questions, competitors }),
+      "My Brand",
+    );
+  expect(parse().competitors).toEqual([]);
+  expect(parse("invalid").competitors).toEqual([]);
+  expect(
+    parse([
+      null,
+      123,
+      {},
+      "",
+      "  ",
+      " my BRAND ",
+      "x".repeat(41),
+      " Rival ",
+      "x".repeat(40),
+    ]).competitors,
+  ).toEqual(["Rival", "x".repeat(40)]);
+  expect(
+    parse(Array.from({ length: 12 }, (_, i) => `Rival ${i}`)).competitors,
+  ).toEqual(Array.from({ length: 8 }, (_, i) => `Rival ${i}`));
+});
+
+it("uses the server env key when no config key exists and prefers explicit keys", async () => {
+  vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
+  try {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "Test answer" } }],
+        }),
+      ),
+    );
+    const cfg = {
+      provider: "deepseek" as const,
+      ...defaults.deepseek,
+      extra: {},
+    };
+    await complete(cfg, "q", "answer", {}, true, fetcher);
+    expect(fetcher.mock.calls[0][1].headers.Authorization).toBe(
+      "Bearer test-key",
+    );
+    fetcher.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "Test answer" } }],
+        }),
+      ),
+    );
+    await complete(
+      { ...cfg, key: "explicit-test-key" },
+      "q",
+      "answer",
+      {},
+      true,
+      fetcher,
+    );
+    expect(fetcher.mock.calls[1][1].headers.Authorization).toBe(
+      "Bearer explicit-test-key",
+    );
+    await expect(
+      complete({ ...cfg, key: "" }, "q", "answer", {}, true, fetcher),
+    ).rejects.toThrow("API Key");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
