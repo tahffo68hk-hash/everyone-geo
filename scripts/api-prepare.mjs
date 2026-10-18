@@ -1,7 +1,7 @@
 // Operator HTTP client: deliberately exposes preparation actions only.
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-const base = "http://127.0.0.1:3100",
+const base = process.env.GEOLENS_URL || "http://127.0.0.1:3100",
   jar = "data/operator-cookies.json";
 let cookie = "";
 try {
@@ -15,7 +15,6 @@ async function request(route, body) {
     method: body === undefined ? "GET" : "POST",
     headers: {
       Cookie: cookie,
-      Origin: base,
       ...(body !== undefined && !form
         ? { "Content-Type": "application/json" }
         : {}),
