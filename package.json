@@ -9,17 +9,21 @@
     "test": "vitest run",
     "db:init": "node scripts/init-db.mjs",
     "test:browser": "node scripts/browser-smoke.mjs",
-    "format": "prettier --write src scripts *.json *.ts *.mjs README.md"
+    "format": "prettier --write src scripts *.json *.ts *.mjs README.md",
+    "test:publish": "node scripts/publish-smoke.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.0",
+    "archiver": "^7.0.1",
     "next": "^16.4.2",
+    "playwright": "^1.64.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwindcss": "^4.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",
+    "@types/archiver": "^6.0.4",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

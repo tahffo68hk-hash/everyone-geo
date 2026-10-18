@@ -147,6 +147,9 @@ export function ContentCenter({ id }: { id: string }) {
       <div className="eyebrow">AI 内容中心</div>
       <div className="between">
         <h1>把检测线索变成有用的内容</h1>
+        <p>
+          <a href="/publish">前往发布工作台 →</a>
+        </p>
         <Link href={"/reports/" + id}>返回关联报告 →</Link>
       </div>
       <p>

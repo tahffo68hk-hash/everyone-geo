@@ -7,3 +7,6 @@ test-results/
 *.tsbuildinfo
 
 .local-git/
+
+data/profiles/
+data/browsers/

@@ -60,7 +60,7 @@ npm run test:browser
 
 ## 后续工作
 
-- 阶段 4：Playwright 发布执行器、平台登录隔离、自动填写、回读校验和人工接管；目前所有渠道未接通、未真实验证。
+- 阶段 4 已接入发布工作台与浏览器准备流程；真实平台均未登录验收，详情见下方工作包 4。
 - 有用户授权和凭据后，单独进行真实付费 API 与已登录平台验收。当前没有 Key，不将注入式测试称为真实 API 验证。
 - 本地 MVP 使用请求内顺序执行和轮询进度，不含任务队列；长请求部署需代理允许相应时长。中断任务不自动重试，重新建任务避免意外重复付费。
 - 官网目前只作为用户提供的上下文，不自动抓取；没有来源真实性验证、别名识别、情感分析或全网衡量能力。
@@ -84,3 +84,36 @@ SQLite 初始化向现有数据库增量创建 `ai_suggestions` 与 `content_gen
 验收：`npm test` 15项通过；`npm run build` 通过；`npm run test:browser` 通过，覆盖十渠道生成、编辑持久化、图片/MP4上传、非法格式拒绝、MP4字节范围、跨会话读写拦截及移动端布局，控制台错误0，外部AI调用0，发布0。新增截图：[内容中心桌面](docs/screenshots/content-desktop.png)、[内容中心移动](docs/screenshots/content-mobile.png)。
 
 当前环境的 `.git` 不完整（缺少objects/refs），且权限配置将其挂载为只读，无法恢复历史或向该目录写入提交。为保留可审查的本地提交，使用独立元数据目录 `.local-git`（不修改只读 `.git`）。查看提交：`git --git-dir=.local-git --work-tree=. log -1`；后续操作同样带这两个参数。此环境限制不影响应用运行；未执行push。
+
+
+## 工作包 4：发布工作台与独立执行器
+
+`/publish` 从当前会话的内容草稿创建一个或多个独立平台任务；支持小红书、抖音、B站、视频号、快手、微博、微信公众号、知乎、今日头条、百家号及 WordPress。矩阵表示本版本接入的类型，未声称覆盖平台全部能力。适配沿用原稿并进行标题/微博长度裁切，可逐平台编辑；不会调用 AI。媒体须重新明确选择用户上传素材，演示素材被后端拒绝。视频渠道需要用户成片，脚本不会自动转成视频。
+
+浏览器流程：添加账号 → 选择平台、草稿和素材 → 保存任务 → 检查登录或开始自动填写。API 用 `spawn` 启动 `scripts/publisher/runner.mjs`，SQLite 的 `publisher_accounts`、`publisher_jobs` 首次使用自动创建，不改动历史检测数据。每个账号使用 `data/profiles/<platform>/<随机账号ID>`（名称映射在 SQLite），不存平台密码或导出 Cookie。Profiles 含敏感登录态，与数据库及 uploads 一样须仅在可信本机保存，不提交 Git。没有多用户生产鉴权，本产品面向可信本地使用。
+
+执行器移植了上游选择器、上传顺序、富文本编辑与 B站登录恢复流程，来源和 MIT 许可见 `NOTICE`。会打开官方页面，检查已知登录/编辑器标记，有 DISPLAY 时等扫码5分钟；没有交互桌面且无登录态则 `NEEDS_LOGIN`。图片/视频经 `setInputFiles` 上传后等待已知完成标记，填入标题/正文/话题并回读。可选择封面；仅在能定位独立封面入口时上传，否则明确失败。各平台必要分类、原创/AI声明及部分话题识别仍需人工完成，界面和回读记录均明确提示。页面改版或不确定上传完成时失败，不冒充已填写。公众号通常需先人工进入新建文章编辑器；重试默认从官方入口开始，动态 token/编辑器导航仍待真实账号验收。
+
+默认且唯一模式 `PREPARE_ONLY`。执行器不包含最终发布操作，不自动创建发布结果。状态为 `DRAFT / FILLING / FILLED_AWAITING_REVIEW / NEEDS_LOGIN / FAILED / PUBLISHED_VERIFIED`。最后一种只在用户明确确认并提供 URL 后产生，记录 `USER_PROVIDED_URL`，不宣称服务器已核实公开可访问性。本地测试任务禁止登记真实发布。每个平台单独更新，失败不影响其他任务。进程心跳与 PID 用于恢复中断任务；重新尝试是用户主动操作，避免后台重复上传。
+
+有桌面时浏览器在填写后保留15分钟供云桌面人工接管。请关闭浏览器释放 profile 后再检查、重试或登记发布结果；同账号同时仅允许一个执行器。服务重启后账号 profile 与任务保留；不自动恢复提交行为。远程用户能否实际操作云桌面仍需用户确认，代码没有内置 VNC 服务。
+
+每个任务都可下载 ZIP 人工包，包含标题、正文、话题、manifest、媒体和封面（如选用）。WordPress 使用用户本次输入的 HTTPS 站点、用户名及应用密码，仅后端调用 `/wp-json/wp/v2/posts`，明确 `status=draft`；不持久化、不日志输出密码，不自动发布，不自动上传 WordPress 媒体或设置分类。请求失败不标记已创建。WordPress 凭据缺失，外部 API 未实测。
+
+安装和验证（Node 24）：
+
+```bash
+export PATH=$HOME/.local/node24/bin:$PATH
+npm install
+PLAYWRIGHT_BROWSERS_PATH=$PWD/data/browsers npx playwright install chromium
+npm test
+npm run build
+npm run dev                     # 3100，不占用3000/3001
+# 另一个终端，服务器运行时：
+npm run test:publish
+npm run test:browser
+```
+
+`data/browsers` 存在时执行器自动选择安装的 Chromium；否则使用 Playwright 默认安装。`/test-platform` 是本地测试页，不调用任何外部平台。`npm test` 包含 headless 上传、填写、回读、禁止提交和独立任务中断恢复；`test:publish` 覆盖 API → 独立进程 → 本地 Chromium、ZIP、会话隔离、桌面/移动截图与零页面异常。已实际运行 DISPLAY 有界面 Chromium，并用本地测试值验证 profile 关闭后恢复；不等同于真实平台登录恢复验收。
+
+本工作包验证：本地图片上传与自动填写通过，未点击提交；截图见 `docs/screenshots/publish-desktop.png`、`publish-mobile.png`、`publish-headed-fixture.png`。真实平台全部尚未使用授权账号验证上传、登录、分类、封面或用户接管；普通平台选择器仅为上游移植，可能需要按新版页面修正。付费模型真实验证0次，公开发布0次。后续应逐平台取得授权账号，在 PREPARE_ONLY 下验收，优先小红书及五个视频平台；再完善公众号动态编辑器入口与平台专用分类/声明。

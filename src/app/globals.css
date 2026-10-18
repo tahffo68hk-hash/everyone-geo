@@ -602,3 +602,82 @@ tr[id] {
 select {
   max-width: 100%;
 }
+.publish-platforms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+.publish-platform {
+  border: 1px solid var(--line);
+  padding: 15px;
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 4px 8px;
+}
+.publish-platform input {
+  width: auto;
+}
+.publish-platform span,
+.publish-platform small {
+  grid-column: 2;
+}
+.publish-platform small {
+  color: var(--muted);
+}
+.publish-account {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.publish-account input,
+.publish-account select {
+  flex: 1;
+  min-width: 150px;
+}
+.publish-job {
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.publish-media {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.publish-media img,
+.publish-media video {
+  width: 110px;
+  height: 80px;
+  object-fit: cover;
+}
+.publish-media input {
+  width: auto;
+}
+select {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--ink);
+  max-width: 100%;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+label > select {
+  display: block;
+  width: 100%;
+  margin: 6px 0 16px;
+}
+.card {
+  margin-bottom: 20px;
+}

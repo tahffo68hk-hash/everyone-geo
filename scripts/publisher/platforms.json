@@ -1,0 +1,545 @@
+{
+  "xiaohongshu": {
+    "label": "小红书",
+    "url": "https://creator.xiaohongshu.com/publish/publish?source=official",
+    "types": ["image"],
+    "selectors": {
+      "avatar": [
+        "img.avatar-item",
+        ".user-avatar",
+        ".avatar-wrap",
+        ".side-bar-avatar",
+        "header img[alt*='头像']",
+        ".creator-avatar",
+        ".user-info",
+        ".author-name"
+      ],
+      "login_modal": [
+        ".login-box",
+        ".qrcode-img",
+        ".login-container",
+        ".qrcode-box",
+        ".content-wrapper .login"
+      ],
+      "popovers": [
+        ".d-popover",
+        ".guide-popover",
+        ".popover-content",
+        "div[role='tooltip']",
+        ".driver-popover-item"
+      ],
+      "tab_image_note": [
+        ".publish-tab:nth-child(2)",
+        "div[aria-label*='图文']"
+      ],
+      "title": [
+        "input.d-input__inner[placeholder*='填写标题']",
+        "input[placeholder*='填写标题']",
+        "input[placeholder*='标题']",
+        ".titleInput input",
+        ".title-input input",
+        "#post-title"
+      ],
+      "content_editor": [
+        "p[data-placeholder*='输入正文描述']",
+        "div.post-content div[contenteditable='true']",
+        "div.ql-editor[contenteditable='true']",
+        "div[contenteditable='true']",
+        "#post-textarea",
+        "textarea[placeholder*='正文']"
+      ],
+      "image_file_input": [
+        ".upload-content input.upload-input",
+        "input[type='file'][accept*='image']",
+        ".upload-input-container input[type='file']",
+        "input[type='file']"
+      ],
+      "image_previews": [
+        ".img-preview-area .pr",
+        ".preview-item",
+        ".upload-image-list .image-item",
+        ".image-box",
+        ".media-preview-card"
+      ],
+      "topic_input": [
+        "input[placeholder*='话题']",
+        ".topic-container input",
+        ".topic-input"
+      ],
+      "original_declaration": [".declaration-item"],
+      "publish_btn": [
+        "button.publishBtn",
+        "button.bg-red",
+        ".submit-btn button",
+        "button[type='submit']"
+      ],
+      "draft_btn": [".draft-btn"]
+    }
+  },
+  "douyin": {
+    "label": "抖音",
+    "url": "https://creator.douyin.com/creator-micro/content/upload",
+    "types": ["video"],
+    "selectors": {
+      "avatar": [
+        "img[class*='avatar']",
+        ".semi-avatar img",
+        ".user-avatar",
+        "[class*='user-info']",
+        "[class*='header-avatar']",
+        "[class*='creator-avatar']"
+      ],
+      "login_modal": [
+        ".login-guide",
+        ".semi-modal-content",
+        "div[class*='login-panel']",
+        "div[class*='login-card']",
+        "div[class*='qrcode']",
+        "div[class*='loginContainer']",
+        "img[src*='qrcode']"
+      ],
+      "dismiss_guide": [
+        ".semi-modal-close",
+        "div[role='dialog'] button[aria-label*='Close']"
+      ],
+      "video_input": [
+        "input[type='file'][accept*='video']",
+        ".semi-upload-hidden-input",
+        "input[type='file']"
+      ],
+      "upload_btn": ["[class*='upload-btn']"],
+      "title": [
+        "input[placeholder*='填写作品标题']",
+        "input[placeholder*='作品标题']",
+        "input[placeholder*='标题']",
+        "input[class*='titleInput']",
+        "[class*='title'] input"
+      ],
+      "description": [
+        "textarea[placeholder*='添加作品简介']",
+        "textarea[placeholder*='作品简介']",
+        "textarea[placeholder*='简介']",
+        "div[contenteditable='true']",
+        ".zone-container"
+      ],
+      "cover_trigger": ["[class*='coverControl']", "[class*='cover-card']"],
+      "cover_input": [
+        ".dy-creator-content-modal input[type='file']",
+        ".semi-upload-hidden-input[accept*='image']",
+        "input[type='file'][accept*='image']"
+      ],
+      "upload_complete_status": [
+        "[class*='upload-card']",
+        "[class*='file-item']",
+        "[class*='success-']",
+        "[class*='video-item']"
+      ],
+      "video_duration": ["[class*='duration']", "[class*='time']"],
+      "video_thumbnail": [
+        "[class*='video-player'] video",
+        "[class*='preview-cover'] img",
+        "[class*='cover-image']",
+        "[class*='cover'] img",
+        "img[class*='poster']"
+      ],
+      "upload_error": ["[class*='upload-error']", "[class*='error-tip']"],
+      "publish_btn": [
+        "button[class*='button--']",
+        ".submit-btn button",
+        "button[type='submit']"
+      ]
+    }
+  },
+  "bilibili": {
+    "label": "B站",
+    "url": "https://member.bilibili.com/platform/upload/video/frame",
+    "types": ["video"],
+    "selectors": {
+      "avatar": [
+        ".header-avatar-wrap img",
+        "img.avatar-img",
+        ".nav-avatar",
+        ".bili-avatar",
+        ".up-info-container",
+        "a[href*='space.bilibili.com']",
+        ".user-profile"
+      ],
+      "login_modal": [
+        ".login-form",
+        ".qrcode-img",
+        ".bili-mini-login",
+        ".login-box",
+        ".passport-login-container"
+      ],
+      "dismiss_draft": [".bcc-dialog button.bcc-button--default"],
+      "video_input": [
+        "input[type='file'][accept*='video']",
+        ".upload-wrp input[type='file']",
+        "input.upload-file",
+        "input[type='file']"
+      ],
+      "upload_btn": [".upload-btn-container", ".upload-wrp"],
+      "title": [
+        "input[placeholder*='请输入稿件标题']",
+        "input[placeholder*='稿件标题']",
+        "input[placeholder*='标题']",
+        "input.title-input",
+        ".video-title input"
+      ],
+      "description": [
+        "div.ql-editor[contenteditable='true']",
+        "div[contenteditable='true']",
+        "textarea[placeholder*='输入简介']",
+        "textarea.archive-desc-editor",
+        "textarea.desc-input"
+      ],
+      "tag_input": [
+        "#tag-container input[placeholder*='按回车键Enter创建标签']",
+        "input[placeholder*='按回车键Enter创建标签']",
+        "input[placeholder*='Enter创建标签']",
+        "input[placeholder*='创建标签']",
+        "#tag-container input"
+      ],
+      "cover_trigger": [".cover-preview", ".cover-editor"],
+      "cover_input": [
+        ".cover-editor input[type='file'][accept*='image']",
+        ".bcc-dialog input[type='file'][accept*='image']",
+        "input[type='file'][accept*='image']"
+      ],
+      "original_radio": ["label.radio-item:nth-child(1)"],
+      "upload_complete_status": [
+        ".upload-success",
+        ".file-item.is-success",
+        ".file-list .file-item",
+        ".video-item"
+      ],
+      "video_duration": [".duration", ".video-duration", ".file-item .time"],
+      "video_thumbnail": [
+        ".cover-preview img",
+        ".video-cover img",
+        "img.cover-img",
+        ".file-item img",
+        ".video-item img"
+      ],
+      "upload_error": [".upload-error", ".error-tip"],
+      "submit_btn": ["button.submit-add", ".submit-btn button"]
+    }
+  },
+  "channels": {
+    "label": "微信视频号",
+    "url": "https://channels.weixin.qq.com/platform/post/create",
+    "types": ["video"],
+    "selectors": {
+      "avatar": [
+        ".finder-nickname",
+        ".account-info .name",
+        ".weui-desktop-account__info",
+        "img.finder-avatar",
+        "div.user-info",
+        ".weui-desktop-layout__header .avatar"
+      ],
+      "login_modal": [
+        ".login-container",
+        ".qrcode-container",
+        "img[src*='qrcode']",
+        ".login__qrcode"
+      ],
+      "dismiss_guide": [
+        ".guide-dialog__close",
+        ".weui-desktop-dialog__close-btn"
+      ],
+      "video_input": [
+        "input[type='file'][accept*='video']",
+        "input[type='file']"
+      ],
+      "upload_btn": [".upload-area"],
+      "title": ["input[placeholder*='短标题']", ".short-title-input input"],
+      "description": [
+        ".input-editor",
+        "div[contenteditable='true']",
+        "textarea[placeholder*='添加描述']",
+        "textarea[placeholder*='概括视频主要内容']",
+        "textarea"
+      ],
+      "cover_trigger": [".vertical-cover-wrap", ".cover-preview"],
+      "cover_input": [
+        "input[type='file'][accept*='image']",
+        ".weui-desktop-dialog input[type='file']"
+      ],
+      "upload_complete_status": [
+        ".post-file-info",
+        ".upload-success",
+        ".video-item",
+        ".post-video-preview"
+      ],
+      "video_duration": [".duration", ".video-time"],
+      "video_thumbnail": [
+        ".cover-preview img",
+        ".video-cover img",
+        ".post-cover img",
+        "video"
+      ],
+      "upload_error": [".upload-error", ".error-text"],
+      "publish_btn": [
+        "button.weui-desktop-btn_primary",
+        ".submit-button button"
+      ]
+    }
+  },
+  "kuaishou": {
+    "label": "快手",
+    "url": "https://cp.kuaishou.com/article/publish/video",
+    "types": ["video"],
+    "selectors": {
+      "avatar": [
+        ".user-name",
+        ".header-user .name",
+        "div.names div.name",
+        "img.avatar",
+        "div.user-info",
+        ".header-right .user-box"
+      ],
+      "login_modal": [
+        "#login-form",
+        "div.qr-login img[alt='qrcode']",
+        ".login-container",
+        ".login-modal"
+      ],
+      "dismiss_guide": ["button[aria-label='Skip']", "div.ant-modal-close"],
+      "video_input": [
+        "button[class^='_upload-btn'] input[type='file']",
+        "div.progress-div input[type='file']",
+        "input[type='file'][accept*='video']",
+        "input[type='file']"
+      ],
+      "upload_btn": ["button[class^='_upload-btn']"],
+      "title": ["input[placeholder*='标题']", ".title-input input"],
+      "description": [
+        "div[contenteditable='true']",
+        "textarea[placeholder*='描述']",
+        "textarea"
+      ],
+      "cover_trigger": [".cover-setting"],
+      "cover_input": [
+        "div[role='document'].ant-modal input[type='file']",
+        "input[type='file'][accept*='image']"
+      ],
+      "publish_btn": ["button.ant-btn-primary", ".publish-btn button"]
+    }
+  },
+  "weibo": {
+    "label": "微博",
+    "url": "https://weibo.com/",
+    "types": ["image", "article"],
+    "selectors": {
+      "avatar": [
+        ".woo-avatar-main",
+        "[class*='gn_name']",
+        "a[href*='/u/'] img",
+        ".woo-box-item-flex a[href*='/u/']",
+        "[class*='nav_user']"
+      ],
+      "login_modal": [
+        ".login-box",
+        "div[class*='login_wrapper']",
+        ".woo-modal-main .login",
+        "div[class*='login-panel']"
+      ],
+      "dismiss_guide": [".woo-dialog-close", "i.woo-font--cross"],
+      "content_editor": [
+        "textarea[placeholder*='新鲜事']",
+        "textarea[class*='Form_input']",
+        "div[contenteditable='true'][class*='Form_input']",
+        "div.Form_input_2gtXx",
+        "textarea"
+      ],
+      "media_input": [
+        "input[type='file'][accept*='image']",
+        "input[type='file'][accept*='video']",
+        "input[type='file']"
+      ],
+      "upload_btn": ["div[class*='toolbar_icon']"],
+      "send_btn": ["button[class*='Tool_btn']", ".send_btn button"]
+    }
+  },
+  "wechat": {
+    "label": "微信公众号",
+    "url": "https://mp.weixin.qq.com/",
+    "types": ["article"],
+    "selectors": {
+      "avatar": [
+        ".weui-desktop-account__info",
+        ".mp-header .avatar",
+        "img.account_avatar",
+        ".account_info",
+        ".user_name"
+      ],
+      "login_modal": [
+        ".login__type__container__scan__qrcode",
+        ".qrcode_box",
+        "img.login__type__container__scan__qrcode_img",
+        ".login_frame"
+      ],
+      "dismiss_guide": [".weui-desktop-dialog__close-btn"],
+      "title": [
+        "#title",
+        "input[placeholder*='标题']",
+        ".title_input input",
+        "input.weui-desktop-form__input"
+      ],
+      "content_editor": [
+        "#ueditor_0",
+        "div.edui-editor-body",
+        "div[contenteditable='true']",
+        "textarea"
+      ],
+      "media_input": [
+        "input[type='file'][accept*='image']",
+        "input[type='file']"
+      ],
+      "draft_btn": ["#js_submit", ".weui-desktop-btn_default"],
+      "publish_btn": [".weui-desktop-btn_primary"]
+    }
+  },
+  "zhihu": {
+    "label": "知乎",
+    "url": "https://zhuanlan.zhihu.com/write",
+    "types": ["article"],
+    "selectors": {
+      "avatar": [
+        ".AppHeader-profile",
+        ".WriteIndex-avatar",
+        "header button[aria-label*='头像']",
+        "header img[alt*='头像']",
+        ".Avatar"
+      ],
+      "login_modal": [".SignContainer", ".SignFlow", ".Sign-content"],
+      "title": [
+        "textarea.WriteIndex-titleInput",
+        "textarea[placeholder*='标题']",
+        "input[placeholder*='标题']",
+        ".Input[placeholder*='标题']"
+      ],
+      "content_editor": [
+        ".public-DraftEditor-content",
+        "[contenteditable=\"true\"]",
+        ".ProseMirror",
+        "div[role=\"textbox\"]",
+        ".ql-editor"
+      ],
+      "image_file_input": [
+        "input[type='file'][accept*='image']",
+        ".WriteIndex input[type='file']"
+      ],
+      "topic_input": [
+        ".PublishPanel-tagInput input",
+        "input[placeholder*='添加话题']",
+        "input[placeholder*='话题']",
+        ".Tag-input"
+      ],
+      "publish_btn": [".PublishPanel-publishButton", "button.Button--primary"],
+      "draft_save_status": [".WriteIndex-draftStatus"]
+    }
+  },
+  "toutiao": {
+    "label": "今日头条",
+    "url": "https://mp.toutiao.com/profile_v4/graphic/publish",
+    "types": ["article"],
+    "selectors": {
+      "avatar": [
+        "img[class*='avatar']",
+        ".user-avatar",
+        ".header-user-avatar",
+        "div.user-info",
+        ".account-name"
+      ],
+      "login_modal": [
+        ".login-container",
+        "div[class*='login-box']",
+        "div[class*='qrcode']",
+        ".auth-login-box"
+      ],
+      "dismiss_guide": [".byte-modal-close", ".semi-modal-close"],
+      "title": [
+        "textarea[placeholder*='标题']",
+        "input[placeholder*='标题']",
+        ".article-title-wrap textarea",
+        ".title-input"
+      ],
+      "content_editor": [
+        "div.ProseMirror",
+        "div[contenteditable='true']",
+        ".c-editor-content",
+        "textarea"
+      ],
+      "media_input": [
+        "input[type='file'][accept*='image']",
+        "input[type='file']"
+      ],
+      "publish_btn": ["button.byte-btn-primary", ".publish-btn button"]
+    }
+  },
+  "baijiahao": {
+    "label": "百家号",
+    "url": "https://baijiahao.baidu.com/builder/rc/edit?type=news",
+    "types": ["article"],
+    "selectors": {
+      "avatar": [
+        ".header-user-avatar",
+        ".user-name",
+        "[class*='user-avatar']",
+        "[class*='header-avatar']",
+        "div.user-info",
+        ".header-user-name"
+      ],
+      "login_modal": [
+        ".pass-login-container",
+        "div.tang-pass-login",
+        "div[class*='login-box']",
+        "#passport-login-pop"
+      ],
+      "dismiss_guide": [".driver-popover-item", ".ant-modal-close"],
+      "title": [
+        "input[placeholder*='标题']",
+        "input[placeholder*='请输入标题']",
+        "input.title-input",
+        "textarea[placeholder*='标题']",
+        "[class*='title'] input"
+      ],
+      "content_editor": [
+        "div.ProseMirror",
+        "div[contenteditable='true']",
+        "div.ueditor-body",
+        "div.ql-editor",
+        "textarea[placeholder*='正文']"
+      ],
+      "media_input": [
+        "input[type='file'][accept*='image']",
+        "input[type='file']"
+      ],
+      "publish_btn": [
+        "button[class*='publishButton']",
+        ".client_pages_content_news_components_publishButton",
+        ".submit-btn button"
+      ]
+    }
+  },
+  "wordpress": {
+    "label": "WordPress",
+    "url": "",
+    "types": ["article"],
+    "selectors": {}
+  },
+  "test": {
+    "label": "本地测试平台",
+    "url": "http://localhost:3100/test-platform",
+    "types": ["image", "article", "video"],
+    "selectors": {
+      "title": ["#title"],
+      "content_editor": ["#body"],
+      "media_input": ["#media"],
+      "upload_complete_status": ["#upload-done"],
+      "tag_input": ["#tags"]
+    }
+  }
+}
