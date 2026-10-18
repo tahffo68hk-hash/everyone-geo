@@ -105,6 +105,14 @@ export function BrowserAssistedPanel({
   const activeChannel = channels.find((c) => c.channel === activeChannelKey) || channels[0];
   const isVideoChannel = Boolean(activeChannel?.requiresVideo || ["BILIBILI", "DOUYIN", "WECHAT_CHANNELS", "KUAISHOU"].includes(activeChannelKey));
 
+  // 开发调试模式：仅在本地研发或附带 ?dev 参数时暴露测试素材注入按钮，生产正式用户界面严格隐藏
+  const isDevMode = typeof window !== "undefined" && (
+    process.env.NODE_ENV === "development" ||
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    new URLSearchParams(window.location.search).has("dev")
+  );
+
   // 同步草稿内容到编辑态与配图列表
   useEffect(() => {
     if (selectedDraft) {
@@ -127,27 +135,8 @@ export function BrowserAssistedPanel({
           }))
         );
       } else {
-        // 提供针对小红书图文的优质素材推荐结构
-        setMediaItems([
-          {
-            index: 1,
-            type: "IMAGE",
-            url: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop",
-            notes: "封面首图 (建议 3:4 比例，突出痛点)",
-          },
-          {
-            index: 2,
-            type: "IMAGE",
-            url: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop",
-            notes: "配图 2：核心方案与关键数据对比",
-          },
-          {
-            index: 3,
-            type: "IMAGE",
-            url: "https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?w=800&auto=format&fit=crop",
-            notes: "配图 3：实战落地步骤与行动指引",
-          },
-        ]);
+        // 正式用户由草稿或本地真实文件指定素材，不自动塞入假素材
+        setMediaItems([]);
       }
     }
   }, [selectedDraft]);
@@ -208,9 +197,13 @@ export function BrowserAssistedPanel({
           setManualTakeoverMode(true);
         }
 
-        // 终态或需用户操作时停止自动轮询 executing 状态
-        if (["PUBLISHED", "FAILED", "AWAITING_CONFIRMATION", "MANUAL_REQUIRED", "WAITING_FOR_LOGIN"].includes(resp.status)) {
+        // 终态或需人工最终审核时停止自动轮询 executing 状态
+        if (["PUBLISHED", "FAILED", "AWAITING_CONFIRMATION", "MANUAL_REQUIRED"].includes(resp.status)) {
           setExecuting(false);
+        } else if (resp.status === "WAITING_FOR_LOGIN" || resp.status === "PENDING_ACCOUNT_AUTH") {
+          // 正在等待创作者扫码授权：继续轮询以在扫码完成后自动推进流水线
+          setExecuting(true);
+          timer = setTimeout(poll, 1500);
         } else {
           timer = setTimeout(poll, 1000);
         }
@@ -897,14 +890,16 @@ export function BrowserAssistedPanel({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleLoadTestFixtures}
-                    className="text-xs text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-200 flex items-center gap-1 font-medium transition shadow-xs"
-                    title="一键载入本地可解码的真实 MP4 视频与高清封面 (sample_test_video.mp4 / sample_test_cover.jpg)，快速验证浏览器自动化"
-                  >
-                    🧪 一键载入测试素材
-                  </button>
+                  {isDevMode && (
+                    <button
+                      type="button"
+                      onClick={handleLoadTestFixtures}
+                      className="text-xs text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-200 flex items-center gap-1 font-medium transition shadow-xs"
+                      title="[开发测试模式专用] 一键载入本地可解码真实 MP4 视频与高清封面 (sample_test_video.mp4 / sample_test_cover.jpg)"
+                    >
+                      🧪 [Dev] 载入测试素材
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setShowAddMediaInput(!showAddMediaInput)}
@@ -1294,12 +1289,16 @@ export function BrowserAssistedPanel({
                       ? "bg-rose-100 text-rose-800"
                       : taskState.status === "MANUAL_REQUIRED"
                       ? "bg-amber-100 text-amber-800"
-                      : taskState.status === "WAITING_FOR_LOGIN"
+                      : taskState.status === "WAITING_FOR_LOGIN" || taskState.status === "PENDING_ACCOUNT_AUTH"
                       ? "bg-amber-100 text-amber-800 border border-amber-300"
                       : "bg-blue-50 text-blue-700"
                   }`}
                 >
-                  {taskState.status}
+                  {taskState.status === "PENDING_ACCOUNT_AUTH"
+                    ? "待账号授权 (PENDING_ACCOUNT_AUTH)"
+                    : taskState.status === "WAITING_FOR_LOGIN"
+                    ? "等待登录 (WAITING_FOR_LOGIN)"
+                    : taskState.status}
                 </span>
               </div>
 
@@ -1356,15 +1355,21 @@ export function BrowserAssistedPanel({
                 ))}
               </div>
 
-              {/* 等待创作者登录提示 */}
-              {taskState.status === "WAITING_FOR_LOGIN" && (
+              {/* 等待创作者扫码登录提示 (PENDING_ACCOUNT_AUTH / WAITING_FOR_LOGIN) */}
+              {(taskState.status === "WAITING_FOR_LOGIN" || taskState.status === "PENDING_ACCOUNT_AUTH") && (
                 <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex flex-col gap-2.5">
-                  <div className="font-semibold flex items-center gap-1.5">
-                    <span className="text-sm">🔑</span>
-                    <span>等待平台账号登录</span>
+                  <div className="font-semibold flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">🔑</span>
+                      <span>等待创作者扫码登录 (PENDING_ACCOUNT_AUTH)</span>
+                    </div>
+                    <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.5 rounded font-mono">
+                      受控 Chrome 保持打开中
+                    </span>
                   </div>
                   <p className="text-[11px] text-amber-800 leading-relaxed">
-                    检测到创作者账号尚未登录。请点击下方【调起扫码登录页】，在弹出的受控 Chrome 窗口中使用手机 App 扫码登录。登录完成后系统将继续执行辅助填写。
+                    检测到创作者账号尚未授权。受控 Chrome 已打开并展示官方扫码界面，请使用手机客户端扫码登录。
+                    <strong className="text-amber-950 font-medium"> 扫码成功后系统将自动继续原发布任务，无需重新创建内容。</strong>
                   </p>
                   <div className="flex flex-wrap gap-2 pt-0.5">
                     <button
@@ -1373,14 +1378,14 @@ export function BrowserAssistedPanel({
                       disabled={openingLogin}
                       className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-medium text-xs transition shadow-sm flex items-center gap-1"
                     >
-                      {openingLogin ? "调起中..." : "📱 调起扫码登录页"}
+                      {openingLogin ? "调起中..." : "📱 激活扫码登录页"}
                     </button>
                     <button
                       type="button"
-                      onClick={handleStartPublishTask}
-                      className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-xs transition shadow-sm"
+                      onClick={handleResumeTask}
+                      className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-xs transition shadow-sm flex items-center justify-center gap-1 font-semibold"
                     >
-                      已完成登录，重新检查并继续
+                      <span>🔄 已完成扫码，立即继续原任务</span>
                     </button>
                     <button
                       type="button"

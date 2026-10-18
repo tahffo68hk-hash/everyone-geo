@@ -74,6 +74,7 @@ export interface TaskStatusResponse {
   account_id: string;
   status:
     | "WAITING_FOR_LOGIN"
+    | "PENDING_ACCOUNT_AUTH"
     | "READY"
     | "FILLING"
     | "FILLED"

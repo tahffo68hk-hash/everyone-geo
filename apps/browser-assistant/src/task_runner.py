@@ -159,12 +159,32 @@ class TaskManager:
 
     def resume_task(self, task_id: str) -> bool:
         state = self.get_task(task_id)
-        if state:
-            with state.lock:
-                state.is_paused = False
-                state.add_log(state.current_step or StepName.CHECK_LOGIN, "任务恢复", StepStatus.RUNNING, "用户已恢复自动化流程")
-            return True
-        return False
+        if not state:
+            return False
+        with state.lock:
+            state.is_paused = False
+            state.is_manual_takeover = False
+            thread = self._threads.get(task_id)
+            if not thread or not thread.is_alive():
+                state.status = TaskStatus.FILLING
+                state.add_log(
+                    state.current_step or StepName.CHECK_LOGIN,
+                    "原任务恢复执行",
+                    StepStatus.RUNNING,
+                    "正在继续执行原发布任务流水线..."
+                )
+                new_thread = threading.Thread(target=self._run_task_pipeline, args=(state,), daemon=True)
+                self._threads[task_id] = new_thread
+                new_thread.start()
+                return True
+            else:
+                state.add_log(
+                    state.current_step or StepName.CHECK_LOGIN,
+                    "任务恢复",
+                    StepStatus.RUNNING,
+                    "创作者已恢复自动化流程"
+                )
+                return True
 
     def cancel_task(self, task_id: str) -> bool:
         state = self.get_task(task_id)
@@ -377,11 +397,47 @@ class TaskManager:
             duration = int((time.time() - t0) * 1000)
 
             if not is_logged_in:
-                state.status = TaskStatus.WAITING_FOR_LOGIN
-                state.add_log(StepName.CHECK_LOGIN, "等待用户登录", StepStatus.FAILED, f"{login_msg}。受控浏览器已保持打开，请在窗口中扫码或输入账号登录后重试。", duration)
-                return
+                state.status = TaskStatus.PENDING_ACCOUNT_AUTH
+                state.add_log(
+                    StepName.CHECK_LOGIN,
+                    "等待创作者扫码登录 (PENDING_ACCOUNT_AUTH)",
+                    StepStatus.RUNNING,
+                    f"{login_msg}。受控 Chrome 窗口已保持打开并展示登录界面。创作者扫码授权后系统将自动继续原任务，无需重新创建内容。",
+                    duration
+                )
+
+                # 持续监听扫码授权状态（持续 180 秒）
+                poll_deadline = time.time() + 180
+                while time.time() < poll_deadline and not state.is_cancelled:
+                    if state.is_manual_takeover or state.is_paused:
+                        break
+                    time.sleep(2.0)
+                    try:
+                        ok_recheck, msg_recheck, _ = publisher.check_login()
+                        if ok_recheck:
+                            is_logged_in = True
+                            state.status = TaskStatus.FILLING
+                            state.add_log(
+                                StepName.CHECK_LOGIN,
+                                "扫码授权成功 (REAL_LOGIN_PASS)",
+                                StepStatus.SUCCESS,
+                                f"已检测到创作者登录成功（{msg_recheck}），原任务自动继续执行！"
+                            )
+                            break
+                    except Exception:
+                        pass
+
+                if not is_logged_in:
+                    state.status = TaskStatus.PENDING_ACCOUNT_AUTH
+                    state.add_log(
+                        StepName.CHECK_LOGIN,
+                        "等待扫码超时或已暂停",
+                        StepStatus.FAILED,
+                        "未在限定时间内完成扫码。受控 Chrome 保持打开，扫码完成后可在控制台点击【已完成登录，继续原任务】恢复执行。"
+                    )
+                    return
             else:
-                state.add_log(StepName.CHECK_LOGIN, "登录状态正常", StepStatus.SUCCESS, login_msg, duration)
+                state.add_log(StepName.CHECK_LOGIN, "登录状态正常 (REAL_LOGIN_PASS)", StepStatus.SUCCESS, login_msg, duration)
 
             if not self._wait_if_paused(state):
                 return

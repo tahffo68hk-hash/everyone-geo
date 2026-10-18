@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 
 class TaskStatus(str, Enum):
-    WAITING_FOR_LOGIN = "WAITING_FOR_LOGIN"      # 等待用户在平台完成登录
+    WAITING_FOR_LOGIN = "WAITING_FOR_LOGIN"      # 等待用户在平台完成登录 (兼容旧版)
+    PENDING_ACCOUNT_AUTH = "PENDING_ACCOUNT_AUTH"# 等待账号授权/扫码登录
     READY = "READY"                              # 登录已就绪，等待执行填写
     FILLING = "FILLING"                          # 正在自动填写表单/富文本/上传素材
     FILLED = "FILLED"                            # 表单填写完毕并通过一致性比对
