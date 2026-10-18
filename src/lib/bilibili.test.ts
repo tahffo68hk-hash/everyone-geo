@@ -8,6 +8,7 @@ import {
   bilibiliCover,
   bilibiliDeclaration,
   pickDeclaration,
+  tagOutcome,
 } from "../../scripts/publisher/executor.mjs";
 const executable = browserExecutable() || chromium.executablePath();
 it("rejects invalid declarations", () => {
@@ -76,3 +77,9 @@ for (const user of [true, false])
     },
     20000,
   );
+
+it("tolerates partially dropped bilibili tags but not all", () => {
+  expect(tagOutcome(["a", "b"], ["a"]).dropped).toEqual(["b"]);
+  expect(tagOutcome(["a"], ["a"]).dropped).toEqual([]);
+  expect(() => tagOutcome(["a", "b"], [])).toThrow("标签全部未生成");
+});

@@ -110,6 +110,12 @@ export async function bilibiliDeclaration(page, payload) {
     throw Error("创作声明未能验证，请人工检查；不标记已填写");
   }
 }
+export function tagOutcome(wanted, present) {
+  const dropped = wanted.filter((t) => !present.includes(t));
+  if (wanted.length && dropped.length === wanted.length)
+    throw Error("标签全部未生成：" + dropped.join("、") + "，请人工确认");
+  return { dropped };
+}
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const waitForTakeover = (context) =>
   new Promise((resolve) => {
@@ -314,7 +320,8 @@ export async function prepare(page, platform, payload, progress = () => {}) {
     payload.body +
     (!tags && payload.tags ? "\n" + payload.tags : "");
   await body.fill(bodyValue);
-  let tagReadback = null;
+  let tagReadback = null,
+    droppedTags = [];
   if (tags && payload.tags) {
     if (platform === "bilibili") {
       const wanted = payload.tags
@@ -334,18 +341,18 @@ export async function prepare(page, platform, payload, progress = () => {}) {
         await page.locator(itemSel).nth(extra).locator(".close").click();
         await delay(400);
       }
-      for (const tag of wanted) {
-        if ((await current()).includes(tag)) continue;
-        await tags.click();
-        await tags.fill(tag);
-        await delay(400);
-        await tags.press("Enter");
-        await delay(800);
-      }
+      // Second pass retries slowly; Bilibili silently drops some tags (e.g. moderation).
+      for (const wait of [800, 2000])
+        for (const tag of wanted) {
+          if ((await current()).includes(tag)) continue;
+          await tags.click();
+          await tags.fill(tag);
+          await delay(400);
+          await tags.press("Enter");
+          await delay(wait);
+        }
       tagReadback = await current();
-      const missing = wanted.filter((t) => !tagReadback.includes(t));
-      if (missing.length)
-        throw Error("标签未生成：" + missing.join("、") + "，请人工确认");
+      droppedTags = tagOutcome(wanted, tagReadback).dropped;
     } else await tags.fill(payload.tags);
   }
   const read = async (l) =>
@@ -359,7 +366,11 @@ export async function prepare(page, platform, payload, progress = () => {}) {
     mode: "PREPARE_ONLY",
     warnings: [
       "分类、分区及话题识别仍需人工审核；封面与声明请复核；未点击最终提交",
+      ...(droppedTags.length
+        ? ["平台未接受标签：" + droppedTags.join("、") + "，请人工确认或替换"]
+        : []),
     ],
+    ...(droppedTags.length ? { droppedTags } : {}),
   };
   if (
     (title && readback.title !== payload.title) ||
