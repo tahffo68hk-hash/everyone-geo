@@ -105,13 +105,6 @@ npm run test:publish       # 发布 API、ZIP、禁止测试任务登记发布�
 
 核心代码：`src/lib/gateway.ts`、`metrics.ts`、`content.ts`，`src/app/api/`，`src/components/`，`scripts/publisher/`。数据库结构在 `scripts/schema.sql`。开发修改 Next.js 前先读 `node_modules/next/dist/docs/`。
 
-本环境默认 `.git` 缺少 objects/refs 且为只读，已有历史位于可写 `.local-git`。本地查看及提交使用：
-
-```bash
-export GIT_DIR=$PWD/.local-git GIT_WORK_TREE=$PWD
-git log -5 --oneline
-git status --short
-# 本地修改验收后：git add -A && git commit -m "..."
-```
+本地 Git 历史在标准 `.git` 中，直接 `git log` / `git commit` 即可（未配置远端，勿 push）。
 
 未 push；最终提交号见 `git log -1 --oneline`。
