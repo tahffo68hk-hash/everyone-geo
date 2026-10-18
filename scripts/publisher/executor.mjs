@@ -16,7 +16,10 @@ export function browserExecutable() {
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const waitForTakeover = (context) =>
   new Promise((resolve) => {
-    const timer = setTimeout(resolve, 15 * 60 * 1000);
+    const timer = setTimeout(
+      resolve,
+      +process.env.GEOLENS_TAKEOVER_MS || 15 * 60 * 1000,
+    );
     context.once("close", () => {
       clearTimeout(timer);
       resolve();
@@ -32,6 +35,53 @@ export async function find(page, selectors, visible = true) {
       } catch {}
     }
   return null;
+}
+// Hosts that only ever serve login/passport pages; being there means NOT logged in.
+const LOGIN_HOSTS = {
+  bilibili: [/(^|\.)passport\.bilibili\.com$/],
+};
+// Session cookies that must exist before a platform is treated as logged in.
+const REQUIRED_COOKIES = { bilibili: ["SESSDATA", "DedeUserID"] };
+export function onLoginPage(platform, url) {
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return (LOGIN_HOSTS[platform] || []).some((r) => r.test(host));
+}
+export function hasSessionCookies(platform, cookies) {
+  const need = REQUIRED_COOKIES[platform] || [];
+  const now = Date.now() / 1000;
+  return need.every((n) =>
+    cookies.some(
+      (c) =>
+        c.name === n &&
+        c.value &&
+        (c.expires === -1 || !c.expires || c.expires > now),
+    ),
+  );
+}
+export async function isLoggedIn(page, context, platform) {
+  const cfg = catalog[platform];
+  if (onLoginPage(platform, page.url())) return false;
+  if (REQUIRED_COOKIES[platform]) {
+    const cookies = await context.cookies().catch(() => []);
+    if (!hasSessionCookies(platform, cookies)) return false;
+  }
+  if (await find(page, cfg.selectors.login_modal || [])) return false;
+  return !!(await find(
+    page,
+    [
+      ...(cfg.selectors.avatar || []),
+      ...(cfg.selectors.title || []),
+      ...(cfg.selectors.video_input || []),
+      ...(cfg.selectors.media_input || []),
+      'input[type="file"]',
+    ],
+    false,
+  ));
 }
 export async function prepare(page, platform, payload, progress = () => {}) {
   const config = catalog[platform],
@@ -67,8 +117,11 @@ export async function prepare(page, platform, payload, progress = () => {}) {
     await input.setInputFiles(
       payload.media.map((m) => path.resolve("uploads", m.path)),
     );
+    // Bilibili lists the file item as soon as upload *starts*; require the explicit done text.
     const complete = [
-      ...(s.upload_complete_status || s.upload_success || []),
+      ...(platform === "bilibili"
+        ? []
+        : s.upload_complete_status || s.upload_success || []),
       "text=上传成功",
       "text=重新上传",
       "text=上传完成",
@@ -77,7 +130,9 @@ export async function prepare(page, platform, payload, progress = () => {}) {
         : []),
     ];
     let done = false;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 300; i++) {
+      if (await find(page, s.upload_error || []))
+        throw Error("平台提示上传失败；请人工检查，不标记已填写");
       if (await find(page, complete)) {
         done = true;
         break;
@@ -170,7 +225,12 @@ export async function executeBrowser(job, action, update, accountUpdate) {
   const context = await chromium.launchPersistentContext(profile, {
     executablePath: browserExecutable(),
     headless: !headed,
-    args: ["--disable-dev-shm-usage"],
+    args: [
+      "--disable-dev-shm-usage",
+      ...(process.env.GEOLENS_CDP_PORT
+        ? ["--remote-debugging-port=" + process.env.GEOLENS_CDP_PORT]
+        : []),
+    ],
   });
   const page = context.pages()[0] || (await context.newPage());
   page.setDefaultTimeout(20000);
@@ -181,19 +241,7 @@ export async function executeBrowser(job, action, update, accountUpdate) {
         () => document.body.dataset.testReady === "true",
       );
     // Recover Bilibili login via home before returning to the upload frame, as upstream.
-    const ready = async () =>
-      !(await find(page, cfg.selectors.login_modal || [])) &&
-      !!(await find(
-        page,
-        [
-          ...(cfg.selectors.avatar || []),
-          ...(cfg.selectors.title || []),
-          ...(cfg.selectors.video_input || []),
-          ...(cfg.selectors.media_input || []),
-          'input[type="file"]',
-        ],
-        false,
-      ));
+    const ready = () => isLoggedIn(page, context, job.platform);
     let logged = job.platform === "test" || (await ready());
     if (!logged) {
       accountUpdate("NEEDS_LOGIN");
@@ -229,6 +277,14 @@ export async function executeBrowser(job, action, update, accountUpdate) {
       const readback = await prepare(page, job.platform, payload, (p) =>
         update({ progress: p }),
       );
+      if (process.env.GEOLENS_SCREENSHOT_PREFIX) {
+        const shot = path.resolve(
+          "screenshots",
+          `${process.env.GEOLENS_SCREENSHOT_PREFIX}-filled.png`,
+        );
+        await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+        readback.screenshot = shot;
+      }
       update({
         status: "FILLED_AWAITING_REVIEW",
         readback: JSON.stringify(readback),
