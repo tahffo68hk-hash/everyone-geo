@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env*
+data/*.db*
+uploads/
+test-results/
+*.tsbuildinfo
+
+.local-git/

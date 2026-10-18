@@ -1,0 +1,2 @@
+GeoLens Mini demo assets (cover.svg, preview.mp4) are original geometric artwork generated locally by code, without third-party photos, music or footage. Dedicated to the public domain under CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+演示素材，仅供演示预览。不得未经用户明确选择自动附加到发布任务。
