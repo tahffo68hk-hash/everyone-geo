@@ -1,5 +1,5 @@
 import { redeemClaim } from "../../../../../scripts/publisher/claims.mjs";
-import { pickDeclaration } from "../../../../../scripts/publisher/executor.mjs";
+import { pickDeclaration } from "../../../../../scripts/publisher/declarations.mjs";
 import { NextRequest, NextResponse } from "next/server";
 import { session } from "@/lib/session";
 import { db, row } from "@/lib/db";
