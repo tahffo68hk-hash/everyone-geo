@@ -27,12 +27,12 @@ npm run dev
 
 顶部「模型设置」选择 Provider，填写 Base URL、Model、API Key，保存后主动点击「测试连接」。真实连接测试、生成问题、检测、建议和内容生成均需用户确认潜在费用。默认显式使用 Mock，不自动切换到付费模型。
 
-| Provider               | Base URL                                            | 默认 Model      | 实际验证                        |
-| ---------------------- | --------------------------------------------------- | --------------- | ------------------------------- |
+| Provider               | Base URL                                            | 默认 Model      | 实际验证                                          |
+| ---------------------- | --------------------------------------------------- | --------------- | ------------------------------------------------- |
 | DeepSeek               | `https://api.deepseek.com`                          | `deepseek-chat` | 已真实验证（2026-10-19，响应模型 deepseek-flash） |
-| Qwen / DashScope       | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus`     | 未验证，无 Key                  |
-| 通用 OpenAI-compatible | 用户可信 HTTPS 地址，可含 `/v1`                     | 用户填写        | 未验证，无 Key                  |
-| MockTransport          | 本地，无网络调用                                    | Mock            | 全流程通过；模拟数据/未真实验证 |
+| Qwen / DashScope       | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus`     | 未验证，无 Key                                    |
+| 通用 OpenAI-compatible | 用户可信 HTTPS 地址，可含 `/v1`                     | 用户填写        | 未验证，无 Key                                    |
+| MockTransport          | 本地，无网络调用                                    | Mock            | 全流程通过；模拟数据/未真实验证                   |
 
 适配器追加 `/chat/completions`，不跟随重定向，拒绝明文 HTTP、URL 内凭据和查询参数。支持 temperature、top_p、max_tokens、presence_penalty、frequency_penalty、seed。每请求输出最多 2,400 Token，45 秒超时，无自动重试。生成问题/建议/单份内容/测试连接各一次请求，N 道检测问题为 N 次请求；费用未知时存 NULL。
 
@@ -108,3 +108,28 @@ npm run test:publish       # 发布 API、ZIP、禁止测试任务登记发布�
 本地 Git 历史在标准 `.git` 中，直接 `git log` / `git commit` 即可（未配置远端，勿 push）。
 
 未 push；最终提交号见 `git log -1 --oneline`。
+
+## 云端账号绑定
+
+运营人员在云端执行（Node 24）：
+
+```sh
+node scripts/claim-code.mjs <accountId> --run <runId> --ttl-hours 24
+```
+
+用户在「发布工作台 → 绑定云端已登录账号」输入绑定码。绑定码单次使用、仅保存 SHA-256 哈希、到期失效。绑定会将该账号及其任务、明确指定的检测归属转移到当前会话；请只将码交给目标用户。无关联草稿的旧任务显示「手动验证任务（无关联草稿）」。
+
+运营人员通过 HTTP 准备真实草稿可使用下列命令。客户端访问 `http://127.0.0.1:3100`，独立 Cookie 保存在已忽略的 `data/operator-cookies.json`；其会话与用户浏览器不同。请为运营会话另生成绑定码（绑定会转移归属）。
+
+```sh
+node scripts/api-prepare.mjs claim XXXXX-XXXXX
+node scripts/api-prepare.mjs workspace
+node scripts/api-prepare.mjs upload --content <contentId> ./video.mp4
+node scripts/api-prepare.mjs create --content <contentId> --platform bilibili --account <accountId> --media <mediaId> --declaration 内容无需标注
+node scripts/api-prepare.mjs fill <jobId>
+node scripts/api-prepare.mjs status <jobId>
+```
+
+可用 `--cover <mediaId>` 指定已上传图片；否则 B站选首个推荐帧，不点击 AI生成。脚本只支持准备，不提供提交操作。分类、分区和最终审核由人工完成。
+
+Provider、模型、Base URL 和数值参数保存在服务端，API Key 不持久化；重启后需重新输入用户 Key，或使用服务端环境 Key。可设置 `GEOLENS_DEFAULT_PROVIDER=deepseek`，仅在对应环境 Key 存在时作为新会话默认值。

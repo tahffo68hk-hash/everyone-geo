@@ -1,3 +1,5 @@
+import { redeemClaim } from "../../../../../scripts/publisher/claims.mjs";
+import { pickDeclaration } from "../../../../../scripts/publisher/executor.mjs";
 import { NextRequest, NextResponse } from "next/server";
 import { session } from "@/lib/session";
 import { db, row } from "@/lib/db";
@@ -15,6 +17,7 @@ import archiver from "archiver";
 import { PassThrough, Readable } from "node:stream";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const claimAttempts = new Map<string, { count: number; until: number }>();
 const platforms: Record<string, any> = catalog;
 export const GET = handle,
   POST = handle;
@@ -37,6 +40,20 @@ async function handle(
     const out = (v: any) =>
       NextResponse.json(v, { headers: { "Cache-Control": "no-store" } });
     recover(store);
+    if (action === "claim" && req.method === "POST") {
+      const now = Date.now();
+      for (const [owner, entry] of claimAttempts)
+        if (entry.until <= now) claimAttempts.delete(owner);
+      const entry = claimAttempts.get(s.id) || {
+        count: 0,
+        until: now + 600000,
+      };
+      claimAttempts.set(s.id, entry);
+      if (++entry.count > 10) throw Error("绑定尝试过多，请10分钟后重试");
+      if (typeof b.code !== "string" || b.code.length > 40)
+        throw Error("绑定码无效");
+      return out(redeemClaim(store, b.code, s.id, now));
+    }
     if (action === "workspace" && req.method === "GET")
       return out({
         platforms: Object.entries(platforms).map(([id, p]) => ({
@@ -145,6 +162,16 @@ async function handle(
           (!cover || cover.is_demo || !cover.mime.startsWith("image/"))
         )
           throw Error("封面必须是草稿所属用户图片");
+        if (t.selfMadeAuth !== undefined && typeof t.selfMadeAuth !== "boolean")
+          throw Error("自制授权须为布尔值");
+        const declaration = pickDeclaration(t);
+        if (
+          t.platform === "bilibili" &&
+          (t.type !== "video" ||
+            media.length !== 1 ||
+            media[0].mime !== "video/mp4")
+        )
+          throw Error("B站任务须选择一个MP4视频");
         const source = JSON.parse(c.body);
         planned.push({
           id: randomUUID(),
@@ -156,6 +183,8 @@ async function handle(
             type: t.type,
             media,
             cover,
+            declaration,
+            selfMadeAuth: t.selfMadeAuth ?? false,
             coverSuggestion: source.coverSuggestion,
             is_mock: !!c.is_mock,
             provenance: c.is_mock
@@ -183,6 +212,7 @@ async function handle(
       .prepare("SELECT * FROM publisher_jobs WHERE id=? AND owner=?")
       .get(id || "", s.id) as any;
     if (!job) throw Error("任务不存在");
+    if (action === "status" && req.method === "GET") return out({ job });
     if (action === "export" && req.method === "GET") {
       const payload = JSON.parse(job.payload),
         zip = archiver("zip"),

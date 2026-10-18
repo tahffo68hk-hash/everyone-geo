@@ -22,6 +22,7 @@ export default function PublishWorkbench() {
     [media, setMedia] = useState<any[]>([]),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
+    [claimCode, setClaimCode] = useState(""),
     [accountLabel, setAccountLabel] = useState(""),
     [accountPlatform, setAccountPlatform] = useState("xiaohongshu"),
     [urls, setUrls] = useState<Record<string, string>>({}),
@@ -48,6 +49,8 @@ export default function PublishWorkbench() {
         accountId: "",
         mediaIds: [],
         coverId: "",
+        declaration: "内容无需标注",
+        selfMadeAuth: false,
       };
     }
     setEdits(next);
@@ -82,7 +85,7 @@ export default function PublishWorkbench() {
       </p>
       <div className="notice">
         所有真实平台：未真实验证。浏览器会停在审核前；封面、分类、原创与 AI
-        声明需人工设置和确认。
+        声明请人工复核；B站自动设置封面与创作声明，分类仍需人工设置。
         {data.display
           ? "检测到 DISPLAY；请在云桌面操作，用户端接管仍需实际确认。"
           : "无 DISPLAY，无法扫码接管；需要登录时返回 NEEDS_LOGIN。"}{" "}
@@ -93,6 +96,26 @@ export default function PublishWorkbench() {
           {message}
         </p>
       )}
+      <section className="card">
+        <h2>绑定云端已登录账号</h2>
+        <input
+          aria-label="绑定码"
+          placeholder="XXXXX-XXXXX"
+          value={claimCode}
+          onChange={(e) => setClaimCode(e.target.value)}
+        />
+        <button
+          disabled={busy || !claimCode.trim()}
+          onClick={() =>
+            act(async () => {
+              await api("publish/claim", { code: claimCode });
+              setClaimCode("");
+            })
+          }
+        >
+          绑定账号
+        </button>
+      </section>
       <section className="card">
         <h2>1. 选择内容与账号</h2>
         <label>
@@ -302,13 +325,49 @@ export default function PublishWorkbench() {
                     </label>
                   ))}
               </div>
+              {p.id === "bilibili" && (
+                <>
+                  <label>
+                    创作声明
+                    <select
+                      value={edit.declaration}
+                      onChange={(e) =>
+                        update(p.id, "declaration", e.target.value)
+                      }
+                    >
+                      {[
+                        "内容无需标注",
+                        "含AI生成内容",
+                        "含虚构演绎内容",
+                        "内容含营销信息",
+                        "个人观点，仅供参考",
+                        "内容为转载",
+                      ].map((v) => (
+                        <option key={v}>{v}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={edit.selfMadeAuth}
+                      onChange={(e) =>
+                        update(p.id, "selfMadeAuth", e.target.checked)
+                      }
+                    />
+                    内容为自制：未经作者允许，禁止转载
+                  </label>
+                </>
+              )}
               <label>
                 可选封面（用户图片）
                 <select
                   value={edit.coverId}
                   onChange={(e) => update(p.id, "coverId", e.target.value)}
                 >
-                  <option value="">人工设置封面</option>
+                  <option value="">
+                    {p.id === "bilibili" ? "使用首个推荐帧" : "人工设置封面"}
+                  </option>
                   {media
                     .filter((m) => m.mime.startsWith("image/"))
                     .map((m) => (
@@ -356,7 +415,11 @@ export default function PublishWorkbench() {
               {data.accounts.find((a: any) => a.id === j.account_id)?.label}{" "}
               <span className="badge">{states[j.status]}</span>
             </h3>
-            <p>{JSON.parse(j.payload).title}</p>
+            <p>
+              {data.contents.some((c: any) => c.id === j.content_id)
+                ? JSON.parse(j.payload).title
+                : "手动验证任务（无关联草稿）"}
+            </p>
             {!!j.is_mock && <div className="notice">模拟数据/未真实验证</div>}
             <p role="status">{j.progress}</p>
             {j.error && <p className="error">{j.error}</p>}

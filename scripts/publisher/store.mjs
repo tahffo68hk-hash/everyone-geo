@@ -5,6 +5,7 @@ export function openStore(file = process.env.GEOLENS_DB || "data/geolens.db") {
   mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+ CREATE TABLE IF NOT EXISTS publisher_claims(code_hash TEXT PRIMARY KEY,account_id TEXT NOT NULL,run_ids TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,used_at INTEGER,used_by TEXT);
  CREATE TABLE IF NOT EXISTS publisher_accounts(id TEXT PRIMARY KEY,owner TEXT NOT NULL,platform TEXT NOT NULL,label TEXT NOT NULL,login_status TEXT DEFAULT 'UNKNOWN',checked_at TEXT);
  CREATE TABLE IF NOT EXISTS publisher_jobs(id TEXT PRIMARY KEY,owner TEXT NOT NULL,content_id TEXT NOT NULL,platform TEXT NOT NULL,account_id TEXT NOT NULL,mode TEXT NOT NULL DEFAULT 'PREPARE_ONLY' CHECK(mode='PREPARE_ONLY'),status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN ('DRAFT','FILLING','FILLED_AWAITING_REVIEW','NEEDS_LOGIN','FAILED','PUBLISHED_VERIFIED')),payload TEXT NOT NULL,is_mock INTEGER NOT NULL,progress TEXT DEFAULT '',error TEXT,readback TEXT,url TEXT,verification TEXT,pid INTEGER,heartbeat INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
  CREATE UNIQUE INDEX IF NOT EXISTS publisher_active_account ON publisher_jobs(account_id) WHERE status='FILLING';`);
