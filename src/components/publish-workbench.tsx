@@ -84,7 +84,7 @@ export default function PublishWorkbench() {
         所有真实平台：未真实验证。浏览器会停在审核前；封面、分类、原创与 AI
         声明需人工设置和确认。
         {data.display
-          ? "检测到 DISPLAY，可在云桌面接管浏览器。"
+          ? "检测到 DISPLAY；请在云桌面操作，用户端接管仍需实际确认。"
           : "无 DISPLAY，无法扫码接管；需要登录时返回 NEEDS_LOGIN。"}{" "}
         WordPress 仅创建 REST 草稿。
       </div>

@@ -10,7 +10,10 @@
     "db:init": "node scripts/init-db.mjs",
     "test:browser": "node scripts/browser-smoke.mjs",
     "format": "prettier --write src scripts *.json *.ts *.mjs README.md",
-    "test:publish": "node scripts/publish-smoke.mjs"
+    "test:publish": "node scripts/publish-smoke.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "screenshots": "node scripts/e2e.mjs",
+    "test:cloud": "node scripts/cloud-verification.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.0",

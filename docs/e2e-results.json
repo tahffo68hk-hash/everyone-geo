@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-18T15:50:51.000Z",
+  "jobId": "1fcbb487-9b49-46a3-8372-c0556c6f3989",
+  "jobStatus": "FILLED_AWAITING_REVIEW",
+  "mentioned": 6,
+  "rate": 0.6666666666666666,
+  "screenshots": 10,
+  "status": "PASS",
+  "runId": "2c23a118-63dd-4274-a114-cd19a119b1f6",
+  "responses": 9,
+  "consoleErrors": 0,
+  "realCalls": 0,
+  "publishing": 0
+}
