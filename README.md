@@ -29,14 +29,14 @@ npm run dev
 
 | Provider               | Base URL                                            | 默认 Model      | 实际验证                        |
 | ---------------------- | --------------------------------------------------- | --------------- | ------------------------------- |
-| DeepSeek               | `https://api.deepseek.com`                          | `deepseek-chat` | 未验证，无 Key                  |
+| DeepSeek               | `https://api.deepseek.com`                          | `deepseek-chat` | 已真实验证（2026-10-19，响应模型 deepseek-flash） |
 | Qwen / DashScope       | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus`     | 未验证，无 Key                  |
 | 通用 OpenAI-compatible | 用户可信 HTTPS 地址，可含 `/v1`                     | 用户填写        | 未验证，无 Key                  |
 | MockTransport          | 本地，无网络调用                                    | Mock            | 全流程通过；模拟数据/未真实验证 |
 
 适配器追加 `/chat/completions`，不跟随重定向，拒绝明文 HTTP、URL 内凭据和查询参数。支持 temperature、top_p、max_tokens、presence_penalty、frequency_penalty、seed。每请求输出最多 2,400 Token，45 秒超时，无自动重试。生成问题/建议/单份内容/测试连接各一次请求，N 道检测问题为 N 次请求；费用未知时存 NULL。
 
-Key 仅保存到服务端进程内存，24 小时过期，不进入 SQLite、Git、日志或 localStorage，不回传客户端；保存后清空输入框。重启后 Provider 配置恢复 Mock。HttpOnly、SameSite=Strict Cookie 标识本地会话，生产开启 Secure。Cookie 有效时可继续访问持久数据，Cookie 丢失/过期后 UI 无找回机制。
+也可在启动服务端前设置环境变量 `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY`（设置弹窗仅显示“服务端环境变量已配置”，不回传值）。Key 仅保存到服务端进程内存，24 小时过期，不进入 SQLite、Git、日志或 localStorage，不回传客户端；保存后清空输入框。重启后 Provider 配置恢复 Mock。HttpOnly、SameSite=Strict Cookie 标识本地会话，生产开启 Secure。Cookie 有效时可继续访问持久数据，Cookie 丢失/过期后 UI 无找回机制。
 
 ## 产品使用
 
