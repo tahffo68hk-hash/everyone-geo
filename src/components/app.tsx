@@ -133,7 +133,13 @@ function Settings({ close }: { close: () => void }) {
         </label>
         <label>
           Model
+          <datalist id="deepseek-models">
+            {["deepseek-flash", "deepseek-v4-pro", "deepseek-chat"].map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
           <input
+            list={c.provider === "deepseek" ? "deepseek-models" : undefined}
             value={c.model}
             onChange={(e) => setC({ ...c, model: e.target.value })}
           />

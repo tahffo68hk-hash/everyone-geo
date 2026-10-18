@@ -2,6 +2,7 @@ import {
   channels,
   Channel,
   contentPrompt,
+  ensureBrandMention,
   suggestionsPrompt,
   validateSuggestions,
   validateBody,
@@ -129,7 +130,11 @@ async function handle(
           { channel: b.channel, name: report.name, responses },
           b.confirmed === true,
         );
-        const body = validateBody(parseObject(result.answer)),
+        const body = ensureBrandMention(
+            b.channel as Channel,
+            report.name,
+            validateBody(parseObject(result.answer)),
+          ),
           id = randomUUID();
         db().exec("BEGIN");
         try {

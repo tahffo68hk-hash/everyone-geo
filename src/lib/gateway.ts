@@ -15,7 +15,7 @@ export type Question = {
 export const VERSION = "geo-questions-v1";
 export const defaults: Record<Provider, { baseUrl: string; model: string }> = {
   mock: { baseUrl: "", model: "mock-deterministic-v1" },
-  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
+  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
   qwen: {
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     model: "qwen-plus",
@@ -79,13 +79,11 @@ export class MockTransport {
       return JSON.stringify(mockContent(b.channel, b.name, b.responses));
     if (mode === "suggestions")
       return JSON.stringify({
-        suggestions: b.responses
-          .slice(0, 4)
-          .map((r: any) => ({
-            title: `优先补充：${r.intent}`,
-            action: `模拟数据/未真实验证：针对「${r.query}」，补充官网FAQ与可核实的场景说明，制作相关文章或短视频，在知乎及视频号分发；该回答${r.brand_mentioned ? "虽提及品牌，仍需核实依据" : "未提及品牌，作为潜在缺口优先检查"}。`,
-            queryIds: [r.id],
-          })),
+        suggestions: b.responses.slice(0, 4).map((r: any) => ({
+          title: `优先补充：${r.intent}`,
+          action: `模拟数据/未真实验证：针对「${r.query}」，补充官网FAQ与可核实的场景说明，制作相关文章或短视频，在知乎及视频号分发；该回答${r.brand_mentioned ? "虽提及品牌，仍需核实依据" : "未提及品牌，作为潜在缺口优先检查"}。`,
+          queryIds: [r.id],
+        })),
       });
     if (mode === "test") return "模拟连接正常，未调用外部模型。";
     const hash = [...prompt].reduce((n, c) => n + c.charCodeAt(0), 0);

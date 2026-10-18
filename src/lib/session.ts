@@ -1,6 +1,8 @@
+import { db } from "./db";
+import { hydrateSettings, persistSettings } from "./session-settings";
 import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
-import { Config, defaults } from "./gateway";
+import { Config } from "./gateway";
 const g = globalThis as unknown as {
   geoSessions?: Map<string, { cfg: Config; expires: number }>;
 };
@@ -26,13 +28,15 @@ export async function session() {
   for (const [k, v] of sessions) if (v.expires < Date.now()) sessions.delete(k);
   if (!sessions.has(id))
     sessions.set(id, {
-      cfg: { provider: "mock", ...defaults.mock, extra: {} },
+      cfg: hydrateSettings(db(), id),
       expires: Date.now() + 86400000,
     });
   return {
     id,
     ...sessions.get(id)!,
-    save: (cfg: Config) =>
-      sessions.set(id!, { cfg, expires: Date.now() + 86400000 }),
+    save: (cfg: Config) => {
+      persistSettings(db(), id!, cfg);
+      sessions.set(id!, { cfg, expires: Date.now() + 86400000 });
+    },
   };
 }

@@ -13,3 +13,4 @@ CREATE TABLE IF NOT EXISTS publish_results(id TEXT PRIMARY KEY, task_id TEXT REF
 
 CREATE TABLE IF NOT EXISTS ai_suggestions(id TEXT PRIMARY KEY, report_id TEXT REFERENCES reports(id), payload TEXT NOT NULL, generation TEXT NOT NULL, evidence_mock INTEGER NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS content_generations(content_id TEXT PRIMARY KEY REFERENCES contents(id), generation TEXT NOT NULL, query_ids TEXT NOT NULL, evidence_mock INTEGER NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS session_settings(owner TEXT PRIMARY KEY,provider TEXT NOT NULL,model TEXT NOT NULL,base_url TEXT NOT NULL,extra TEXT NOT NULL,updated_at INTEGER NOT NULL);

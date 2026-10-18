@@ -77,3 +77,21 @@ it("rejects malformed content rather than saving partial provider responses", ()
   expect(() => validateBody({ ...good, title: "" })).toThrow();
   expect(() => validateBody({ ...good, body: "x".repeat(30001) })).toThrow();
 });
+
+it("naturally inserts brand in xiaohongshu body without duplicating mentions", async () => {
+  const { ensureBrandMention, mockContent } = await import("./content");
+  const draft = mockContent("xiaohongshu", "品牌甲", []);
+  expect(draft.body).toContain("品牌甲");
+  const missing = { ...draft, body: "选择前先核实公开信息。" };
+  const fixed = ensureBrandMention("xiaohongshu", "品牌甲", missing);
+  expect(fixed.body).toBe("聊聊品牌甲：\n选择前先核实公开信息。");
+  expect(ensureBrandMention("xiaohongshu", "品牌甲", fixed)).toEqual(fixed);
+  expect(
+    ensureBrandMention(
+      "xiaohongshu",
+      "品牌甲",
+      { ...missing, body: "了解 BrandA 的公开信息" },
+      ["BrandA"],
+    ).body,
+  ).toBe("了解 BrandA 的公开信息");
+});

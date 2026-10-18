@@ -4,8 +4,9 @@ import path from "node:path";
 const g = globalThis as unknown as { geoDb?: DatabaseSync };
 export function db() {
   if (!g.geoDb) {
-    mkdirSync("data", { recursive: true });
-    g.geoDb = new DatabaseSync(path.resolve("data/geolens.db"));
+    const file = path.resolve(process.env.GEOLENS_DB || "data/geolens.db");
+    mkdirSync(path.dirname(file), { recursive: true });
+    g.geoDb = new DatabaseSync(file);
     g.geoDb.exec(readFileSync(path.resolve("scripts/schema.sql"), "utf8"));
     g.geoDb
       .prepare(
