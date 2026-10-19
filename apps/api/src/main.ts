@@ -11,8 +11,8 @@ import {
   createRateLimiterMiddleware,
 } from "./common/security.middleware";
 
-// 显式加载仓库根 .env（见 config/env.ts），确保本地 dev/test 环境一致。
-dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+import { ensureEnvLoaded } from "./config/env";
+ensureEnvLoaded();
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

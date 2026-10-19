@@ -252,9 +252,12 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   const [manualSaving, setManualSaving] = useState(false);
 
   // 入口 B：AI 智能生成表单状态
+  const [aiBrandName, setAiBrandName] = useState("");
   const [aiTopic, setAiTopic] = useState("");
+  const [aiBrief, setAiBrief] = useState("");
   const [aiChannel, setAiChannel] = useState(urlChannel || "ZHIHU");
   const [aiTone, setAiTone] = useState("PROFESSIONAL");
+  const [aiSelectedProvider, setAiSelectedProvider] = useState<"auto" | "deepseek" | "qwen" | "mock">("auto");
   const [aiSelectedDiagId, setAiSelectedDiagId] = useState<string>("");
   const [diagnosesList, setDiagnosesList] = useState<Array<{ id: string; name: string; findingCount: number }>>([]);
   const [aiDraftGenerating, setAiDraftGenerating] = useState(false);
@@ -649,27 +652,39 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     setAiGeneratedDraft(null);
     try {
       const toneMap: Record<string, string> = {
-        PROFESSIONAL: "专业严谨、客观中立的行业科普视角",
-        EXPERIENCE: "生动活泼、亲历真实的求学/从业分享视角",
-        AUTHORITATIVE: "官方权威、体系完整的高校院系招生与学术视角",
+        PROFESSIONAL: "专业严谨、客观中立的行业深度科普与测评视角",
+        EXPERIENCE: "生动真实、亲历实测的使用体验与种草避坑视角",
+        AUTHORITATIVE: "官方权威、体系完整的产品方案与白皮书指南视角",
+        COMMERCIAL: "商业决策对比、选型矩阵与成本效益评估视角",
       };
 
       const res = await generateAiDraft(projectId, {
         title: aiTopic.trim(),
         channel: aiChannel,
+        brandName: aiBrandName.trim() || undefined,
+        brief: aiBrief.trim() || undefined,
         audience: toneMap[aiTone] || "专业深度视角",
-        brandContext: "以客观真实、事实求是的学术或业务信息为核心，严禁凭空夸大。",
-        provider: "auto",
+        brandContext: aiBrief.trim() || "以客观真实、实事求是的业务与产品信息为核心，严禁凭空夸大。",
+        provider: aiSelectedProvider,
       });
+
+      if (!res.data?.body || res.data.body.trim().length < 20) {
+        throw new Error("AI 生成未返回有效正文，请检查模型状态或稍后重试。");
+      }
 
       setAiDraftResultMeta(res);
       setAiGeneratedDraft({
         title: res.data.title || aiTopic.trim(),
-        body: res.data.body || "",
+        body: res.data.body.trim(),
         summary: res.data.summary || "",
         tags: res.data.tags || [],
       });
-      setActionSuccess("AI 内容方案已生成！请在下方预览并确认，确认后可直接用于发布。");
+      const isMock = res.provider === "mock" || res.requestedProvider === "mock";
+      setActionSuccess(
+        isMock
+          ? "【演示模拟】已生成演示文章方案。正式使用请切换为真实模型。"
+          : `✨ 真实 AI (${res.model || res.provider}) 已生成完整正文（共 ${res.data.body.length} 字）！请在下方核验并采纳。`,
+      );
     } catch (err: any) {
       setErrorMsg(err.message || "AI 生成内容失败");
     } finally {
@@ -1074,20 +1089,20 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-700 block">关联已有诊断（可选）</label>
+                <label className="text-xs font-semibold text-slate-700 block">
+                  AI 生成引擎 <span className="text-rose-500">*</span>
+                </label>
                 <select
-                  value={aiSelectedDiagId}
-                  onChange={(e) => setAiSelectedDiagId(e.target.value)}
-                  className="ui-input w-full text-xs bg-white"
+                  value={aiSelectedProvider}
+                  onChange={(e) => setAiSelectedProvider(e.target.value as any)}
+                  className="ui-input w-full text-xs bg-white font-medium"
                 >
-                  <option value="">不关联特定诊断（自主输入诉求）</option>
-                  {diagnosesList.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} · {d.findingCount} 条发现
-                    </option>
-                  ))}
+                  <option value="auto">自动选择已配置引擎 (Auto)</option>
+                  <option value="deepseek">DeepSeek 官方模型 (真实 AI)</option>
+                  <option value="qwen">通义千问 Qwen 官方模型 (真实 AI)</option>
+                  <option value="mock">本地 Mock 演示 (模拟模式 · 无需密钥)</option>
                 </select>
               </div>
 
@@ -1115,10 +1130,57 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                   onChange={(e) => setAiTone(e.target.value)}
                   className="ui-input w-full text-xs bg-white"
                 >
-                  <option value="PROFESSIONAL">专业深度科普（客观严谨、事实论证）</option>
-                  <option value="EXPERIENCE">通俗亲历种草（真实生动、就读体验）</option>
-                  <option value="AUTHORITATIVE">官方权威解答（招生就业、培养体系）</option>
+                  <option value="PROFESSIONAL">专业深度科普（客观严谨、事实论证、技术架构）</option>
+                  <option value="EXPERIENCE">真实体验种草（亲历实测、使用心得、实用避坑）</option>
+                  <option value="AUTHORITATIVE">官方权威解答（产品全景、行业选型、白皮书指南）</option>
+                  <option value="COMMERCIAL">商业决策对比（选型矩阵、成本效益、场景评估）</option>
                 </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">关联诊断（可选）</label>
+                <select
+                  value={aiSelectedDiagId}
+                  onChange={(e) => setAiSelectedDiagId(e.target.value)}
+                  className="ui-input w-full text-xs bg-white"
+                >
+                  <option value="">不关联特定诊断（自主输入诉求）</option>
+                  {diagnosesList.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} · {d.findingCount} 条发现
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  品牌 / 产品名称（可选）
+                </label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  placeholder="留空则自动继承项目监测品牌（例如：瑞幸咖啡）"
+                  value={aiBrandName}
+                  onChange={(e) => setAiBrandName(e.target.value)}
+                  className="ui-input w-full text-xs bg-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  补充撰写需求 / Brief（可选）
+                </label>
+                <input
+                  type="text"
+                  maxLength={300}
+                  placeholder="例如：突出高性价比、生椰/拿铁经典款对比、早八人提神与自取便利性"
+                  value={aiBrief}
+                  onChange={(e) => setAiBrief(e.target.value)}
+                  className="ui-input w-full text-xs bg-white"
+                />
               </div>
             </div>
 
@@ -1129,7 +1191,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
               <input
                 type="text"
                 maxLength={200}
-                placeholder="例如：中南民族大学医学信息工程专业特色、核心课程设置与就业去向"
+                placeholder="例如：瑞幸咖啡适合哪些消费场景，以及如何根据不同需求选择咖啡产品"
                 value={aiTopic}
                 onChange={(e) => setAiTopic(e.target.value)}
                 className="ui-input w-full text-xs bg-white"
@@ -1138,7 +1200,9 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
 
             <div className="flex items-center justify-between pt-1">
               <span className="text-[11px] text-slate-500">
-                调用项目 AI Gateway 生成排版。生成后可直接编辑调整，确认前不会向任何外部平台发送。
+                {aiSelectedProvider === "mock"
+                  ? "当前处于【本地 Mock 演示】模式，生成演示模拟正文；切换真实 AI 可调用真实外部大模型。"
+                  : "调用项目 AI Gateway 请求真实大模型生成完整长文。生成后可直接编辑调整，确认前不会向任何外部平台发送。"}
               </span>
               <button
                 type="button"
@@ -1146,7 +1210,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                 onClick={handleGenerateAiDraft}
                 className="ui-button primary text-xs font-bold px-5 py-2"
               >
-                {aiDraftGenerating ? "正在调用 AI 生成中..." : "✨ 立即生成内容方案"}
+                {aiDraftGenerating ? "正在调用 AI 生成完整文章中..." : "✨ 立即生成完整文章"}
               </button>
             </div>
 
@@ -1155,19 +1219,25 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
               <div className="mt-4 rounded-xl border border-teal-300 bg-white p-4 space-y-3.5 shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="rounded bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5">
-                      {aiDraftResultMeta?.requestedProvider === "mock" ? "模拟生成" : "AI 模型成稿"}
-                    </span>
-                    <span className="text-xs font-bold text-slate-900">请检查并微调生成稿件</span>
+                    {aiDraftResultMeta?.requestedProvider === "mock" || aiDraftResultMeta?.provider === "mock" ? (
+                      <span className="rounded bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 border border-amber-200">
+                        本地 Mock 演示模拟
+                      </span>
+                    ) : (
+                      <span className="rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 border border-emerald-200">
+                        真实 AI 模型 ({aiDraftResultMeta?.model || aiDraftResultMeta?.provider})
+                      </span>
+                    )}
+                    <span className="text-xs font-bold text-slate-900">完整文章已生成（请核对并微调）</span>
                   </div>
                   <span className="text-[11px] text-slate-400">
-                    耗时 {aiDraftResultMeta?.latencyMs || 0}ms · 消耗 Token {aiDraftResultMeta?.totalTokens || "—"}
+                    正文 {aiGeneratedDraft.body.length} 字 · 耗时 {aiDraftResultMeta?.latencyMs || 0}ms · 消耗 Token {aiDraftResultMeta?.totalTokens || "—"}
                   </span>
                 </div>
 
                 <div className="space-y-2 text-xs">
                   <div>
-                    <label className="font-semibold text-slate-700 block mb-1">标题</label>
+                    <label className="font-semibold text-slate-700 block mb-1">文章标题</label>
                     <input
                       type="text"
                       className="ui-input w-full text-xs font-semibold"
@@ -1179,9 +1249,12 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                   </div>
 
                   <div>
-                    <label className="font-semibold text-slate-700 block mb-1">正文</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-semibold text-slate-700">完整正文 (Markdown 格式)</label>
+                      <span className="text-[11px] text-slate-400">当前正文共 {aiGeneratedDraft.body.length} 字</span>
+                    </div>
                     <textarea
-                      rows={8}
+                      rows={14}
                       className="ui-input w-full text-xs font-mono leading-relaxed"
                       value={aiGeneratedDraft.body}
                       onChange={(e) =>
@@ -1220,7 +1293,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                   </button>
                   <button
                     type="button"
-                    disabled={aiAdopting}
+                    disabled={aiAdopting || !aiGeneratedDraft.body.trim()}
                     onClick={handleAdoptAiDraft}
                     className="ui-button primary text-xs font-bold px-4"
                   >

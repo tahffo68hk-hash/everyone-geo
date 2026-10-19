@@ -10,6 +10,7 @@ import {
 } from "@/lib/labels";
 import { useProjectContext } from "@/components/project-context";
 import { createContentDraft } from "@/lib/content-api";
+import { generateAiDraft } from "@/lib/ai-api";
 import { EvidenceDialog } from "../../monitor/evidence-dialog";
 
 type Summary = { severityCounts: { HIGH: number; MEDIUM: number; LOW: number; INFO: number }; findingCount: number; dataQualityNote: string | null };
@@ -167,15 +168,37 @@ export default function DiagnosisDetailPage() {
     }
     setPlanSubmitting(true);
     try {
-      const fullBody = `# ${proposal.title}\n\n> 来源：GEO 诊断针对「${proposal.targetQuery}」的针对性优化方案\n\n## 核心目标与受众\n- 目标受众：${proposal.audience}\n- 核心观点：${proposal.coreMessage}\n- 引用论据：${proposal.factsToCite}\n\n## 推荐大纲\n${proposal.outline.map((line) => `- ${line}`).join("\n")}\n\n## 详细正文\n（您可以在此直接编辑，或在发布工作台由 AI 一键扩写生成完整的渠道稿件）\n`;
+      let finalBody = "";
+      let finalSummary = proposal.coreMessage;
+      try {
+        const generated = await generateAiDraft(projectId, {
+          title: proposal.title,
+          channel: proposal.channel,
+          audience: proposal.audience,
+          brief: `针对提问「${proposal.targetQuery}」，核心观点：${proposal.coreMessage}，建议引用论据：${proposal.factsToCite}`,
+          outline: proposal.outline,
+          targetQueries: [proposal.targetQuery],
+          provider: "auto",
+        });
+        if (generated.data?.body && generated.data.body.trim().length >= 50) {
+          finalBody = generated.data.body.trim();
+          if (generated.data.summary) finalSummary = generated.data.summary;
+        }
+      } catch {
+        // Fallback to structured document if AI service is not ready
+      }
+
+      if (!finalBody) {
+        finalBody = `# ${proposal.title}\n\n> 来源：GEO 诊断针对「${proposal.targetQuery}」的优化方案\n\n## 核心目标与受众\n- 目标受众：${proposal.audience}\n- 核心观点：${proposal.coreMessage}\n- 引用论据：${proposal.factsToCite}\n\n## 结构大纲\n${proposal.outline.map((line) => `- ${line}`).join("\n")}\n\n## 实施与优化建议\n围绕目标搜索问题补充客观翔实的事实论据与评测对比，并在发布前微调确认。\n`;
+      }
 
       const draft = await createContentDraft(projectId, {
         title: proposal.title,
         topic: proposal.targetQuery,
         generationMode: "AI_GENERATED",
         sourceDiagnosisId: id,
-        body: fullBody,
-        summary: proposal.coreMessage,
+        body: finalBody,
+        summary: finalSummary,
       });
 
       router.push(

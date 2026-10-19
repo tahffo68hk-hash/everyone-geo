@@ -189,8 +189,11 @@ export class InteractiveRuntime {
     }
 
     const requestedModel = request.model || defaultModel;
+    const modelToSend = provider === 'deepseek' && (requestedModel === 'deepseek-flash' || requestedModel === 'deepseek-v4-flash')
+      ? (readRealProviderEnv(this.env).model || 'deepseek-chat')
+      : requestedModel;
     const body: Record<string, unknown> = {
-      model: requestedModel,
+      model: modelToSend,
       messages: [
         { role: 'system', content: request.systemPrompt },
         { role: 'user', content: request.userPrompt }

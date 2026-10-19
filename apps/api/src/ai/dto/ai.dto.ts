@@ -365,11 +365,26 @@ export class GenerateOutlineDto extends BaseAiOptionsDto {
   audience?: string;
 }
 
-// G4. Content Draft
 export class GenerateDraftDto extends BaseAiOptionsDto {
   @IsNotEmpty()
   @IsString()
   title: string;
+
+  @IsOptional()
+  @IsString()
+  topic?: string;
+
+  @IsOptional()
+  @IsString()
+  brandName?: string;
+
+  @IsOptional()
+  @IsString()
+  brandContext?: string;
+
+  @IsOptional()
+  @IsString()
+  audience?: string;
 
   @IsOptional()
   @IsArray()

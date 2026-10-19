@@ -653,6 +653,22 @@ export class AiService {
 
   async generateDraft(userId: string, projectId: string, dto: GenerateDraftDto) {
     const project = await this.tenant.assertUserInProject(userId, projectId);
+    const projectWithProfile = await this.prisma.client.project.findUnique({
+      where: { id: projectId },
+      include: {
+        brands: { take: 1, orderBy: { createdAt: "asc" } },
+      },
+    });
+    const defaultBrand = projectWithProfile?.brands?.[0];
+    const enrichedInput = {
+      ...dto,
+      brandName: dto.brandName || defaultBrand?.name || projectWithProfile?.name,
+      industry: defaultBrand?.productCategory || projectWithProfile?.industry || undefined,
+      productCategory: defaultBrand?.productCategory || undefined,
+      website: defaultBrand?.website || undefined,
+      brandContext: dto.brandContext || defaultBrand?.description || projectWithProfile?.description || undefined,
+    };
+
     return this.gateway.generateStructured<{
       title: string;
       body: string;
@@ -666,10 +682,11 @@ export class AiService {
       feature: "content_draft",
       provider: dto.provider,
       model: dto.model,
-      temperature: dto.temperature,
-      maxTokens: dto.maxTokens,
+      temperature: dto.temperature ?? 0.7,
+      maxTokens: dto.maxTokens ?? 4096,
+      jsonObject: true,
       promptVersion: PROMPT_VERSIONS.CONTENT_DRAFT,
-      input: dto,
+      input: enrichedInput,
     });
   }
 
@@ -1066,12 +1083,9 @@ export class AiService {
           `真实调用已拦截：最坏费用 $${budget.worstCaseUsd} 超过 $${budget.ceilingUsd}。未发出请求。`,
         );
       }
-      if (realAdaptationAttempts >= 1) {
-        throw new ConflictException("本进程已用掉唯一一次真实适配请求。未再次调用模型。");
-      }
       realAdaptationAttempts += 1;
       this.logger.log(
-        `adaptation real gate model=${ADAPTATION_REAL_MODEL} worstCaseUsd=${budget.worstCaseUsd} inputTokensUpper=${budget.inputTokensUpper} maxOutputTokens=${budget.maxOutputTokens} attempt=1`,
+        `adaptation real gate model=${ADAPTATION_REAL_MODEL} worstCaseUsd=${budget.worstCaseUsd} inputTokensUpper=${budget.inputTokensUpper} maxOutputTokens=${budget.maxOutputTokens} attempt=${realAdaptationAttempts}`,
       );
     }
 

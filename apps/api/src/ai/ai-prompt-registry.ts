@@ -441,32 +441,52 @@ ${(input.items || []).map((it: string, i: number) => `${i + 1}. ${it}`).join('\n
 
   [PROMPT_VERSIONS.CONTENT_DRAFT]: {
     version: PROMPT_VERSIONS.CONTENT_DRAFT,
-    systemPrompt: `你是一名顶尖的 B2B/B2C GEO 深度内容撰稿人。
-撰写具有极高 AI 引用可读性与权威度的正文。
-要求：
-- 结构清晰，采用 Markdown 格式
-- Answer-first：在各核心小节开头提供精炼直接回答
-- 包含实体、客观对比、步骤或结论
-- 不虚构未经证实的夸张数据
-- 提供文末 FAQ 模块
-输出格式：
+    systemPrompt: `你是一名顶尖的 GEO（生成式引擎优化）深度内容撰稿人与行业分析专家。
+你的任务是根据给定的品牌、产品特征、行业背景、受众与目标渠道，撰写一篇真正完整、详尽充实、可直接编辑和发布的专业文章正文。
+
+【严禁行为与质量底线】：
+1. 严禁只输出标题、大纲、空泛开头或“已生成”占位符！
+2. 正文（body）必须是结构完整、逻辑严密、论据详实的 Markdown 格式长文。标准文章必须包含引言/核心结论、3-5 个深度展开的小节（使用 ## / ### 标题）、具体使用场景或选型对比、清晰的操作指引或建议、以及文末总结，篇幅充实（800 - 2500 字，根据目标渠道风格自适应）。
+3. 必须紧扣用户提供的实际品牌、产品特征、行业背景与目标受众展开，严禁套用脱离该行业的通用 IT/软件模版！
+4. 秉持客观求实原则：不凭空编造虚假产品参数、销量、认证或未经证实的夸大宣传；若需企业实测数据，应合理提示读者。
+5. 采用 Answer-First 逻辑：在各核心小节开头给出直接精炼的回答，随后展开事实与论证，极大地提高 AI 搜索引擎的引用与收录权重。
+6. 文末必须附带结构化的常见问答模块（FAQ Section）。
+
+输出必须是合法的 JSON 对象，格式如下：
 {
-  "title": "string",
-  "body": "string (完整 markdown 格式正文)",
-  "summary": "string (150字内摘要)",
-  "tags": ["string"],
+  "title": "符合主题与渠道调性的完整引人入胜标题",
+  "body": "完整、长篇、高质量 Markdown 正文（包含各级小节、段落阐述、场景分析与实践建议）",
+  "summary": "150字以内的精华摘要",
+  "tags": ["核心标签1", "核心标签2", "核心标签3"],
   "faqSection": [
     {
-      "question": "string",
-      "answer": "string"
+      "question": "用户高频搜索或决策疑问1",
+      "answer": "清晰、专业、客观的解答"
+    },
+    {
+      "question": "用户高频搜索或决策疑问2",
+      "answer": "清晰、专业、客观的解答"
     }
   ]
 }`,
-    buildUserPrompt: (input: any) => `标题：${input.title}
-大纲/要点：${JSON.stringify(input.outline || [])}
-目标问题：${(input.targetQueries || []).join('；') || '无'}
-Brief 需求：${input.brief || '深入专业解答'}
-目标渠道：${input.channel || '知乎/官方博客'}`,
+    buildUserPrompt: (input: any) => {
+      const parts: string[] = [];
+      if (input.brandName) parts.push(`监测品牌：${input.brandName}`);
+      if (input.industry || input.productCategory) parts.push(`所属行业/品类：${input.industry || input.productCategory}`);
+      if (input.website) parts.push(`品牌官网：${input.website}`);
+      if (input.brandContext) parts.push(`品牌与产品背景：${input.brandContext}`);
+      parts.push(`文章标题/核心主题：${input.title || input.topic || "行业专业指南"}`);
+      if (input.audience) parts.push(`目标受众：${input.audience}`);
+      if (input.channel) parts.push(`发布目标渠道：${input.channel}`);
+      if (Array.isArray(input.targetQueries) && input.targetQueries.length > 0) {
+        parts.push(`目标解答的 GEO 搜索问题：\n${input.targetQueries.map((q: string, i: number) => `  ${i + 1}. ${q}`).join("\n")}`);
+      }
+      if (Array.isArray(input.outline) && input.outline.length > 0) {
+        parts.push(`参考大纲/核心要点：\n${JSON.stringify(input.outline, null, 2)}`);
+      }
+      if (input.brief) parts.push(`撰写需求/Brief：${input.brief}`);
+      return parts.join("\n\n");
+    },
   },
 
   [PROMPT_VERSIONS.CONTENT_REWRITE]: {

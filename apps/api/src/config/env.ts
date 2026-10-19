@@ -1,11 +1,25 @@
 import * as dotenv from "dotenv";
 import * as path from "path";
 
-// API 以自身包目录（apps/api）为 cwd 运行；仓库级 .env 位于两级父目录。
-// 显式加载仓库根 .env，保证本地开发（pnpm --filter @geolens/api dev / test）与 CI 一致。
-if (!process.env.DATABASE_URL) {
-  dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+import * as fs from "fs";
+
+export function ensureEnvLoaded(): void {
+  const candidates = [
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(process.cwd(), "../../.env"),
+    path.resolve(__dirname, "../../.env"),
+    path.resolve(__dirname, "../../../.env"),
+    path.resolve(__dirname, "../../../../.env"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      dotenv.config({ path: candidate });
+      break;
+    }
+  }
 }
+
+ensureEnvLoaded();
 
 /** JWT 签名密钥：缺失或过短时拒绝启动（fail-fast）。 */
 export function getJwtSecret(): string {

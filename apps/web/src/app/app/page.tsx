@@ -137,6 +137,9 @@ export default function AppPage() {
         description={`${currentTarget?.canonicalName ?? target?.canonicalName ?? "尚未设置监测对象"}${currentTarget?.productCategory ? ` · ${currentTarget.productCategory}` : ""}`}
         actions={
           <>
+            <Link className="ui-button primary" href={`/app/quick-start?project=${projectId}`}>
+              快速开始 GEO 检测
+            </Link>
             <Link className="ui-button secondary" href={`/app/monitor?project=${projectId}`}>
               运行 AI 检测
             </Link>
@@ -153,6 +156,18 @@ export default function AppPage() {
         <LoadingSkeleton rows={5} />
       ) : (
         <>
+          {!latest && (
+            <Link href={`/app/quick-start?project=${projectId}`} className="group block rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 via-white to-sky-50 p-5 transition hover:border-indigo-300 hover:shadow-sm sm:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <span className="inline-flex rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-indigo-700">新手引导 · 约 5 分钟</span>
+                  <h2 className="mt-2 text-lg font-bold text-slate-900">从品牌名称开始，生成你的第一份 GEO 报告</h2>
+                  <p className="mt-1 text-sm text-slate-600">确认监测问题、运行检测、查看 Evidence，并把优化建议变成内容草稿。</p>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition group-hover:bg-indigo-700">开始快速检测 <span aria-hidden="true">→</span></span>
+              </div>
+            </Link>
+          )}
           <WorkflowRail
             current="工作台"
             steps={[

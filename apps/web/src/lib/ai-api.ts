@@ -353,6 +353,9 @@ export interface ContentOutlineResult {
 export interface GenerateDraftRequest extends BaseAiOptions {
   title?: string;
   topic?: string;
+  brandName?: string;
+  brandContext?: string;
+  audience?: string;
   outline?: unknown[];
   targetQueries?: string[];
   brief?: string;

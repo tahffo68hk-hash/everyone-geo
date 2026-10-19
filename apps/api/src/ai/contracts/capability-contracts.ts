@@ -200,8 +200,8 @@ export const CAPABILITY_SCHEMAS: Record<string, DeepSchema> = {
   content_draft: {
     type: 'object',
     properties: {
-      title: { type: 'string' },
-      body: { type: 'string' },
+      title: { type: 'string', minLength: 2 },
+      body: { type: 'string', minLength: 50 },
       summary: { type: 'string' },
       tags: { type: 'array', items: { type: 'string' } },
       faqSection: { type: 'array' },
