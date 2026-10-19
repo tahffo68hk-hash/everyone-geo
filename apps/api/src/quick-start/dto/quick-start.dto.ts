@@ -129,6 +129,11 @@ export class GenerateContentDto extends ConfirmModelCallDto {
   channel!: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  enterpriseContext?: string;
+
+  @IsOptional()
   @IsUUID()
   suggestionId?: string;
 }
@@ -143,11 +148,21 @@ export class SaveContentDto {
   body!: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  summaryText?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(30)
   @IsString({ each: true })
   @MaxLength(80, { each: true })
   hashtags?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  videoScriptText?: string;
 }
 
 export class CreateDistributionTasksDto {

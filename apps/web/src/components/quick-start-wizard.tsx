@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   AiProvider,
@@ -81,6 +81,56 @@ function safeHttpUrl(value: string) {
   } catch {
     return null;
   }
+}
+
+function metadataText(metadata: Record<string, unknown> | null, key: string) {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function renderContentSummary(metadata: Record<string, unknown> | null) {
+  return typeof metadata?.summaryText === "string"
+    ? metadata.summaryText
+    : metadataText(metadata, "summary");
+}
+
+function metadataTextList(metadata: Record<string, unknown> | null, key: string) {
+  const value = metadata?.[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function renderVideoScript(metadata: Record<string, unknown> | null) {
+  const savedText = metadata?.videoScriptText;
+  if (typeof savedText === "string") return savedText;
+  const value = metadata?.videoScript;
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return "";
+  const script = value as Record<string, unknown>;
+  const lines: string[] = [];
+  if (typeof script.voiceover === "string") {
+    lines.push(`口播：${script.voiceover}`);
+    if (Array.isArray(script.shotSuggestions)) {
+      const shots = script.shotSuggestions.filter((item): item is string => typeof item === "string");
+      if (shots.length) lines.push(`画面建议：\n${shots.map((shot, index) => `第${index + 1}镜：${shot}`).join("\n")}`);
+    }
+  } else {
+    if (typeof script.opening === "string") lines.push(`开场：${script.opening}`);
+    if (typeof script.narration === "string") lines.push(`讲解稿：\n${script.narration}`);
+    if (Array.isArray(script.outline)) {
+      const chapters = script.outline.flatMap((item, index) => {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) return [];
+        const section = item as Record<string, unknown>;
+        const heading = typeof section.heading === "string" ? section.heading : `章节 ${index + 1}`;
+        const points = Array.isArray(section.keyPoints)
+          ? section.keyPoints.filter((point): point is string => typeof point === "string")
+          : [];
+        return [`第${index + 1}节：${heading}`, ...points];
+      });
+      if (chapters.length) lines.push(`章节结构：\n${chapters.join("\n")}`);
+    }
+    if (typeof script.ending === "string") lines.push(`收尾：${script.ending}`);
+  }
+  return lines.join("\n\n") || JSON.stringify(script, null, 2);
 }
 
 function PaidCallConfirm({
@@ -166,8 +216,13 @@ export function QuickStartWizard() {
   const [report, setReport] = useState<QuickStartReport | null>(null);
   const [selectedContent, setSelectedContent] = useState<ContentAsset | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const [draftSummary, setDraftSummary] = useState("");
   const [draftBody, setDraftBody] = useState("");
   const [draftTags, setDraftTags] = useState("");
+  const [draftVideoScriptText, setDraftVideoScriptText] = useState("");
+  const [enterpriseContext, setEnterpriseContext] = useState("");
+  const draftRevision = useRef(0);
+  const activeReportIdRef = useRef<string | undefined>(undefined);
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   const [questionsDirty, setQuestionsDirty] = useState(false);
   const [viewStep, setViewStep] = useState(0);
@@ -194,8 +249,17 @@ export function QuickStartWizard() {
   const settingsChanged = Boolean(session && (provider !== session.provider || model !== session.model));
   const currentStep = viewStep || stageNumber(session?.currentStep ?? "BRAND");
   const reportId = activeRun?.report?.id ?? report?.id;
+  const selectedRiskNotes = metadataTextList(selectedContent?.metadata ?? null, "riskNotes");
+  const selectedQualityWarnings = metadataTextList(selectedContent?.metadata ?? null, "qualityWarnings");
+
+  useEffect(() => {
+    activeReportIdRef.current = reportId;
+  }, [reportId]);
 
   async function loadSession(id: string) {
+    draftRevision.current += 1;
+    activeReportIdRef.current = undefined;
+    setBusy("");
     const data = await api<QuickStartSession>(`/quick-start/sessions/${id}`);
     setSession(data);
     setOrganizationId((data.project as QuickStartSession["project"] & { organizationId?: string }).organizationId ?? "");
@@ -205,20 +269,27 @@ export function QuickStartWizard() {
     setQuestionsDirty(false);
     setActiveRun(data.runs?.[0] ?? null);
     const loadedReport = data.runs?.[0]?.report ?? null;
+    activeReportIdRef.current = loadedReport?.id;
     setReport(loadedReport);
     const latestContent = loadedReport?.contentAssets?.[0] ?? null;
     setSelectedContent(latestContent);
     if (latestContent) {
       setChannel(latestContent.channel);
       setDraftTitle(latestContent.title);
+      setDraftSummary(renderContentSummary(latestContent.metadata));
       setDraftBody(latestContent.body);
       setDraftTags(latestContent.hashtags.join(" "));
+      setDraftVideoScriptText(renderVideoScript(latestContent.metadata));
+      setEnterpriseContext(metadataText(latestContent.metadata, "enterpriseContext"));
       const existingPlatforms = latestContent.distributionTasks?.map((task) => task.platform) ?? [];
       setPlatformSelection(existingPlatforms.length ? existingPlatforms : [latestContent.channel]);
     } else {
       setDraftTitle("");
+      setDraftSummary("");
       setDraftBody("");
       setDraftTags("");
+      setDraftVideoScriptText("");
+      setEnterpriseContext("");
     }
     setViewStep(0);
     return data;
@@ -493,25 +564,37 @@ export function QuickStartWizard() {
 
   async function generateContent(suggestionId?: string) {
     if (!reportId) return;
+    const requestedReportId = reportId;
+    const requestDraftRevision = draftRevision.current;
+    const requestedContext = enterpriseContext.trim();
     setError("");
     setBusy("content");
     try {
       const result = await api<ContentAsset>(`/quick-start/reports/${reportId}/content`, {
         method: "POST",
-        body: JSON.stringify({ channel, suggestionId, confirmed: contentConfirmed }),
+        body: JSON.stringify({ channel, suggestionId, enterpriseContext: requestedContext, confirmed: contentConfirmed }),
       });
-      setSelectedContent(result);
-      setDraftTitle(result.title);
-      setDraftBody(result.body);
-      setDraftTags(result.hashtags.join(" "));
+      if (activeReportIdRef.current !== requestedReportId) return;
+      setReport((current) => current
+        ? { ...current, contentAssets: [result, ...current.contentAssets.filter((item) => item.id !== result.id)] }
+        : current);
+      if (draftRevision.current === requestDraftRevision) {
+        setSelectedContent(result);
+        setDraftTitle(result.title);
+        setDraftSummary(renderContentSummary(result.metadata));
+        setDraftBody(result.body);
+        setDraftTags(result.hashtags.join(" "));
+        setDraftVideoScriptText(renderVideoScript(result.metadata));
+      }
       setContentConfirmed(false);
       setViewStep(5);
-      setNotice("新内容已保存为草稿，并保留了检测证据关联。");
-      if (session) await loadSession(session.id);
+      setNotice(draftRevision.current === requestDraftRevision
+        ? "新内容已保存为草稿，并保留了检测证据关联。"
+        : "新草稿已生成并保留在列表中；检测到你正在编辑内容，已保留当前编辑。可从右侧列表打开新草稿。");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "生成内容失败");
     } finally {
-      setBusy("");
+      if (activeReportIdRef.current === requestedReportId) setBusy("");
     }
   }
 
@@ -525,7 +608,13 @@ export function QuickStartWizard() {
         body: JSON.stringify({
           title: draftTitle,
           body: draftBody,
+          summaryText: selectedContent.metadata?.summary !== undefined || typeof selectedContent.metadata?.summaryText === "string"
+            ? draftSummary
+            : undefined,
           hashtags: draftTags.split(/[，,\s]+/).map((tag) => tag.trim()).filter(Boolean),
+          videoScriptText: selectedContent.metadata?.videoScript != null || typeof selectedContent.metadata?.videoScriptText === "string"
+            ? draftVideoScriptText
+            : undefined,
         }),
       });
       setSelectedContent(result);
@@ -535,6 +624,32 @@ export function QuickStartWizard() {
     } finally {
       setBusy("");
     }
+  }
+
+  async function copyDraft() {
+    try {
+      const script = draftVideoScriptText.trim() ? `\n\n视频脚本\n${draftVideoScriptText.trim()}` : "";
+      const summary = draftSummary.trim() ? `\n\n摘要\n${draftSummary.trim()}` : "";
+      await navigator.clipboard.writeText(`${draftTitle}${summary}\n\n${draftBody}${script}\n\n${draftTags}`.trim());
+      setNotice("当前草稿已复制为纯文本。");
+    } catch {
+      setError("复制失败，请检查浏览器剪贴板权限。");
+    }
+  }
+
+  function exportDraft() {
+    const script = draftVideoScriptText.trim() ? `\n\n视频脚本\n${draftVideoScriptText.trim()}` : "";
+    const summary = draftSummary.trim() ? `\n\n摘要\n${draftSummary.trim()}` : "";
+    const file = new Blob([`${draftTitle}${summary}\n\n${draftBody}${script}\n\n${draftTags}`.trim()], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `geolens-${selectedContent?.channel ?? "content"}-draft.txt`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setNotice("草稿已导出为纯文本文件。");
   }
 
   async function createDistributionTasks() {
@@ -558,10 +673,18 @@ export function QuickStartWizard() {
   }
 
   function newSession() {
+    draftRevision.current += 1;
+    activeReportIdRef.current = undefined;
     setSession(null);
     setActiveRun(null);
     setReport(null);
     setSelectedContent(null);
+    setEnterpriseContext("");
+    setDraftTitle("");
+    setDraftSummary("");
+    setDraftBody("");
+    setDraftTags("");
+    setDraftVideoScriptText("");
     setQuestions([]);
     setQuestionsDirty(false);
     setBrandName("");
@@ -1021,9 +1144,20 @@ export function QuickStartWizard() {
               <>
                 <label className="mt-5 block text-sm font-medium text-slate-700">
                   目标平台
-                  <select className={inputClass} value={channel} onChange={(event) => setChannel(event.target.value)}>
+                  <select className={inputClass} value={channel} onChange={(event) => { draftRevision.current += 1; setChannel(event.target.value); }}>
                     {platforms.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
                   </select>
+                </label>
+                <label className="mt-4 block text-sm font-medium text-slate-700">
+                  补充企业资料（可选）
+                  <textarea
+                    className={`${inputClass} min-h-24 resize-y leading-6`}
+                    value={enterpriseContext}
+                    maxLength={4000}
+                    onChange={(event) => { draftRevision.current += 1; setEnterpriseContext(event.target.value); }}
+                    placeholder="可填写产品或服务、目标客户、使用场景、已确认的优势和品牌表达方式。缺少的信息会作为待核实项提示。"
+                  />
+                  <span className="mt-1 block text-xs font-normal text-slate-400">本次资料会随新草稿保存，帮助后续复核生成依据。</span>
                 </label>
                 <div className="mt-4 max-w-xl space-y-3">
                   {reportProvider !== "MOCK" && <PaidCallConfirm provider={reportProvider} count={1} checked={contentConfirmed} onChange={setContentConfirmed} />}
@@ -1042,13 +1176,44 @@ export function QuickStartWizard() {
                       <StatusPill status={selectedContent.status} />
                     </div>
                     <div className="mt-4 space-y-4">
-                      <label className="block text-sm font-medium text-slate-700">标题<input className={inputClass} value={draftTitle} maxLength={200} onChange={(event) => setDraftTitle(event.target.value)} /></label>
-                      <label className="block text-sm font-medium text-slate-700">正文<textarea className={`${inputClass} min-h-64 resize-y leading-6`} value={draftBody} maxLength={30000} onChange={(event) => setDraftBody(event.target.value)} /></label>
-                      <label className="block text-sm font-medium text-slate-700">话题标签<input className={inputClass} value={draftTags} onChange={(event) => setDraftTags(event.target.value)} placeholder="#品牌名 #选择指南" /></label>
+                      <label className="block text-sm font-medium text-slate-700">标题<input className={inputClass} value={draftTitle} maxLength={200} onChange={(event) => { draftRevision.current += 1; setDraftTitle(event.target.value); }} /></label>
+                      <label className="block text-sm font-medium text-slate-700">摘要<textarea className={`${inputClass} min-h-20 resize-y leading-6`} value={draftSummary} maxLength={500} onChange={(event) => { draftRevision.current += 1; setDraftSummary(event.target.value); }} /></label>
+                      <label className="block text-sm font-medium text-slate-700">正文<textarea className={`${inputClass} min-h-64 resize-y leading-6`} value={draftBody} maxLength={30000} onChange={(event) => { draftRevision.current += 1; setDraftBody(event.target.value); }} /></label>
+                      {(selectedContent.metadata?.videoScript != null || typeof selectedContent.metadata?.videoScriptText === "string") && (
+                        <label className="block text-sm font-medium text-slate-700">
+                          视频脚本
+                          <textarea
+                            className={`${inputClass} min-h-48 resize-y leading-6`}
+                            value={draftVideoScriptText}
+                            maxLength={20000}
+                            onChange={(event) => { draftRevision.current += 1; setDraftVideoScriptText(event.target.value); }}
+                          />
+                        </label>
+                      )}
+                      <label className="block text-sm font-medium text-slate-700">话题标签<input className={inputClass} value={draftTags} onChange={(event) => { draftRevision.current += 1; setDraftTags(event.target.value); }} placeholder="#品牌名 #选择指南" /></label>
                       <Provenance isMock={selectedContent.isMock} evidenceMock={selectedContent.evidenceMock} />
+                      {(selectedRiskNotes.length > 0 || selectedQualityWarnings.length > 0) && (
+                        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-900">
+                          <strong>发布前人工核对</strong>
+                          <ul className="mt-1 list-disc space-y-1 pl-4">
+                            {[...selectedRiskNotes, ...selectedQualityWarnings].map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}
+                          </ul>
+                          <p className="mt-2 text-amber-800">自动检查只能提示可疑表达，不能证明事实真伪。</p>
+                        </div>
+                      )}
                       {selectedContent.generations[0] && <p className="text-xs text-slate-400">{selectedContent.generations[0].provider} / {selectedContent.generations[0].model} · {selectedContent.generations[0].promptVersion}</p>}
+                      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4" aria-label="纯文本预览">
+                        <p className="text-xs font-semibold text-slate-500">纯文本预览</p>
+                        <h4 className="mt-2 text-sm font-semibold text-slate-900">{draftTitle}</h4>
+                        {draftSummary.trim() && <p className="mt-2 text-sm leading-6 text-slate-500">{draftSummary}</p>}
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{draftBody}</p>
+                        {draftVideoScriptText.trim() && <p className="mt-3 whitespace-pre-wrap border-t border-slate-200 pt-3 text-sm leading-6 text-slate-700"><strong className="text-xs text-slate-500">视频脚本</strong><br />{draftVideoScriptText}</p>}
+                        {draftTags.trim() && <p className="mt-2 text-sm text-blue-700">{draftTags}</p>}
+                      </div>
                       <div className="flex flex-wrap gap-3">
                         <button className={buttonPrimary} disabled={busy === "save-content" || !draftTitle.trim() || !draftBody.trim()} onClick={() => void saveContent()}>{busy === "save-content" ? "保存中…" : "保存内容草稿"}</button>
+                        <button className={buttonSecondary} disabled={!draftTitle.trim() || !draftBody.trim()} onClick={() => void copyDraft()}>复制纯文本</button>
+                        <button className={buttonSecondary} disabled={!draftTitle.trim() || !draftBody.trim()} onClick={exportDraft}>导出 TXT</button>
                         <button className={buttonSecondary} disabled={selectedContent.status !== "SAVED" || busy === "distribution"} onClick={() => setViewStep(6)}>选择平台并进入发布 →</button>
                       </div>
                     </div>
@@ -1072,7 +1237,7 @@ export function QuickStartWizard() {
                 <ul className="mt-3 space-y-2">
                   {report.contentAssets.map((asset) => (
                     <li key={asset.id}>
-                      <button className={`w-full rounded-xl border p-3 text-left ${selectedContent?.id === asset.id ? "border-blue-200 bg-blue-50/50" : "border-slate-200 hover:bg-slate-50"}`} onClick={() => { setSelectedContent(asset); setChannel(asset.channel); setDraftTitle(asset.title); setDraftBody(asset.body); setDraftTags(asset.hashtags.join(" ")); }}>
+                      <button className={`w-full rounded-xl border p-3 text-left ${selectedContent?.id === asset.id ? "border-blue-200 bg-blue-50/50" : "border-slate-200 hover:bg-slate-50"}`} onClick={() => { draftRevision.current += 1; setSelectedContent(asset); setChannel(asset.channel); setDraftTitle(asset.title); setDraftSummary(renderContentSummary(asset.metadata)); setDraftBody(asset.body); setDraftTags(asset.hashtags.join(" ")); setDraftVideoScriptText(renderVideoScript(asset.metadata)); setEnterpriseContext(metadataText(asset.metadata, "enterpriseContext")); }}>
                         <span className="block text-xs font-semibold text-slate-700">{platforms.find((item) => item.id === asset.channel)?.label ?? asset.channel}</span>
                         <span className="mt-1 block line-clamp-2 text-xs text-slate-500">{asset.title}</span>
                       </button>

@@ -141,6 +141,7 @@ export type DistributionTask = {
     isMock: boolean;
     evidenceMock: boolean;
     hashtags: string[];
+    metadata?: Record<string, unknown> | null;
     brand: { name: string };
   };
 };

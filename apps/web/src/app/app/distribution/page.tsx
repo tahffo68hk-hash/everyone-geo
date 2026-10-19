@@ -7,6 +7,49 @@ import type { DistributionTask } from "@/lib/quick-start.types";
 
 const button = "inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50";
 
+function videoScriptText(metadata: Record<string, unknown> | null | undefined) {
+  const savedText = metadata?.videoScriptText;
+  if (typeof savedText === "string") return savedText;
+  const value = metadata?.videoScript;
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return "";
+  const script = value as Record<string, unknown>;
+  if (typeof script.voiceover === "string") {
+    const shots = Array.isArray(script.shotSuggestions)
+      ? script.shotSuggestions.filter((item): item is string => typeof item === "string")
+      : [];
+    return [script.voiceover, ...shots].join("\n\n");
+  }
+  return [
+    typeof script.opening === "string" ? script.opening : "",
+    typeof script.narration === "string" ? script.narration : "",
+    Array.isArray(script.outline)
+      ? script.outline.flatMap((item) => {
+          if (typeof item !== "object" || item === null || Array.isArray(item)) return [];
+          const section = item as Record<string, unknown>;
+          return [
+            typeof section.heading === "string" ? section.heading : "",
+            ...(Array.isArray(section.keyPoints) ? section.keyPoints.filter((point): point is string => typeof point === "string") : []),
+          ];
+        }).filter(Boolean).join("\n")
+      : "",
+    typeof script.ending === "string" ? script.ending : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+function contentRiskNotes(metadata: Record<string, unknown> | null | undefined) {
+  const read = (key: string) => {
+    const value = metadata?.[key];
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  };
+  return [...read("riskNotes"), ...read("qualityWarnings")];
+}
+
+function contentSummary(metadata: Record<string, unknown> | null | undefined) {
+  if (typeof metadata?.summaryText === "string") return metadata.summaryText;
+  return typeof metadata?.summary === "string" ? metadata.summary : "";
+}
+
 export default function DistributionWorkbenchPage() {
   const [tasks, setTasks] = useState<DistributionTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +74,13 @@ export default function DistributionWorkbenchPage() {
 
   async function copyContent(task: DistributionTask) {
     try {
-      await navigator.clipboard.writeText(`${task.content.title}\n\n${task.content.body}`);
+      const script = videoScriptText(task.content.metadata);
+      const scriptSection = script ? `\n\n视频脚本\n${script}` : "";
+      const summary = contentSummary(task.content.metadata);
+      const summarySection = summary ? `\n\n摘要\n${summary}` : "";
+      const hashtags = task.content.hashtags.join(" ");
+      const hashtagSection = hashtags ? `\n\n${hashtags}` : "";
+      await navigator.clipboard.writeText(`${task.content.title}${summarySection}\n\n${task.content.body}${hashtagSection}${scriptSection}`);
       setCopiedId(task.id);
       window.setTimeout(() => setCopiedId(""), 1600);
     } catch {
@@ -85,13 +134,16 @@ export default function DistributionWorkbenchPage() {
                       </div>
                       <h2 className="mt-3 text-base font-semibold leading-6 text-slate-900">{task.content.title}</h2>
                       <p className="mt-1 text-xs text-slate-500">项目：{task.project.name} · 品牌：{task.content.brand.name} · 任务状态：草稿</p>
+                      {contentSummary(task.content.metadata) && <p className="mt-2 text-sm leading-6 text-slate-600">{contentSummary(task.content.metadata)}</p>}
                     </div>
-                    <button className={button} onClick={() => void copyContent(task)}>{copiedId === task.id ? "已复制" : "复制标题与正文"}</button>
+                    <button className={button} onClick={() => void copyContent(task)}>{copiedId === task.id ? "已复制" : "复制整份草稿"}</button>
                   </div>
                   <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_260px]">
                     <div>
                       <p className="whitespace-pre-wrap text-sm leading-7 text-slate-600">{task.content.body}</p>
+                      {videoScriptText(task.content.metadata) && <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><summary className="cursor-pointer text-xs font-semibold text-slate-700">查看视频脚本</summary><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{videoScriptText(task.content.metadata)}</p></details>}
                       {task.content.hashtags.length > 0 && <p className="mt-4 text-xs leading-6 text-blue-700">{task.content.hashtags.join(" ")}</p>}
+                      {contentRiskNotes(task.content.metadata).length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><strong>发布前人工核对</strong><ul className="mt-1 list-disc space-y-1 pl-4">{contentRiskNotes(task.content.metadata).map((note, index) => <li key={`${index}-${note}`}>{note}</li>)}</ul><p className="mt-2">自动检查不能证明内容事实真伪。</p></div>}
                     </div>
                     <aside className="h-fit rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                       <p className="text-xs font-semibold text-slate-800">发布准备</p>

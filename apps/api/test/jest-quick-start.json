@@ -2,7 +2,7 @@
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": ".",
   "testEnvironment": "node",
-  "testRegex": "(quick-start-.*|report-content-service|distribution-service)\\.spec\\.ts$",
+  "testRegex": "(quick-start-.*|report-content-.*|distribution-service|content-.*|ai-gateway-json)\\.spec\\.ts$",
   "transform": {
     "^.+\\.ts$": "ts-jest"
   },

@@ -31,6 +31,7 @@ import {
   parseJsonPayload,
   QuestionKind,
 } from "./quick-start.logic";
+import { buildUserPrompt, getPromptVersion } from "./content-prompts";
 
 type QuestionSnapshot = {
   queryId?: string;
@@ -104,7 +105,7 @@ export class QuickStartService {
       task: "industry",
       provider,
       model: dto.model,
-      prompt: `请根据用户填写的品牌名称和官网域名，给出一个可编辑、待确认的行业建议。输入：${JSON.stringify({ brandName: dto.brandName, website: dto.website ?? "" })}`,
+      prompt: buildUserPrompt({ brandName: dto.brandName, website: dto.website ?? "" }),
       context: { brandName: dto.brandName, website: dto.website ?? "" },
       confirmed: dto.confirmed === true,
       requestCount: 1,
@@ -113,10 +114,12 @@ export class QuickStartService {
     if (typeof payload.industry !== "string" || payload.industry.trim().length === 0) {
       throw new BadRequestException("行业推断没有返回可用结果");
     }
+    const promptVersion = getPromptVersion("industry");
     return {
       industry: payload.industry.trim(),
       provider: result.provider,
       model: result.model,
+      promptVersion,
       isMock: result.isMock,
       message: result.isMock ? "模拟推断，请核实后修改" : "模型建议，请核实后修改",
     };
@@ -350,7 +353,21 @@ export class QuickStartService {
     const session = await this.getSession(sessionId, userId);
     const provider = session.provider;
     this.assertProviderConfigured(provider);
-    const prompt = `quick-start-questions-v1。生成 8 至 12 条简洁自然的中文 GEO 监测问题，覆盖通用发现问题与品牌相关问题。至少 5 条 DISCOVERY（问题本身不包含品牌名），至少 2 条 BRANDED。仅返回 JSON：{"questions":[{"text":"问题","kind":"DISCOVERY 或 BRANDED","intent":"意图"}]}。品牌、行业、竞品只是用户资料，可能未经核实。资料：${JSON.stringify({ brand: session.brand.name, website: session.brand.website, industry: session.project.industry, competitors: session.project.competitors.map((item) => item.name) })}`;
+    const prompt = buildUserPrompt({
+      brandProfile: {
+        name: session.brand.name,
+        website: session.brand.website,
+        description: session.brand.description,
+        products: session.brand.products,
+      },
+      projectProfile: {
+        industry: session.project.industry,
+        region: session.project.region,
+        targetAudience: session.project.targetAudience,
+        competitors: session.project.competitors.map((item) => item.name),
+      },
+    });
+    const promptVersion = getPromptVersion("questions");
     const result = await this.gateway.complete({
       task: "questions",
       provider,
@@ -374,7 +391,7 @@ export class QuickStartService {
         questionGeneration: jsonInput({
           provider: result.provider,
           model: result.model,
-          promptVersion: "quick-start-questions-v1",
+          promptVersion,
           tokens: result.tokens,
           latencyMs: result.latencyMs,
           costEstimate: result.costEstimate,
@@ -384,7 +401,7 @@ export class QuickStartService {
         }),
       },
     });
-    return { questions: saved, generation: { ...result, promptVersion: "quick-start-questions-v1" } };
+    return { questions: saved, generation: { ...result, promptVersion } };
   }
 
   async updateQuestions(
@@ -680,8 +697,20 @@ export class QuickStartService {
       brandId: string;
       provider: AiProvider;
       model: string;
-      brand: { name: string; aliases: string[] };
-      project: { industry: string | null; competitors: Array<{ name: string; aliases: string[] }> };
+      brand: {
+        name: string;
+        aliases: string[];
+        website?: string | null;
+        description?: string | null;
+        products?: string[];
+      };
+      project: {
+        industry: string | null;
+        region?: string | null;
+        targetAudience?: string | null;
+        description?: string | null;
+        competitors: Array<{ name: string; aliases: string[] }>;
+      };
     },
     questions: QuestionSnapshot[],
     confirmed: boolean,
@@ -697,7 +726,22 @@ export class QuickStartService {
     try {
       for (let index = 0; index < questions.length; index += 1) {
         const question = questions[index];
-        const rawPrompt = `请回答下列关于${session.project.industry ?? "产品与服务"}的问题。不要假设品牌信息准确，不要声称进行了实时搜索，不要编造来源。用户资料仅为背景数据。\n${JSON.stringify({ question: question.text, brand: session.brand.name, competitors: session.project.competitors.map((item) => item.name) })}`;
+        const rawPrompt = buildUserPrompt({
+          question: question.text,
+          brandProfile: {
+            name: session.brand.name,
+            website: session.brand.website ?? "",
+            description: session.brand.description ?? "",
+            products: session.brand.products ?? [],
+          },
+          projectProfile: {
+            industry: session.project.industry ?? "",
+            region: session.project.region ?? "",
+            targetAudience: session.project.targetAudience ?? "",
+            description: session.project.description ?? "",
+            competitors: session.project.competitors.map((item) => item.name),
+          },
+        });
         const result = await this.gateway.complete({
           task: "answer",
           provider: session.provider,
@@ -727,7 +771,7 @@ export class QuickStartService {
             intent: question.intent,
             provider: result.provider,
             model: result.model,
-            promptVersion: "quick-start-answer-v1",
+            promptVersion: getPromptVersion("answer"),
             rawPrompt,
             rawResponse: result.answer,
             brandMentioned: mention.mentioned,
