@@ -39,6 +39,7 @@ import {
   ResolveBrandDto,
   GenerateVideoScriptDto,
   AdaptContentChannelsDto,
+  GenerateTagsDto,
 } from "./dto/ai.dto";
 import { randomUUID } from "node:crypto";
 import {
@@ -669,7 +670,7 @@ export class AiService {
       brandContext: dto.brandContext || defaultBrand?.description || projectWithProfile?.description || undefined,
     };
 
-    return this.gateway.generateStructured<{
+    const result = await this.gateway.generateStructured<{
       title: string;
       body: string;
       summary: string;
@@ -688,6 +689,13 @@ export class AiService {
       promptVersion: PROMPT_VERSIONS.CONTENT_DRAFT,
       input: enrichedInput,
     });
+
+    if (dto.channel && dto.channel.toUpperCase().includes("XIAOHONGSHU") && result.data?.title) {
+      if (result.data.title.length > 20) {
+        result.data.title = result.data.title.slice(0, 20);
+      }
+    }
+    return result;
   }
 
   async rewriteContent(userId: string, projectId: string, dto: RewriteContentDto) {
@@ -1214,6 +1222,55 @@ export class AiService {
       latencyMs: input.latencyMs,
       generationId: input.generationId,
       channels,
+    };
+  }
+
+  /**
+   * 基于产品内容与目标发布渠道生成平台适配话题标签
+   */
+  async generateContentTags(userId: string, projectId: string, dto: GenerateTagsDto) {
+    await this.tenant.assertUserInProject(userId, projectId);
+
+    const brand = dto.brandName?.trim() || "";
+    const title = dto.title.trim();
+    const body = (dto.body || "").trim();
+    const channel = (dto.channel || "ZHIHU").toUpperCase();
+    const provider = dto.provider || "mock";
+
+    const channelTagMap: Record<string, string[]> = {
+      XIAOHONGSHU: ["好物分享", "真实测评", "避坑指南", "职场日常", "自用好物", "效率神器", "干货分享"],
+      ZHIHU: ["深度科普", "技术解析", "行业观察", "效率工具", "选型指南", "专业分析"],
+      DOUYIN: ["短视频创作", "神器推荐", "实用技巧", "涨知识", "职场提效", "宝藏好物"],
+      BILIBILI: ["知识分享", "深度测评", "科技数码", "一键三连", "干货总结", "硬核科普"],
+      WEIBO: ["新鲜事", "行业动态", "好物种草", "数码科技", "生活日常"],
+      WECHAT_OFFICIAL_ACCOUNT: ["深度好文", "技术白皮书", "数字化转型", "行业趋势", "方法论"],
+    };
+
+    const baseTags = channelTagMap[channel] || ["热点推荐", "实用指南", "行业观察", "深度干货"];
+
+    const extracted: string[] = [];
+    if (brand) extracted.push(brand);
+
+    // 从标题和正文中抽取高频专有词
+    const textSample = `${title} ${body.slice(0, 300)}`;
+    const words = textSample
+      .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 2 && w.length <= 8 && !["适合", "哪些", "以及", "如何", "根据", "不同", "选择", "什么", "这个", "并且", "进行"].includes(w));
+
+    for (const w of words) {
+      if (!extracted.includes(w) && extracted.length < 5) {
+        extracted.push(w);
+      }
+    }
+
+    const combined = [...new Set([...extracted, ...baseTags])].slice(0, 8);
+
+    return {
+      channel,
+      tags: combined,
+      count: combined.length,
+      provider,
     };
   }
 }

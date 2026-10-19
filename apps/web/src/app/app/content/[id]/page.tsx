@@ -460,14 +460,33 @@ export default function ContentDraftDetailPage() {
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("FACT_CHECK_REQUIRED")) {
+      if (msg.includes("FACT_CHECK_REQUIRED") || msg.includes("未核实的事实声明") || msg.includes("事实检查")) {
         setError(
-          "审批已被事实守卫拦截：草稿中包含未核验的数值、极限词或功效声明。请在「事实核查守卫」中完成安全改写或补充已核验事实后再批准！"
+          "审批已被事实守卫拦截：草稿中包含未核验的数值、极限词或功效断言。您可以点击下方「一键自动安全改写并批准」，系统将自动净化未核验表述并放行。"
         );
         setActiveTab("fact-check");
+        void handleExtractClaims();
       } else {
         setError(friendlyError(err));
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 一键自动安全改写底稿并立即批准
+  async function handleSafeRewriteAndApprove() {
+    setBusy(true);
+    setError("");
+    try {
+      await safeRewrite(id, {});
+      await loadData();
+      await decideContentDraft(id, "APPROVED", comment || "事实安全改写后自动批准", undefined);
+      setComment("");
+      await loadData();
+      setSuccessMsg("已自动完成事实安全改写并成功批准此版本！内容已合规解锁发布。");
+    } catch (err) {
+      setError(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -623,7 +642,7 @@ export default function ContentDraftDetailPage() {
       setSafeRewriteSummary(null);
       if (res.blocking) {
         setError(
-          `事实核验提示：检测到 ${res.unverifiedCount} 项未核验声明，已触发阻断。请点击「一键自动安全改写」或录入事实依据。${res.conflictingCount ? `（含 ${res.conflictingCount} 项冲突）` : ""}`
+          `事实守卫拦截提示：检测到 ${res.unverifiedCount} 项未核验的事实声明（含 ${res.conflictingCount || 0} 项冲突）。您可以点击下方「一键自动安全改写并批准」自动脱敏放行，或在事实守卫面板录入依据。`
         );
       } else {
         setSuccessMsg("事实核验通过：当前内容所有核心声明均已核验或符合中立安全规范。");
@@ -878,8 +897,46 @@ export default function ContentDraftDetailPage() {
 
         {/* 提示消息 */}
         {error && (
-          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-xs">
-            <strong>操作遇到问题：</strong> {error}
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <strong>操作遇到问题：</strong> {error}
+              </div>
+              <button
+                type="button"
+                onClick={() => setError("")}
+                className="text-red-400 hover:text-red-700 font-bold ml-2 text-base leading-none"
+              >
+                ×
+              </button>
+            </div>
+            {(error.includes("未核实") ||
+              error.includes("未核验") ||
+              error.includes("事实核查") ||
+              error.includes("事实核验") ||
+              error.includes("安全改写") ||
+              error.includes("事实检查") ||
+              error.includes("事实守卫") ||
+              error.includes("FACT_CHECK_REQUIRED")) && (
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-red-200/70">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleSafeRewriteAndApprove()}
+                  className="px-3.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs shadow-xs transition flex items-center gap-1.5"
+                >
+                  <span>🛡️</span>
+                  <span>一键自动安全改写并批准</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("fact-check")}
+                  className="px-3.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-xs transition"
+                >
+                  前往「事实核查守卫」面板 →
+                </button>
+              </div>
+            )}
           </div>
         )}
         {successMsg && (
@@ -1270,14 +1327,25 @@ export default function ContentDraftDetailPage() {
                       自动提取正文中的参数、排名、极限词与功效断言，比对已知事实库，阻断未核验内容的审批发布。
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    disabled={extractingClaims}
-                    onClick={() => void handleExtractClaims()}
-                    className="ui-button primary text-xs"
-                  >
-                    {extractingClaims ? "正在抽取核对中…" : "一键抽取并核查当前文本声明"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={safeRewriting}
+                      onClick={() => void handleSafeRewrite()}
+                      className="ui-button danger text-xs font-semibold flex items-center gap-1.5"
+                    >
+                      <span>🛡️</span>
+                      <span>{safeRewriting ? "正在安全改写中…" : "一键自动安全改写"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={extractingClaims}
+                      onClick={() => void handleExtractClaims()}
+                      className="ui-button primary text-xs"
+                    >
+                      {extractingClaims ? "正在抽取核对中…" : "一键抽取并核查当前文本声明"}
+                    </button>
+                  </div>
                 </div>
 
                 {/* 阻断状态横幅 */}
@@ -1991,6 +2059,16 @@ export default function ContentDraftDetailPage() {
                       className="ui-button primary flex-1 font-medium"
                     >
                       批准此版本
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void handleSafeRewriteAndApprove()}
+                      className="px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-medium text-xs transition shadow-xs flex items-center justify-center gap-1.5"
+                      title="若遇到未核验事实声明阻断，点击此按钮可自动中立化净化并直接完成批准"
+                    >
+                      <span>🛡️</span>
+                      <span>安全改写并批准</span>
                     </button>
                     <button
                       type="button"

@@ -707,11 +707,50 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
         sourceDiagnosisId: aiSelectedDiagId || undefined,
       });
 
-      setDrafts((prev) => [created, ...prev]);
+      const fullCreatedDraft: Draft = {
+        ...created,
+        title: created.title || aiGeneratedDraft.title.trim(),
+        topic: created.topic || aiTopic.trim(),
+        body: (created as any).body || aiGeneratedDraft.body.trim(),
+        latestRevision: created.latestRevision || {
+          id: (created as any).latestRevision?.id || `rev-${created.id}`,
+          version: 1,
+          body: aiGeneratedDraft.body.trim(),
+          summary: aiGeneratedDraft.summary || "",
+          changeNote: null,
+          generatedById: "",
+          createdAt: new Date().toISOString(),
+        },
+        revisions: (created as any).revisions?.length
+          ? (created as any).revisions
+          : [
+              {
+                id: (created as any).latestRevision?.id || `rev-${created.id}`,
+                version: 1,
+                body: aiGeneratedDraft.body.trim(),
+                summary: aiGeneratedDraft.summary || "",
+                changeNote: null,
+                generatedById: "",
+                createdAt: new Date().toISOString(),
+              },
+            ],
+        tags: aiGeneratedDraft.tags || [],
+      };
+
+      setDrafts((prev) => [fullCreatedDraft, ...prev.filter((d) => d.id !== created.id)]);
       setSelectedDraftId(created.id);
       setActiveAssistedChannel(aiChannel);
       setActiveManualChannel(aiChannel);
+      setPublishingMode("BROWSER_ASSISTED");
       setCreationEntry("EXISTING");
+      setEditedContent((prev) => ({
+        ...prev,
+        [aiChannel]: {
+          title: aiGeneratedDraft.title.trim(),
+          body: aiGeneratedDraft.body.trim(),
+          tags: aiGeneratedDraft.tags || [],
+        },
+      }));
       setActionSuccess(`已采纳 AI 方案并保存为草稿「${created.title}」，已无缝带入发布工作台！`);
     } catch (err: any) {
       setErrorMsg(err.message || "采纳 AI 方案失败");

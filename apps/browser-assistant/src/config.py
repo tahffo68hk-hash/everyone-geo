@@ -20,10 +20,23 @@ SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def get_default_port() -> int:
+    import socket
+    for p in [18765, 8765, 28765]:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(('127.0.0.1', p))
+            s.close()
+            return p
+        except Exception:
+            continue
+    return 18765
+
+
 class AssistantSettings(BaseModel):
     # 服务主机与端口
     host: str = Field(default="127.0.0.1")
-    port: int = Field(default=8765)
+    port: int = Field(default_factory=get_default_port)
     
     # 允许访问的源（GeoLens Web / API 前端）
     allowed_origins: list[str] = Field(

@@ -806,3 +806,27 @@ export async function draftAiLearningActions(
     body: JSON.stringify(payload),
   });
 }
+
+export interface GenerateContentTagsRequest extends BaseAiOptions {
+  title: string;
+  body?: string;
+  channel?: string;
+  brandName?: string;
+}
+
+export interface ContentTagsResult {
+  channel: string;
+  tags: string[];
+  count: number;
+  provider: string;
+}
+
+export async function generateAiContentTags(
+  projectId: string,
+  payload: GenerateContentTagsRequest,
+): Promise<ContentTagsResult> {
+  return api(`/projects/${projectId}/ai/content-tags`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

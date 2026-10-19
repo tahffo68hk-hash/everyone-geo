@@ -43,6 +43,7 @@ import {
   ResolveBrandDto,
   GenerateVideoScriptDto,
   AdaptContentChannelsDto,
+  GenerateTagsDto,
 } from "./dto/ai.dto";
 
 
@@ -421,6 +422,20 @@ export class AiController {
     @Body() dto: AdaptContentChannelsDto,
   ) {
     return this.aiService.adaptContentChannels(u.sub, id, draftId, dto);
+  }
+
+  /**
+   * 基于产品内容与目标发布渠道生成平台适配话题标签
+   * POST /projects/:id/ai/content-tags
+   */
+  @Post("projects/:id/ai/content-tags")
+  @HttpCode(200)
+  generateContentTags(
+    @CurrentUser() u: JwtUserPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: GenerateTagsDto,
+  ) {
+    return this.aiService.generateContentTags(u.sub, id, dto);
   }
 }
 

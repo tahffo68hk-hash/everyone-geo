@@ -477,7 +477,12 @@ ${(input.items || []).map((it: string, i: number) => `${i + 1}. ${it}`).join('\n
       if (input.brandContext) parts.push(`品牌与产品背景：${input.brandContext}`);
       parts.push(`文章标题/核心主题：${input.title || input.topic || "行业专业指南"}`);
       if (input.audience) parts.push(`目标受众：${input.audience}`);
-      if (input.channel) parts.push(`发布目标渠道：${input.channel}`);
+      if (input.channel) {
+        parts.push(`发布目标渠道：${input.channel}`);
+        if (String(input.channel).toUpperCase().includes("XIAOHONGSHU")) {
+          parts.push(`【平台硬性限制】目标渠道为小红书：生成的 title 必须严格在 20 个汉字以内，严禁超过 20 字！正文需包含生动 Emoji、痛点分段与话题标签。`);
+        }
+      }
       if (Array.isArray(input.targetQueries) && input.targetQueries.length > 0) {
         parts.push(`目标解答的 GEO 搜索问题：\n${input.targetQueries.map((q: string, i: number) => `  ${i + 1}. ${q}`).join("\n")}`);
       }

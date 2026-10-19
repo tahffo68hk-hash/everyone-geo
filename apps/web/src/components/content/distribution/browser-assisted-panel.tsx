@@ -17,6 +17,7 @@ import {
   type PublicationListItem,
 } from "@/lib/distribution-api";
 import type { Draft } from "@/lib/content-api";
+import { generateAiContentTags } from "@/lib/ai-api";
 
 interface BrowserAssistedPanelProps {
   projectId: string;
@@ -37,7 +38,7 @@ export function BrowserAssistedPanel({
 }: BrowserAssistedPanelProps) {
   // 助手与浏览器状态
   const [assistantOnline, setAssistantOnline] = useState<boolean | null>(null);
-  const [assistantPort, setAssistantPort] = useState<number>(8765);
+  const [assistantPort, setAssistantPort] = useState<number>(18765);
   const [pairingToken, setPairingToken] = useState<string>("");
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -70,6 +71,7 @@ export function BrowserAssistedPanel({
   const [editBody, setEditBody] = useState("");
   const [editTags, setEditTags] = useState<string[]>([]);
   const [tagInputText, setTagInputText] = useState("");
+  const [generatingTags, setGeneratingTags] = useState(false);
 
   // 素材配图管理 (支持顺序调整与编号，小红书支持 1-9 张图，首图为封面)
   const [mediaItems, setMediaItems] = useState<
@@ -116,10 +118,15 @@ export function BrowserAssistedPanel({
   // 同步草稿内容到编辑态与配图列表
   useEffect(() => {
     if (selectedDraft) {
-      setEditTitle(selectedDraft.title || "");
-      const latestRev = selectedDraft.revisions?.[0];
-      setEditBody(latestRev?.body || "");
-      const rawTags = (latestRev as any)?.tags || [];
+      let initTitle = selectedDraft.title || "";
+      if (activeChannelKey === "XIAOHONGSHU" && initTitle.length > 20) {
+        initTitle = initTitle.slice(0, 20);
+      }
+      setEditTitle(initTitle);
+      const latestRev = (selectedDraft as any).latestRevision || selectedDraft.revisions?.[0];
+      const draftBody = latestRev?.body || (selectedDraft as any)?.body || "";
+      setEditBody(draftBody);
+      const rawTags = (latestRev as any)?.tags || (selectedDraft as any)?.tags || [];
       setEditTags(Array.isArray(rawTags) ? rawTags : []);
 
       // 初始化素材图片
@@ -139,7 +146,7 @@ export function BrowserAssistedPanel({
         setMediaItems([]);
       }
     }
-  }, [selectedDraft]);
+  }, [selectedDraft, activeChannelKey]);
 
   // 页面加载时自动探测本地助手与配对令牌
   useEffect(() => {
@@ -151,14 +158,29 @@ export function BrowserAssistedPanel({
       try {
         // 先从本地 API 获取配对凭据
         const pairInfo = await getAssistantPairingInfo().catch(() => null);
-        if (pairInfo?.token) {
-          assistantClient.setToken(pairInfo.token);
-          setPairingToken(pairInfo.token);
+        let token = pairInfo?.token;
+        let port = pairInfo?.port || 18765;
+
+        // 若 API 暂未读到 token 文件，尝试直连 Python 助手 /api/auth-info
+        if (!token) {
+          for (const testPort of [port, 18765, 8765]) {
+            try {
+              const directAuth = await fetch(`http://127.0.0.1:${testPort}/api/auth-info`).then((r) => r.json());
+              if (directAuth?.token) {
+                token = directAuth.token;
+                port = directAuth.port || testPort;
+                break;
+              }
+            } catch {}
+          }
         }
-        if (pairInfo?.port) {
-          setAssistantPort(pairInfo.port);
-          assistantClient.setBaseUrl(`http://127.0.0.1:${pairInfo.port}`);
+
+        if (token) {
+          assistantClient.setToken(token);
+          setPairingToken(token);
         }
+        setAssistantPort(port);
+        assistantClient.setBaseUrl(`http://127.0.0.1:${port}`);
 
         const health = await assistantClient.checkHealth();
         if (!unmounted && health?.status === "ok") {
@@ -226,17 +248,62 @@ export function BrowserAssistedPanel({
     setConnecting(true);
     setConnectError(null);
     try {
-      assistantClient.setBaseUrl(`http://127.0.0.1:${assistantPort}`);
-      if (pairingToken) assistantClient.setToken(pairingToken);
+      let token = pairingToken;
+      let port = assistantPort || 18765;
+      if (!token) {
+        for (const testPort of [port, 18765, 8765]) {
+          try {
+            const directAuth = await fetch(`http://127.0.0.1:${testPort}/api/auth-info`).then((r) => r.json());
+            if (directAuth?.token) {
+              token = directAuth.token;
+              port = directAuth.port || testPort;
+              setPairingToken(token);
+              setAssistantPort(port);
+              break;
+            }
+          } catch {}
+        }
+      }
+      assistantClient.setBaseUrl(`http://127.0.0.1:${port}`);
+      if (token) assistantClient.setToken(token);
       const health = await assistantClient.checkHealth();
       if (health?.status === "ok") {
         setAssistantOnline(true);
       }
     } catch (e: any) {
       setAssistantOnline(false);
-      setConnectError(`连接失败：${e.message}。请确认本地助手已在端口 ${assistantPort} 启动。`);
+      setConnectError(`连接失败：${e.message}。请确认本地助手已在端口 ${assistantPort || 18765} 启动。`);
     } finally {
       setConnecting(false);
+    }
+  }
+
+  // AI 智能生成适合目标渠道的标签
+  async function handleGenerateTags() {
+    if (!editTitle.trim() && !editBody.trim()) {
+      alert("请先输入或加载草稿标题与正文后再生成标签");
+      return;
+    }
+    setGeneratingTags(true);
+    try {
+      const res = await generateAiContentTags(projectId, {
+        title: editTitle.trim(),
+        body: editBody.trim(),
+        channel: activeChannelKey,
+      });
+      if (res.tags && res.tags.length > 0) {
+        const maxTags = activeChannel?.maxTags || 10;
+        const merged = Array.from(new Set([...editTags, ...res.tags])).slice(0, maxTags);
+        setEditTags(merged);
+        setCopyFeedback(`✨ 已由 AI 为【${activeChannel?.name || activeChannelKey}】精准生成并填充 ${res.tags.length} 个标签！`);
+        setTimeout(() => setCopyFeedback(null), 3000);
+      } else {
+        alert("未生成有效标签，请尝试补充标题或正文。");
+      }
+    } catch (err: any) {
+      alert(`AI 标签生成失败：${err.message || "未知错误"}`);
+    } finally {
+      setGeneratingTags(false);
     }
   }
 
@@ -371,16 +438,21 @@ export function BrowserAssistedPanel({
     setConfirmSuccess(null);
 
     try {
+      let payloadTitle = editTitle;
+      if (activeChannelKey === "XIAOHONGSHU" && payloadTitle.length > 20) {
+        payloadTitle = payloadTitle.slice(0, 20);
+      }
+      const sourceRevId = (selectedDraft as any)?.latestRevision?.id || selectedDraft.revisions?.[0]?.id;
       const resp = await assistantClient.startTask({
         task_id: taskId,
         channel: activeChannelKey,
         account_id: "default",
-        title: editTitle,
+        title: payloadTitle,
         body: editBody,
         tags: editTags,
         media_items: mediaItems,
         source_draft_id: selectedDraft.id,
-        source_revision_id: selectedDraft.revisions?.[0]?.id,
+        source_revision_id: sourceRevId,
         headless: false, // 保证用户桌面可见受控 Chrome 窗口
       });
       setTaskState(resp);
@@ -639,7 +711,7 @@ export function BrowserAssistedPanel({
                     : "bg-rose-50 text-rose-700 border border-rose-200"
                 }`}
               >
-                {assistantOnline === true ? "127.0.0.1:8765 已连接" : "未连接"}
+                {assistantOnline === true ? `127.0.0.1:${assistantPort || 18765} 已连接` : "未连接"}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -833,7 +905,17 @@ export function BrowserAssistedPanel({
             {/* 话题标签 */}
             <div className="flex flex-col gap-1.5">
               <div className="flex justify-between items-center text-xs">
-                <label className="font-semibold text-slate-700">话题标签</label>
+                <div className="flex items-center gap-2">
+                  <label className="font-semibold text-slate-700">话题标签</label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateTags}
+                    disabled={generatingTags}
+                    className="text-[11px] px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 font-medium transition flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {generatingTags ? "✨ 正在生成..." : "✨ AI 智能生成标签"}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => copyToClipboard(editTags.map((t) => `#${t.replace(/#/g, "")}`).join(" "), "话题标签")}

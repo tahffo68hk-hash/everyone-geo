@@ -124,7 +124,7 @@ export class BrowserAssistantClient {
   private baseUrl: string;
   private token: string | null;
 
-  constructor(baseUrl = "http://127.0.0.1:8765", token: string | null = null) {
+  constructor(baseUrl = "http://127.0.0.1:18765", token: string | null = null) {
     this.baseUrl = baseUrl;
     this.token = token;
   }

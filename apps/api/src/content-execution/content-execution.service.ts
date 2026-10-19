@@ -367,11 +367,22 @@ export class ContentExecutionService implements OnModuleDestroy {
       const claims = FactGroundingEngine.extractClaims(latest.body, knownFacts);
       const blockCheck = FactGroundingEngine.checkBlockingRule(claims);
       if (!blockCheck.passed) {
-        throw new BadRequestException({
-          error: "FACT_CHECK_REQUIRED",
-          message: "草稿包含未核实的事实声明，请先在事实检查面板核验或执行安全改写",
-          blockingClaims: blockCheck.blockingClaims,
-        });
+        if ((dto as any).autoSanitize) {
+          const sanitized = FactGroundingEngine.safeRewrite(latest.body, knownFacts);
+          await this.db.client.contentRevision.update({
+            where: { id: latest.id },
+            data: {
+              body: sanitized.sanitizedText,
+              changeNote: (latest.changeNote ? `${latest.changeNote} | ` : "") + "审批时自动安全中立化净化",
+            },
+          });
+        } else {
+          throw new BadRequestException({
+            error: "FACT_CHECK_REQUIRED",
+            message: "草稿包含未核实的事实声明，请先在事实检查面板核验或执行安全改写",
+            blockingClaims: blockCheck.blockingClaims,
+          });
+        }
       }
       nextStatus = "APPROVED";
       action = "APPROVED";
@@ -1156,6 +1167,9 @@ export class ContentExecutionService implements OnModuleDestroy {
       latestRevision: latest
         ? { id: latest.id, version: latest.version, body: latest.body, summary: latest.summary, changeNote: latest.changeNote, generatedById: latest.generatedById, createdAt: latest.createdAt }
         : null,
+      revisions: latest
+        ? [{ id: latest.id, version: latest.version, body: latest.body, summary: latest.summary, changeNote: latest.changeNote, generatedById: latest.generatedById, createdAt: latest.createdAt }]
+        : [],
       revisionCount,
     };
   }
@@ -1810,6 +1824,17 @@ export class ContentExecutionService implements OnModuleDestroy {
         result.sanitizedText,
         dto.variantId,
       );
+    } else {
+      const latest = await this.latestRevision(draftId);
+      if (latest) {
+        await this.db.client.contentRevision.update({
+          where: { id: latest.id },
+          data: {
+            body: result.sanitizedText,
+            changeNote: (latest.changeNote ? `${latest.changeNote} | ` : "") + "已执行事实安全中立化改写",
+          },
+        });
+      }
     }
 
     return {
@@ -2815,21 +2840,34 @@ export class ContentExecutionService implements OnModuleDestroy {
     try {
       const fs = await import("node:fs/promises");
       const path = await import("node:path");
-      const tokenPath = path.resolve(process.cwd(), "../../.runtime/browser-assistant/assistant_token.json");
-      const raw = await fs.readFile(tokenPath, "utf-8");
+      const candidates = [
+        path.resolve(process.cwd(), ".runtime/browser-assistant/assistant_token.json"),
+        path.resolve(process.cwd(), "../../.runtime/browser-assistant/assistant_token.json"),
+        path.resolve(__dirname, "../../../../../.runtime/browser-assistant/assistant_token.json"),
+        path.resolve(__dirname, "../../../../.runtime/browser-assistant/assistant_token.json"),
+      ];
+      let raw = "";
+      for (const p of candidates) {
+        try {
+          raw = await fs.readFile(p, "utf-8");
+          if (raw) break;
+        } catch {}
+      }
+      if (!raw) throw new Error("assistant_token.json not found in any candidate path");
       const data = JSON.parse(raw);
+      const port = Number(data.port) || 18765;
       return {
         configured: true,
-        port: 8765,
+        port,
         token: data.token || null,
-        url: "http://127.0.0.1:8765",
+        url: `http://127.0.0.1:${port}`,
       };
     } catch {
       return {
         configured: false,
-        port: 8765,
+        port: 18765,
         token: null,
-        url: "http://127.0.0.1:8765",
+        url: "http://127.0.0.1:18765",
       };
     }
   }

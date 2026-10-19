@@ -16,19 +16,23 @@ from .config import settings, TOKEN_FILE
 
 def get_or_create_pairing_token() -> str:
     """获取或生成本地配对令牌，持久化保存在 .runtime 目录下"""
+    existing_token = None
     if TOKEN_FILE.exists():
         try:
             data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
             if data.get("token") and len(data["token"]) >= 16:
-                return data["token"]
+                existing_token = data["token"]
         except Exception:
             pass
     
-    # 生成 32 字节高强度随机令牌
-    new_token = secrets.token_urlsafe(32)
+    new_token = existing_token or secrets.token_urlsafe(32)
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_FILE.write_text(
-        json.dumps({"token": new_token, "created_at": str(os.path.getctime(str(TOKEN_FILE.parent))) if TOKEN_FILE.parent.exists() else ""}, indent=2),
+        json.dumps({
+            "token": new_token,
+            "port": settings.port,
+            "created_at": str(os.path.getctime(str(TOKEN_FILE.parent))) if TOKEN_FILE.parent.exists() else ""
+        }, indent=2),
         encoding="utf-8"
     )
     return new_token

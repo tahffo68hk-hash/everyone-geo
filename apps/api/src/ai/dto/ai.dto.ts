@@ -631,3 +631,22 @@ export class AdaptContentChannelsDto extends BaseAiOptionsDto {
   force?: boolean;
 }
 
+/** 基于产品与正文生成平台适配话题标签 */
+export class GenerateTagsDto extends BaseAiOptionsDto {
+  @IsString()
+  @IsNotEmpty()
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  body?: string;
+
+  @IsOptional()
+  @IsString()
+  channel?: string;
+
+  @IsOptional()
+  @IsString()
+  brandName?: string;
+}
+
