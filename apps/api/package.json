@@ -8,7 +8,8 @@
     "start": "node dist/main",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
-    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand"
+    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
+    "test:quick-start": "jest --config ./test/jest-quick-start.json --runInBand"
   },
   "dependencies": {
     "@geo/database": "workspace:*",

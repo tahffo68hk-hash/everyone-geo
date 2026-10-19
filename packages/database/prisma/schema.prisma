@@ -26,6 +26,9 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   memberships OrganizationMember[]
+  quickStartSessions QuickStartSession[]
+  distributionTasks DistributionTask[]
+  monitoringRunConfirmations MonitoringRun[]
 
   @@index([status])
 }
@@ -94,6 +97,11 @@ model Project {
   competitors  Competitor[]
   querySets    QuerySet[]
   queries      Query[]
+  quickStartSessions QuickStartSession[]
+  monitoringRuns MonitoringRun[]
+  geoReports GeoReport[]
+  contentAssets ContentAsset[]
+  distributionTasks DistributionTask[]
 
   // 同一组织内项目名唯一，避免命名冲突
   @@unique([organizationId, name])
@@ -113,6 +121,10 @@ model Brand {
   updatedAt   DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  quickStartSessions QuickStartSession[]
+  monitoringRuns MonitoringRun[]
+  geoReports GeoReport[]
+  contentAssets ContentAsset[]
   // 策略：Brand 从属于 Project，项目删除即删除品牌（级联，理由充分：品牌数据不脱离项目独立存在）
 }
 
@@ -140,6 +152,7 @@ model QuerySet {
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   queries Query[]
+  quickStartSessions QuickStartSession[]
 
   // 同一 Project 内 QuerySet 名称唯一（作为用户可理解的分组标识）
   @@unique([projectId, name])
@@ -160,6 +173,7 @@ model Query {
 
   project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   querySet QuerySet? @relation(fields: [querySetId], references: [id], onDelete: SetNull)
+  monitoringResponses MonitoringResponse[]
 
   @@index([status])
   @@index([type])
@@ -193,4 +207,255 @@ enum QueryStatus {
 enum ProjectStatus {
   ACTIVE
   ARCHIVED
+}
+
+// ============================================================
+// 快速开始、可追溯检测、内容资产与分发草稿
+// ============================================================
+
+enum AiProvider {
+  MOCK
+  DEEPSEEK
+  QWEN
+}
+
+enum QuickStartStage {
+  BRAND
+  QUESTIONS
+  MONITOR
+  REPORT
+  CONTENT
+  DISTRIBUTION
+}
+
+enum QuickStartQuestionKind {
+  DISCOVERY
+  BRANDED
+}
+
+enum MonitoringRunStatus {
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum ContentAssetStatus {
+  DRAFT
+  SAVED
+}
+
+enum DistributionTaskStatus {
+  DRAFT
+  NEEDS_HUMAN_REVIEW
+}
+
+model QuickStartSession {
+  id                 String           @id @default(uuid()) @db.Uuid
+  projectId          String           @db.Uuid
+  createdById        String           @db.Uuid
+  brandId            String           @db.Uuid
+  querySetId         String?          @db.Uuid
+  currentStep        QuickStartStage  @default(BRAND)
+  provider           AiProvider       @default(MOCK)
+  model              String           @default("geolens-mock-v1")
+  questions          Json?
+  questionGeneration Json?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  brand      Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  querySet   QuerySet? @relation(fields: [querySetId], references: [id], onDelete: SetNull)
+  runs       MonitoringRun[]
+
+  @@index([projectId, updatedAt])
+  @@index([createdById, updatedAt])
+}
+
+model MonitoringRun {
+  id                 String              @id @default(uuid()) @db.Uuid
+  sessionId          String              @db.Uuid
+  activeSessionId    String?             @unique @db.Uuid
+  projectId          String              @db.Uuid
+  brandId            String              @db.Uuid
+  provider           AiProvider
+  model              String
+  status             MonitoringRunStatus @default(RUNNING)
+  isMock             Boolean             @default(true)
+  requestCount       Int
+  responseCount      Int                 @default(0)
+  error              String?             @db.Text
+  confirmedById       String?             @db.Uuid
+  confirmedAt         DateTime?
+  startedAt          DateTime            @default(now())
+  completedAt        DateTime?
+  createdAt          DateTime            @default(now())
+
+  session   QuickStartSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  brand     Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  confirmedBy User?           @relation(fields: [confirmedById], references: [id], onDelete: SetNull)
+  responses MonitoringResponse[]
+  report    GeoReport?
+
+  @@index([projectId, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([status, createdAt])
+}
+
+model MonitoringResponse {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  runId               String                  @db.Uuid
+  queryId             String?                 @db.Uuid
+  queryText           String                  @db.Text
+  kind                QuickStartQuestionKind
+  intent              String
+  provider            AiProvider
+  model               String
+  promptVersion       String
+  rawPrompt           String                  @db.Text
+  rawResponse         String                  @db.Text
+  brandMentioned      Boolean
+  mentionPosition     Int?
+  competitorMentions  String[]                @default([])
+  citations           String[]                @default([])
+  tokens              Json?
+  latencyMs           Int
+  costEstimate        Float?
+  isMock              Boolean                 @default(true)
+  createdAt           DateTime                @default(now())
+
+  run   MonitoringRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  query Query?        @relation(fields: [queryId], references: [id], onDelete: SetNull)
+  suggestionEvidence SuggestionEvidence[]
+  contentEvidence    ContentGenerationEvidence[]
+
+  @@index([runId, createdAt])
+  @@index([queryId])
+}
+
+model GeoReport {
+  id               String   @id @default(uuid()) @db.Uuid
+  runId            String   @unique @db.Uuid
+  projectId        String   @db.Uuid
+  brandId          String   @db.Uuid
+  metrics          Json
+  containsMockData Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  run          MonitoringRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  brand        Brand                    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  suggestions  OptimizationSuggestion[]
+  contentAssets ContentAsset[]
+
+  @@index([projectId, createdAt])
+  @@index([brandId, createdAt])
+}
+
+model OptimizationSuggestion {
+  id            String    @id @default(uuid()) @db.Uuid
+  reportId      String    @db.Uuid
+  title         String
+  action        String    @db.Text
+  queryIds      String[]  @default([])
+  provider      AiProvider
+  model         String
+  promptVersion String
+  generation    Json?
+  isMock        Boolean   @default(true)
+  evidenceMock  Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+
+  report   GeoReport            @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  evidence SuggestionEvidence[]
+
+  @@index([reportId, createdAt])
+}
+
+model SuggestionEvidence {
+  suggestionId String @db.Uuid
+  responseId   String @db.Uuid
+
+  suggestion OptimizationSuggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  response   MonitoringResponse      @relation(fields: [responseId], references: [id], onDelete: Restrict)
+
+  @@id([suggestionId, responseId])
+  @@index([responseId])
+}
+
+model ContentAsset {
+  id           String            @id @default(uuid()) @db.Uuid
+  projectId    String            @db.Uuid
+  brandId      String            @db.Uuid
+  reportId     String?           @db.Uuid
+  channel      String
+  title        String
+  body         String            @db.Text
+  hashtags     String[]          @default([])
+  metadata     Json?
+  status       ContentAssetStatus @default(DRAFT)
+  isMock       Boolean           @default(true)
+  evidenceMock Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  brand       Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  report      GeoReport?        @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  generations ContentGeneration[]
+  distributionTasks DistributionTask[]
+
+  @@index([projectId, updatedAt])
+  @@index([reportId, createdAt])
+}
+
+model ContentGeneration {
+  id            String   @id @default(uuid()) @db.Uuid
+  contentAssetId String   @db.Uuid
+  provider      AiProvider
+  model         String
+  promptVersion String
+  generation    Json?
+  tokens        Json?
+  costEstimate  Float?
+  isMock        Boolean  @default(true)
+  evidenceMock  Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  content  ContentAsset                  @relation(fields: [contentAssetId], references: [id], onDelete: Cascade)
+  evidence ContentGenerationEvidence[]
+
+  @@index([contentAssetId, createdAt])
+}
+
+model ContentGenerationEvidence {
+  generationId String @db.Uuid
+  responseId   String @db.Uuid
+
+  generation ContentGeneration  @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  response   MonitoringResponse @relation(fields: [responseId], references: [id], onDelete: Restrict)
+
+  @@id([generationId, responseId])
+  @@index([responseId])
+}
+
+model DistributionTask {
+  id             String                @id @default(uuid()) @db.Uuid
+  projectId      String                @db.Uuid
+  contentAssetId String                @db.Uuid
+  createdById    String                @db.Uuid
+  platform       String
+  status         DistributionTaskStatus @default(DRAFT)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  content ContentAsset @relation(fields: [contentAssetId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@unique([contentAssetId, platform])
+  @@index([projectId, createdAt])
 }
