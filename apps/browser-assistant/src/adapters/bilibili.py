@@ -198,6 +198,15 @@ class BilibiliPublisher(BasePublisher):
         except Exception:
             return False, "浏览器会话未就绪", {}
 
+        # 若当前处于空标签页，自动加载创作平台以提取登录态
+        if not curr_url or curr_url in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            try:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(2.0)
+                curr_url = self.driver.current_url.lower()
+            except Exception:
+                pass
+
         # 若在 passport 登录页
         if "passport.bilibili.com" in curr_url:
             return False, "当前处于 B站 登录页面，等待创作者扫码登录", {"url": curr_url}
@@ -676,18 +685,22 @@ class BilibiliPublisher(BasePublisher):
             except Exception:
                 continue
 
-        # 3. 回读已创建的标签
+        # 3. 回读已创建的标签（必须是已选中的标签芯片，具有 '×' 删除按钮）
         try:
-            tag_chips = self.driver.find_elements(
-                By.CSS_SELECTOR,
-                "#tag-container .tag-item, .tag-area .label-item, .tag-container span, .tag-instance, .bcc-tag, .tag-item, div[class*='tag-item'], div[class*='tag_item'], span[class*='tag']"
-            )
-            for chip in tag_chips:
-                txt = chip.text.replace("×", "").replace("x", "").replace("✕", "").strip()
-                if txt and txt not in actual_tags and len(txt) <= 30:
-                    actual_tags.append(txt)
+            # 优先在标签输入框父容器内查找带有删除符号的标签
+            input_elems = self.driver.find_elements(By.XPATH, "//input[contains(@placeholder, 'Enter创建标签') or contains(@placeholder, '创建标签')]")
+            for inp in input_elems:
+                try:
+                    container = inp.find_element(By.XPATH, "..")
+                    chips = container.find_elements(By.XPATH, ".//*[contains(text(), '×') or contains(text(), '✕')]/..")
+                    for chip in chips:
+                        txt = chip.text.replace("×", "").replace("x", "").replace("✕", "").strip()
+                        if txt and txt not in actual_tags and len(txt) <= 30:
+                            actual_tags.append(txt)
+                except Exception:
+                    pass
 
-            # 补充反查带有删除符号 '×' 的标签项
+            # 备选：查找页面上所有带有单独 '×' 删除符号的标签芯片（排除推荐区）
             if not actual_tags:
                 close_btns = self.driver.find_elements(By.XPATH, "//*[text()='×' or text()='✕']/..")
                 for btn in close_btns:

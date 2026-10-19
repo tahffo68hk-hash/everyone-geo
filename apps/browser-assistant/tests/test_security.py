@@ -63,6 +63,7 @@ def test_request_auth_verification():
     assert verify_request_auth(req_empty) is False
 
 
+def test_sensitive_log_sanitization():
     raw_log = "User logged in with password='Secret123!' and token='abc12345xyz' cookie='z_c0=my_session_cookie;'"
     cleaned = sanitize_log_message(raw_log)
     assert "Secret123!" not in cleaned
