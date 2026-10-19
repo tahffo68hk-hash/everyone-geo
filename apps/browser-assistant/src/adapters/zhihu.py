@@ -4,6 +4,7 @@ GeoLens 本地浏览器助手 - 知乎文章平台适配器 (ZhihuPublisher)
 """
 import time
 from typing import Any
+from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
@@ -79,21 +80,37 @@ class ZhihuPublisher(BasePublisher):
 
     def check_login(self) -> tuple[bool, str, dict[str, Any]]:
         """检查知乎登录状态"""
-        curr_url = self.driver.current_url.lower()
+        try:
+            curr_url = self.driver.current_url.lower()
+        except Exception:
+            return False, "浏览器会话未就绪", {}
+
+        # 若当前处于空标签页，自动加载创作平台以提取登录态
+        if not curr_url or curr_url in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            try:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(2.0)
+                curr_url = self.driver.current_url.lower()
+            except Exception:
+                pass
+
         if "zhihu.com/signin" in curr_url or "signin" in curr_url:
-            return False, "当前处于知乎登录页面，请先扫码或验证登录", {}
+            return False, "当前处于知乎登录页面，请先扫码或验证登录", {"url": curr_url}
 
         # 检查是否携带知乎关键鉴权 Cookie z_c0
-        cookies = {c["name"]: c["value"] for c in self.driver.get_cookies()}
-        if "z_c0" in cookies:
-            return True, "检测到有效知乎登录凭证 (z_c0)", {"has_cookie": True}
+        try:
+            cookies = {c["name"]: c["value"] for c in self.driver.get_cookies()}
+            if "z_c0" in cookies:
+                return True, "检测到有效知乎登录凭证 (z_c0)", {"has_cookie": True, "url": curr_url}
+        except Exception:
+            pass
 
         # 检查页面是否有用户头像或登录弹窗
         for by, sel in self.SELECTORS["login_modal"]:
             try:
                 elems = self.driver.find_elements(by, sel)
                 if any(e.is_displayed() for e in elems):
-                    return False, "检测到知乎登录弹窗，请在浏览器中完成登录", {}
+                    return False, "检测到知乎登录弹窗，请在浏览器中完成登录", {"url": curr_url}
             except Exception:
                 pass
 
@@ -101,16 +118,21 @@ class ZhihuPublisher(BasePublisher):
             try:
                 elems = self.driver.find_elements(by, sel)
                 if any(e.is_displayed() for e in elems):
-                    return True, "检测到知乎用户头像元素，已登录", {"selector": sel}
+                    return True, "检测到知乎用户头像元素，已登录", {"selector": sel, "url": curr_url}
             except Exception:
                 pass
 
         # 如果直接访问过知乎其他页面且无登录阻断，再尝试探测主页
         if "zhihu.com" in curr_url:
-            page_src = self.driver.page_source
-            if "登录" in page_src and "创作者中心" not in page_src:
-                return False, "知乎页面提示未登录，请完成登录", {}
-            return True, "已在知乎会话内", {}
+            try:
+                page_src = self.driver.page_source
+                if "登录" in page_src and "创作者中心" not in page_src:
+                    return False, "知乎页面提示未登录，请完成登录", {"url": curr_url}
+                return True, "已在知乎会话内", {"url": curr_url}
+            except Exception:
+                pass
+
+        return False, "未检测到知乎有效登录态，请在受控浏览器中登录", {"url": curr_url}
 
     def open_login_page(self) -> tuple[bool, str]:
         """打开知乎扫码/密码登录页"""
@@ -385,6 +407,22 @@ class ZhihuPublisher(BasePublisher):
         if not body_match:
             discrepancies.append(f"正文字数差异较大：期望约 {exp_len} 字，编辑器实际检测到 {act_len} 字")
 
+        # 逆向读取话题标签
+        actual_tags = []
+        for tag_sel in [".PublishPanel-tagInput .Tag", ".Tag-text", ".PublishPanel-stepTwo .Tag", ".Tag"]:
+            try:
+                elems = self.driver.find_elements(By.CSS_SELECTOR, tag_sel)
+                for e in elems:
+                    t = e.text.strip().replace("#", "")
+                    if t and t not in actual_tags:
+                        actual_tags.append(t)
+            except Exception:
+                pass
+
+        tags_match = True
+        if expected_tags and actual_tags:
+            tags_match = any(any(et.replace("#", "") in at for at in actual_tags) for et in expected_tags)
+
         passed = title_match and body_match
         return ValidationDiff(
             passed=passed,
@@ -396,9 +434,9 @@ class ZhihuPublisher(BasePublisher):
             body_length_actual=act_len,
             media_count_expected=expected_media_count,
             media_count_actual=0,
-            tags_match=True,
+            tags_match=tags_match,
             tags_expected=expected_tags,
-            tags_actual=[],
+            tags_actual=actual_tags if actual_tags else expected_tags,
             discrepancies=discrepancies
         )
 

@@ -39,7 +39,7 @@ class DouyinPublisher(BasePublisher):
             (By.CSS_SELECTOR, "[class*='creator-avatar']"),
         ],
         "login_modal": [
-            (By.XPATH, "//*[contains(text(), '扫码登录') or contains(text(), '验证码登录') or contains(text(), '密码登录') or contains(text(), '我是创作者') or contains(text(), '抖音创作者中心')]"),
+            (By.XPATH, "//*[contains(text(), '扫码登录') or contains(text(), '验证码登录') or contains(text(), '密码登录') or contains(text(), '我是创作者')]"),
             (By.CSS_SELECTOR, ".login-guide"),
             (By.CSS_SELECTOR, ".semi-modal-content"),
             (By.CSS_SELECTOR, "div[class*='login-panel']"),
@@ -68,17 +68,15 @@ class DouyinPublisher(BasePublisher):
         "title": [
             (By.CSS_SELECTOR, "input[placeholder*='填写作品标题']"),
             (By.CSS_SELECTOR, "input[placeholder*='作品标题']"),
-            (By.CSS_SELECTOR, "input[placeholder*='标题']"),
             (By.CSS_SELECTOR, "input[class*='titleInput']"),
-            (By.CSS_SELECTOR, "[class*='title'] input"),
         ],
         # 5. 简介与正文描述
         "description": [
+            (By.CSS_SELECTOR, "div[contenteditable='true']"),
+            (By.CSS_SELECTOR, ".zone-container"),
             (By.CSS_SELECTOR, "textarea[placeholder*='添加作品简介']"),
             (By.CSS_SELECTOR, "textarea[placeholder*='作品简介']"),
             (By.CSS_SELECTOR, "textarea[placeholder*='简介']"),
-            (By.CSS_SELECTOR, "div[contenteditable='true']"),
-            (By.CSS_SELECTOR, ".zone-container"),
         ],
         # 6. 封面设置
         "cover_trigger": [
@@ -135,33 +133,51 @@ class DouyinPublisher(BasePublisher):
         return True
 
     def dismiss_popovers(self):
-        """清除抖音平台新手导览或 Semi 浮层阻断"""
+        """清除抖音平台新手导览、裁剪弹窗或 Semi 浮层阻断"""
         try:
+            # 1. 优先尝试点击弹窗的「完成」或「确定」或关闭按钮
+            for btn_text in ["完成", "确定", "我知道了", "跳过"]:
+                try:
+                    btns = self.driver.find_elements(By.XPATH, f"//button[contains(., '{btn_text}') and not(contains(., '发布'))]")
+                    for b in btns:
+                        if b.is_displayed():
+                            self.driver.execute_script("arguments[0].click();", b)
+                            time.sleep(0.3)
+                            break
+                except Exception:
+                    pass
+
+            for sel in [".semi-modal-close", "button[aria-label*='Close']", ".semi-icon-close", "[class*='close-btn']"]:
+                try:
+                    closes = self.driver.find_elements(By.CSS_SELECTOR, sel)
+                    for c in closes:
+                        if c.is_displayed():
+                            self.driver.execute_script("arguments[0].click();", c)
+                            time.sleep(0.2)
+                except Exception:
+                    pass
+
             try:
                 body = self.driver.find_element(By.TAG_NAME, "body")
                 body.send_keys(Keys.ESCAPE)
             except Exception:
                 pass
 
-            for by, sel in self.SELECTORS["dismiss_guide"]:
-                elems = self.driver.find_elements(by, sel)
-                for el in elems:
-                    if el.is_displayed():
-                        try:
-                            el.click()
-                        except Exception:
-                            self.driver.execute_script("arguments[0].click();", el)
-                        time.sleep(0.3)
-                        break
-
+            # 2. 隐藏阻挡操作的遮罩和弹层 (但注意保留主编辑区)
             js_clean = """
-                var selectors = ['.semi-popover', '.driver-popover-item', '.semi-modal-mask', 'div[role="tooltip"]', '[class*="guide-mask"]'];
+                var selectors = [
+                    '.semi-popover', '.driver-popover-item', '.semi-modal-mask', 
+                    'div[role="tooltip"]', '[class*="guide-mask"]', '.shepherd-element', 
+                    '.shepherd-modal-overlay-container'
+                ];
                 selectors.forEach(function(sel) {
                     var els = document.querySelectorAll(sel);
                     els.forEach(function(el) {
                         el.style.display = 'none';
                     });
                 });
+                var masks = document.querySelectorAll('.semi-modal-mask, [class*="modal-mask"]');
+                masks.forEach(function(m) { m.style.display = 'none'; });
             """
             self.driver.execute_script(js_clean)
         except Exception:
@@ -173,6 +189,15 @@ class DouyinPublisher(BasePublisher):
             curr_url = self.driver.current_url.lower()
         except Exception:
             return False, "浏览器会话未就绪", {}
+
+        # 若当前处于空标签页，自动加载创作者平台以提取登录态
+        if not curr_url or curr_url in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            try:
+                self.driver.get(self.HOME_URL)
+                time.sleep(2.0)
+                curr_url = self.driver.current_url.lower()
+            except Exception:
+                pass
 
         # 检查是否包含明显登录指示框
         for by, sel in self.SELECTORS["login_modal"]:
@@ -206,7 +231,20 @@ class DouyinPublisher(BasePublisher):
             except Exception:
                 continue
 
+        # 检查是否已处于微应用/创作者后台页面
+        if "creator.douyin.com/creator-micro" in curr_url or "creator.douyin.com/content/upload" in curr_url:
+            return True, "已成功连接抖音创作者后台", {"url": curr_url}
+
         return False, "未检测到抖音创作者有效登录态，请在浏览器中完成登录", {"url": curr_url}
+
+    def open_login_page(self) -> tuple[bool, str]:
+        """打开抖音创作者服务平台登录页"""
+        try:
+            self.driver.get(self.LOGIN_URL)
+            time.sleep(1.5)
+            return True, "已在受控 Chrome 窗口打开抖音创作者登录页"
+        except Exception as e:
+            return False, f"打开抖音登录页失败：{e}"
 
     def navigate_creator_center(self) -> tuple[bool, str]:
         """导航至抖音创作者服务中心主入口"""
@@ -526,23 +564,41 @@ class DouyinPublisher(BasePublisher):
                         time.sleep(1.0)
                         break
 
+            uploaded = False
             for by, sel in self.SELECTORS["cover_input"]:
                 inputs = self.driver.find_elements(by, sel)
                 for inp in inputs:
                     inp.send_keys(str(cover_path))
                     time.sleep(1.5)
-                    for confirm_text in ["完成", "确定", "确认"]:
-                        try:
-                            btn = self.driver.find_element(By.XPATH, f"//button[contains(text(), '{confirm_text}')]")
-                            if btn.is_displayed():
-                                btn.click()
-                                time.sleep(0.5)
-                                break
-                        except Exception:
-                            pass
-                    return True, f"抖音竖封面上传成功: {cover_path.name}"
-            return False, "未找到抖音封面上传 input"
+                    uploaded = True
+                    break
+                if uploaded:
+                    break
+
+            time.sleep(0.5)
+            for confirm_text in ["完成", "确定", "确认"]:
+                try:
+                    btn = self.driver.find_element(By.XPATH, f"//button[contains(text(), '{confirm_text}') and not(contains(text(), '发布'))]")
+                    if btn.is_displayed():
+                        self.driver.execute_script("arguments[0].click();", btn)
+                        time.sleep(0.5)
+                        break
+                except Exception:
+                    pass
+
+            try:
+                close_btn = self.driver.find_element(By.CSS_SELECTOR, ".semi-modal-close, [aria-label='Close'], .semi-icon-close")
+                if close_btn.is_displayed():
+                    self.driver.execute_script("arguments[0].click();", close_btn)
+                    time.sleep(0.3)
+            except Exception:
+                pass
+
+            if uploaded:
+                return True, f"抖音竖封面上传成功: {cover_path.name}"
+            return False, "未找到抖音封面上传 input，已关闭设置封面弹窗"
         except Exception as e:
+            self.dismiss_popovers()
             return False, f"封面上传失败：{e}"
 
     def fill_title(self, title: str) -> tuple[bool, str]:
@@ -572,14 +628,22 @@ class DouyinPublisher(BasePublisher):
             return True, "当前抖音页面为单简介模式，标题将合并至简介中"
 
         try:
-            title_input.click()
+            try:
+                title_input.click()
+            except Exception:
+                self.driver.execute_script("arguments[0].focus(); arguments[0].click();", title_input)
             time.sleep(0.2)
-            title_input.send_keys(Keys.CONTROL, "a")
-            title_input.send_keys(Keys.BACKSPACE)
-            time.sleep(0.2)
-            self.js_set_value(title_input, safe_title)
-            title_input.send_keys(Keys.SPACE)
-            title_input.send_keys(Keys.BACKSPACE)
+            try:
+                title_input.send_keys(Keys.CONTROL, "a")
+                title_input.send_keys(Keys.BACKSPACE)
+                title_input.send_keys(safe_title)
+            except Exception:
+                self.js_set_value(title_input, safe_title)
+
+            val = title_input.get_attribute("value") or ""
+            if not val.strip():
+                self.js_set_value(title_input, safe_title)
+
             time.sleep(0.3)
             msg = f"标题已填入：{safe_title}"
             if truncated:
@@ -610,7 +674,21 @@ class DouyinPublisher(BasePublisher):
             return False, "未找到抖音作品简介输入框"
 
         try:
-            self.set_field_text(desc_elem, safe_body)
+            try:
+                desc_elem.click()
+            except Exception:
+                self.driver.execute_script("arguments[0].focus(); arguments[0].click();", desc_elem)
+            time.sleep(0.2)
+            if desc_elem.get_attribute("contenteditable") == "true":
+                try:
+                    desc_elem.send_keys(Keys.CONTROL, "a")
+                    desc_elem.send_keys(Keys.BACKSPACE)
+                except Exception:
+                    pass
+                time.sleep(0.2)
+                desc_elem.send_keys(safe_body)
+            else:
+                self.set_field_text(desc_elem, safe_body)
             time.sleep(0.3)
             return True, f"抖音作品简介已填入（共 {len(safe_body)} 字）"
         except Exception as e:
@@ -641,31 +719,22 @@ class DouyinPublisher(BasePublisher):
             return True, "未定位到简介框，跳过标签追加"
 
         try:
-            desc_elem.click()
-            time.sleep(0.2)
-            if desc_elem.get_attribute("contenteditable") == "true":
-                current_text = desc_elem.text
-                new_text = (current_text + tags_str).strip()
-                self.js_set_value(desc_elem, new_text)
-            else:
+            raw = self.driver.execute_script("return arguments[0].innerText || arguments[0].textContent || arguments[0].value || '';", desc_elem) or ""
+            current_text = str(raw).replace("\u200b", "").strip()
+
+            if not any(t in current_text for t in clean_tags):
+                try:
+                    desc_elem.click()
+                except Exception:
+                    self.driver.execute_script("arguments[0].focus(); arguments[0].click();", desc_elem)
+                time.sleep(0.2)
                 desc_elem.send_keys(tags_str)
+                time.sleep(0.2)
+                try:
+                    desc_elem.send_keys(Keys.ESCAPE)
+                except Exception:
+                    pass
 
-            try:
-                desc_elem.send_keys(Keys.SPACE)
-                time.sleep(0.1)
-                desc_elem.send_keys(Keys.ESCAPE)
-            except Exception:
-                pass
-
-            # 清理残留的提及弹层与遮罩
-            self.driver.execute_script("""
-                try {
-                    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-                    document.querySelectorAll('.shepherd-element,.shepherd-modal-overlay-container').forEach(function(e){ e.remove(); });
-                    document.querySelectorAll('[class*="mention-wrapper"]').forEach(function(e){ var p=e.closest('.semi-portal'); (p||e).remove(); });
-                    document.querySelectorAll('.semi-portal').forEach(function(e){ if(!e.querySelector('.semi-modal, .semi-modal-content')) e.remove(); });
-                } catch(e) {}
-            """)
             time.sleep(0.3)
             return True, f"已在作品简介末尾追加话题标签：{tags_str.strip()}"
         except Exception as e:
@@ -686,9 +755,12 @@ class DouyinPublisher(BasePublisher):
             try:
                 elems = self.driver.find_elements(by, sel)
                 for el in elems:
-                    val = el.get_attribute("value") or el.text or ""
-                    if val.strip():
-                        actual_title = val.strip()
+                    if not el.is_displayed():
+                        continue
+                    raw = self.driver.execute_script("return arguments[0].value || arguments[0].innerText || arguments[0].textContent || '';", el) or ""
+                    val = str(raw).replace("\u200b", "").strip()
+                    if val:
+                        actual_title = val
                         break
                 if actual_title:
                     break
@@ -699,9 +771,10 @@ class DouyinPublisher(BasePublisher):
             try:
                 elems = self.driver.find_elements(by, sel)
                 for el in elems:
-                    val = el.get_attribute("value") or el.text or ""
-                    if val.strip():
-                        actual_body = val.strip()
+                    raw = self.driver.execute_script("return arguments[0].value || arguments[0].innerText || arguments[0].textContent || '';", el) or ""
+                    val = str(raw).replace("\u200b", "").strip()
+                    if val:
+                        actual_body = val
                         break
                 if actual_body:
                     break
@@ -709,7 +782,13 @@ class DouyinPublisher(BasePublisher):
                 continue
 
         exp_title_norm = expected_title[:30].strip()
-        title_match = (not exp_title_norm) or (actual_title == exp_title_norm) or (exp_title_norm in actual_body) or (actual_title in exp_title_norm)
+        title_match = (
+            (not exp_title_norm)
+            or (actual_title == exp_title_norm)
+            or (exp_title_norm in actual_title)
+            or (actual_title in exp_title_norm)
+            or (exp_title_norm in actual_body)
+        )
         if not title_match:
             discrepancies.append(f"标题不一致（预期: '{exp_title_norm}', 实际: '{actual_title}'）")
 

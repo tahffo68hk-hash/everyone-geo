@@ -39,6 +39,7 @@ class KuaishouPublisher(BasePublisher):
             (By.CSS_SELECTOR, ".header-right .user-box"),
         ],
         "login_modal": [
+            (By.XPATH, "//*[contains(text(), '立即登录') or contains(text(), '扫码登录') or contains(text(), '密码登录')]"),
             (By.CSS_SELECTOR, "#login-form"),
             (By.CSS_SELECTOR, "div.qr-login img[alt='qrcode']"),
             (By.CSS_SELECTOR, ".login-container"),
@@ -139,6 +140,15 @@ class KuaishouPublisher(BasePublisher):
         except Exception:
             return False, "浏览器会话未就绪", {}
 
+        # 若当前处于空标签页，自动加载创作平台以提取登录态
+        if not curr_url or curr_url in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            try:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(2.0)
+                curr_url = self.driver.current_url.lower()
+            except Exception:
+                pass
+
         if "passport.kuaishou.com" in curr_url:
             return False, "当前处于快手登录扫码页面，等待创作者扫码登录", {"url": curr_url}
 
@@ -158,10 +168,30 @@ class KuaishouPublisher(BasePublisher):
             except Exception:
                 continue
 
-        if "cp.kuaishou.com" in curr_url and "publish" in curr_url:
-            return True, "已连接快手创作者服务平台", {"url": curr_url}
+        # 检查页面是否已出现真正的上传文件按钮或输入框，且绝无未登录指示
+        for by, sel in self.SELECTORS["video_input"] + self.SELECTORS["upload_btn"]:
+            try:
+                elems = self.driver.find_elements(by, sel)
+                if any(e.is_displayed() or e.tag_name == "input" for e in elems):
+                    try:
+                        page_text = self.driver.page_source
+                        if not any(k in page_text for k in ["立即登录", "扫码登录", "手机号登录"]):
+                            return True, "已连接快手创作者上传工作台", {"url": curr_url}
+                    except Exception:
+                        pass
+            except Exception:
+                continue
 
         return False, "未检测到快手创作者有效登录态，请在浏览器中完成登录", {"url": curr_url}
+
+    def open_login_page(self) -> tuple[bool, str]:
+        """打开快手创作者服务平台登录页"""
+        try:
+            self.driver.get(self.LOGIN_URL)
+            time.sleep(1.5)
+            return True, "已在受控 Chrome 窗口打开快手登录页"
+        except Exception as e:
+            return False, f"打开快手登录页失败：{e}"
 
     def open_editor(self) -> tuple[bool, str]:
         """打开快手视频上传发布页"""

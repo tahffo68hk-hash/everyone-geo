@@ -28,13 +28,13 @@ class WeiboPublisher(BasePublisher):
     SELECTORS = {
         # 1. 登录态与用户身份识别
         "avatar": [
-            (By.CSS_SELECTOR, ".woo-avatar-main"),
+            (By.CSS_SELECTOR, ".woo-panel-main .woo-avatar-main"),
             (By.CSS_SELECTOR, "[class*='gn_name']"),
-            (By.CSS_SELECTOR, "a[href*='/u/'] img"),
-            (By.CSS_SELECTOR, ".woo-box-item-flex a[href*='/u/']"),
+            (By.CSS_SELECTOR, ".woo-box-item-flex [class*='avatar']"),
             (By.CSS_SELECTOR, "[class*='nav_user']"),
         ],
         "login_modal": [
+            (By.XPATH, "//*[contains(text(), '登录/注册') or contains(text(), '立即登录')]"),
             (By.CSS_SELECTOR, ".login-box"),
             (By.CSS_SELECTOR, "div[class*='login_wrapper']"),
             (By.CSS_SELECTOR, ".woo-modal-main .login"),
@@ -118,14 +118,23 @@ class WeiboPublisher(BasePublisher):
         except Exception:
             return False, "浏览器会话未就绪", {}
 
-        if "weibo.com/login" in curr_url or "login.php" in curr_url:
+        # 若当前处于空标签页，自动加载微博主页以提取登录态
+        if not curr_url or curr_url in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            try:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(2.0)
+                curr_url = self.driver.current_url.lower()
+            except Exception:
+                pass
+
+        if "weibo.com/login" in curr_url or "login.php" in curr_url or "newlogin" in curr_url:
             return False, "当前处于微博登录页，等待创作者扫码或账号登录", {"url": curr_url}
 
         for by, sel in self.SELECTORS["login_modal"]:
             try:
                 elems = self.driver.find_elements(by, sel)
                 if any(e.is_displayed() for e in elems):
-                    return False, "检测到微博登录弹窗，请在打开的受控浏览器中扫码登录", {"url": curr_url}
+                    return False, "检测到微博未登录状态或登录弹窗，请在打开的受控浏览器中扫码登录", {"url": curr_url}
             except Exception:
                 continue
 
@@ -141,6 +150,21 @@ class WeiboPublisher(BasePublisher):
             return True, "已连接微博首页与发布台", {"url": curr_url}
 
         return False, "未检测到微博有效登录态，请在浏览器中完成登录", {"url": curr_url}
+
+    def open_login_page(self) -> tuple[bool, str]:
+        """打开新浪微博扫码/密码登录页"""
+        try:
+            self.driver.get(self.LOGIN_URL)
+            time.sleep(1.5)
+            return True, "已在受控 Chrome 窗口打开新浪微博登录页"
+        except Exception as e:
+            return False, f"打开微博登录页失败：{e}"
+
+    def select_content_type(self, content_type: str = "IMAGE_TEXT") -> tuple[bool, str]:
+        """选择微博发布类型（微博新鲜事图文/短视频）"""
+        self.dismiss_popovers()
+        self.handle_new_tab()
+        return True, "已就绪微博新鲜事图文与动态发布模式"
 
     def open_editor(self) -> tuple[bool, str]:
         """打开微博发布首页"""

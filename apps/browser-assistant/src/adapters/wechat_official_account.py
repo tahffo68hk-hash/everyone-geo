@@ -111,6 +111,15 @@ class WechatOfficialAccountPublisher(BasePublisher):
         except Exception:
             return False, "浏览器会话未就绪", {}
 
+        # 若当前处于空标签页，自动加载公众平台以提取登录态
+        if not curr_url or curr_url in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            try:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(2.0)
+                curr_url = self.driver.current_url.lower()
+            except Exception:
+                pass
+
         for by, sel in self.SELECTORS["login_modal"]:
             try:
                 elems = self.driver.find_elements(by, sel)
@@ -131,6 +140,15 @@ class WechatOfficialAccountPublisher(BasePublisher):
             return True, "已连接微信公众平台管理后台", {"url": curr_url}
 
         return False, "未检测到微信公众号有效登录态，请在受控浏览器中完成扫码", {"url": curr_url}
+
+    def open_login_page(self) -> tuple[bool, str]:
+        """打开微信公众平台扫码登录页"""
+        try:
+            self.driver.get(self.CREATOR_URL)
+            time.sleep(1.5)
+            return True, "已在受控 Chrome 窗口打开微信公众平台扫码登录页"
+        except Exception as e:
+            return False, f"打开微信公众平台登录页失败：{e}"
 
     def navigate_creator_center(self) -> tuple[bool, str]:
         """导航至微信公众平台管理后台"""

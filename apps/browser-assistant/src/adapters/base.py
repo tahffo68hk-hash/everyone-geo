@@ -259,6 +259,11 @@ class BasePublisher(ABC):
             try { el.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch(e){}
             try { el.focus(); } catch(e){}
             if (el.matches && el.matches('input, textarea')) {
+                try {
+                    if (el._valueTracker) {
+                        el._valueTracker.setValue('');
+                    }
+                } catch(e) {}
                 var proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
                 var desc = Object.getOwnPropertyDescriptor(proto, 'value');
                 if (desc && desc.set) {

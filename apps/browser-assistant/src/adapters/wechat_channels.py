@@ -177,6 +177,15 @@ class WechatChannelsPublisher(BasePublisher):
         except Exception:
             return False, "浏览器会话未就绪", {}
 
+        # 若当前处于空标签页，自动加载视频号首页以提取登录态
+        if not curr_url or curr_url in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            try:
+                self.driver.get(self.HOME_URL)
+                time.sleep(2.0)
+                curr_url = self.driver.current_url.lower()
+            except Exception:
+                pass
+
         # 检查是否处于根路径且有未登录二维码
         for by, sel in self.SELECTORS["login_modal"]:
             try:
@@ -210,6 +219,15 @@ class WechatChannelsPublisher(BasePublisher):
                 continue
 
         return False, "未检测到微信视频号助手有效登录态，请在受控浏览器中扫码完成登录", {"url": curr_url}
+
+    def open_login_page(self) -> tuple[bool, str]:
+        """打开微信视频号助手扫码登录页"""
+        try:
+            self.driver.get(self.HOME_URL)
+            time.sleep(1.5)
+            return True, "已在受控 Chrome 窗口打开微信视频号助手扫码登录页"
+        except Exception as e:
+            return False, f"打开微信视频号登录页失败：{e}"
 
     def open_editor(self) -> tuple[bool, str]:
         """打开微信视频号发表页（先尝试平台首页点击【发表视频】，再等待进入 post/create）"""

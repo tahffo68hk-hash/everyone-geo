@@ -1,0 +1,140 @@
+[
+  {
+    "channel": "ZHIHU",
+    "name": "知乎",
+    "verdict": "LOGIN_REQUIRED",
+    "url": "https://www.zhihu.com/signin?next=http%3A%2F%2Fzhuanlan.zhihu.com%2Fwrite",
+    "screenshot": "D:\\dev\\geo-platform\\.runtime\\browser-assistant\\screenshots\\zhihu_default_zhihu_login_required_gate_1792417168560.png",
+    "steps": [
+      "1. 启动本地受控 Chrome 实例 (Profile: default)",
+      "2. 探测真实平台会话与登录状态",
+      "3. 导航至官方扫码/登录页: 当前处于知乎登录页面，请先扫码或验证登录",
+      "4. 留存官方登录页真实截图 (zhihu_default_zhihu_login_required_gate_1792417168560.png)"
+    ],
+    "block_reason": "当前处于知乎登录页面，请先扫码或验证登录",
+    "validation_diff": null
+  },
+  {
+    "channel": "WEIBO",
+    "name": "微博",
+    "verdict": "LOGIN_REQUIRED",
+    "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=",
+    "screenshot": "D:\\dev\\geo-platform\\.runtime\\browser-assistant\\screenshots\\weibo_default_weibo_login_required_gate_1792417182234.png",
+    "steps": [
+      "1. 启动本地受控 Chrome 实例 (Profile: default)",
+      "2. 探测真实平台会话与登录状态",
+      "3. 导航至官方扫码/登录页: 当前处于微博登录页，等待创作者扫码或账号登录",
+      "4. 留存官方登录页真实截图 (weibo_default_weibo_login_required_gate_1792417182234.png)"
+    ],
+    "block_reason": "当前处于微博登录页，等待创作者扫码或账号登录",
+    "validation_diff": null
+  },
+  {
+    "channel": "DOUYIN",
+    "name": "抖音",
+    "verdict": "REAL_READY_FOR_REVIEW",
+    "url": "https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page",
+    "screenshot": "D:\\dev\\geo-platform\\.runtime\\browser-assistant\\screenshots\\douyin_default_douyin_real_ready_for_review_1792419883667.png",
+    "steps": [
+      "1. 启动本地受控 Chrome 实例 (Profile: default)",
+      "2. 探测真实平台会话与登录状态",
+      "3. 登录态有效: 已成功登录抖音创作者服务平台",
+      "4. 导航至创作者中心: 已成功进入抖音创作者服务中心",
+      "5. 选择创作类型 (VIDEO): 已切换至抖音【发布视频】模式",
+      "6. 确认编辑器 DOM 就绪: 抖音创作者编辑界面已就绪",
+      "7. 上传测试素材 (2项): 抖音视频文件已成功载入：sample_test_video.mp4 (大小: 200720 bytes)",
+      "8. 视频转码处理检测: 抖音视频上传与平台解析处理已完成（已解析缩略图）",
+      "9. 填写标题: 标题已填入：GeoLens多平台发布评测",
+      "10. 填写正文内容: 抖音作品简介已填入（共 75 字）",
+      "11. 填写话题标签: 已在作品简介末尾追加话题标签：#AI工具 #前沿科技 #发布评测",
+      "12. 确认原创及合规声明设置",
+      "13. DOM 双向比对结果: passed=True, discrepancies=[]",
+      "14. 停留在发布前并高亮按钮: 受控浏览器已停留在抖音发布按钮处，等待创作者审核无误后在页面点击【发布】",
+      "15. 留存发布前核验截图 (douyin_default_douyin_real_ready_for_review_1792419883667.png)"
+    ],
+    "block_reason": null,
+    "validation_diff": {
+      "passed": true,
+      "title_match": true,
+      "title_actual": "GeoLens多平台发布评测",
+      "body_match": true,
+      "body_length_actual": 79,
+      "discrepancies": []
+    }
+  },
+  {
+    "channel": "WECHAT_OFFICIAL_ACCOUNT",
+    "name": "微信公众号",
+    "verdict": "LOGIN_REQUIRED",
+    "url": "https://mp.weixin.qq.com/",
+    "screenshot": "D:\\dev\\geo-platform\\.runtime\\browser-assistant\\screenshots\\wechat_official_account_default_wechat_official_account_login_required_gate_1792417281144.png",
+    "steps": [
+      "1. 启动本地受控 Chrome 实例 (Profile: default)",
+      "2. 探测真实平台会话与登录状态",
+      "3. 导航至官方扫码/登录页: 当前处于微信公众号扫码登录界面，请使用管理员微信扫码登录",
+      "4. 留存官方登录页真实截图 (wechat_official_account_default_wechat_official_account_login_required_gate_1792417281144.png)"
+    ],
+    "block_reason": "当前处于微信公众号扫码登录界面，请使用管理员微信扫码登录",
+    "validation_diff": null
+  },
+  {
+    "channel": "TOUTIAO",
+    "name": "今日头条",
+    "verdict": "LOGIN_REQUIRED",
+    "url": "https://mp.toutiao.com/auth/page/login",
+    "screenshot": "D:\\dev\\geo-platform\\.runtime\\browser-assistant\\screenshots\\toutiao_default_toutiao_login_required_gate_1792417304123.png",
+    "steps": [
+      "1. 启动本地受控 Chrome 实例 (Profile: default)",
+      "2. 探测真实平台会话与登录状态",
+      "3. 导航至官方扫码/登录页: 当前处于今日头条登录界面，请在打开的受控浏览器中完成登录",
+      "4. 留存官方登录页真实截图 (toutiao_default_toutiao_login_required_gate_1792417304123.png)"
+    ],
+    "block_reason": "当前处于今日头条登录界面，请在打开的受控浏览器中完成登录",
+    "validation_diff": null
+  },
+  {
+    "channel": "BAIJIAHAO",
+    "name": "百度百家号",
+    "verdict": "LOGIN_REQUIRED",
+    "url": "https://baijiahao.baidu.com/builder/theme/bjh/login",
+    "screenshot": "D:\\dev\\geo-platform\\.runtime\\browser-assistant\\screenshots\\baijiahao_default_baijiahao_login_required_gate_1792417328504.png",
+    "steps": [
+      "1. 启动本地受控 Chrome 实例 (Profile: default)",
+      "2. 探测真实平台会话与登录状态",
+      "3. 导航至官方扫码/登录页: 未检测到百家号有效登录态，请在受控浏览器中登录",
+      "4. 留存官方登录页真实截图 (baijiahao_default_baijiahao_login_required_gate_1792417328504.png)"
+    ],
+    "block_reason": "未检测到百家号有效登录态，请在受控浏览器中登录",
+    "validation_diff": null
+  },
+  {
+    "channel": "KUAISHOU",
+    "name": "快手",
+    "verdict": "LOGIN_REQUIRED",
+    "url": "https://passport.kuaishou.com/pc/account/login/?sid=kuaishou.web.cp.api&callback=https%3A%2F%2Fcp.kuaishou.com%2Frest%2Finfra%2Fsts%3FfollowUrl%3Dhttps%253A%252F%252Fcp.kuaishou.com%252Farticle%252Fpublish%252Fvideo%26setRootDomain%3Dtrue",
+    "screenshot": "D:\\dev\\geo-platform\\.runtime\\browser-assistant\\screenshots\\kuaishou_default_kuaishou_login_required_gate_1792417352315.png",
+    "steps": [
+      "1. 启动本地受控 Chrome 实例 (Profile: default)",
+      "2. 探测真实平台会话与登录状态",
+      "3. 导航至官方扫码/登录页: 检测到快手登录弹窗，请在打开的受控浏览器中扫码登录",
+      "4. 留存官方登录页真实截图 (kuaishou_default_kuaishou_login_required_gate_1792417352315.png)"
+    ],
+    "block_reason": "检测到快手登录弹窗，请在打开的受控浏览器中扫码登录",
+    "validation_diff": null
+  },
+  {
+    "channel": "WECHAT_CHANNELS",
+    "name": "微信视频号",
+    "verdict": "LOGIN_REQUIRED",
+    "url": "https://channels.weixin.qq.com/login.html",
+    "screenshot": "D:\\dev\\geo-platform\\.runtime\\browser-assistant\\screenshots\\wechat_channels_default_wechat_channels_login_required_gate_1792417381141.png",
+    "steps": [
+      "1. 启动本地受控 Chrome 实例 (Profile: default)",
+      "2. 探测真实平台会话与登录状态",
+      "3. 导航至官方扫码/登录页: 未检测到微信视频号助手有效登录态，请在受控浏览器中扫码完成登录",
+      "4. 留存官方登录页真实截图 (wechat_channels_default_wechat_channels_login_required_gate_1792417381141.png)"
+    ],
+    "block_reason": "未检测到微信视频号助手有效登录态，请在受控浏览器中扫码完成登录",
+    "validation_diff": null
+  }
+]
