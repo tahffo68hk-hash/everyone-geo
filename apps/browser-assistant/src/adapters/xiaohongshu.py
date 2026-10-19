@@ -11,6 +11,7 @@ GeoLens 本地浏览器助手 - 小红书图文平台适配器 (XiaohongshuPubli
 """
 import time
 from typing import Any
+from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -94,6 +95,14 @@ class XiaohongshuPublisher(BasePublisher):
             (By.CSS_SELECTOR, ".upload-image-list .image-item"),
             (By.CSS_SELECTOR, ".image-box"),
             (By.CSS_SELECTOR, ".media-preview-card"),
+            (By.CSS_SELECTOR, ".image-preview-area"),
+            (By.CSS_SELECTOR, ".preview-card"),
+            (By.CSS_SELECTOR, ".image-item"),
+            (By.CSS_SELECTOR, "img.preview-img"),
+            (By.CSS_SELECTOR, ".img-wrap"),
+            (By.CSS_SELECTOR, ".img-card"),
+            (By.CSS_SELECTOR, "[class*='preview-item']"),
+            (By.CSS_SELECTOR, "[class*='image-item']"),
         ],
         # 8. 话题与标签
         "topic_input": [
@@ -160,6 +169,15 @@ class XiaohongshuPublisher(BasePublisher):
         except Exception:
             return False, "受控浏览器无响应或已关闭", {}
 
+        # 若当前处于空标签页，自动加载创作平台以提取登录态
+        if not curr_url or curr_url in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+            try:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(2.0)
+                curr_url = self.driver.current_url.lower()
+            except Exception:
+                pass
+
         if "login" in curr_url or "creator.xiaohongshu.com/login" in curr_url:
             return False, "当前处于小红书登录页面，请创作者在浏览器中扫码登录", {"url": curr_url}
 
@@ -214,6 +232,8 @@ class XiaohongshuPublisher(BasePublisher):
                 return True, "小红书会话处于活跃状态", {}
             except Exception:
                 pass
+
+        return False, "未检测到小红书有效登录态，请在受控浏览器中完成登录", {"url": curr_url}
 
     def open_login_page(self) -> tuple[bool, str]:
         """打开小红书创作者服务平台官方扫码/密码登录页"""
@@ -507,7 +527,7 @@ class XiaohongshuPublisher(BasePublisher):
                 return False, f"向小红书上传视频失败：{e}"
 
         # === 图文模式（基线保留） ===
-        image_items = [m for m in media_items if m.type == "IMAGE"]
+        image_items = [m for m in media_items if (m.type or "").upper() in ["IMAGE", "COVER"]]
         if not image_items:
             return True, "无适用图片素材需上传"
 
@@ -535,9 +555,25 @@ class XiaohongshuPublisher(BasePublisher):
                     # 依次上传
                     file_input.send_keys(item.local_path)
                     uploaded_count += 1
-                    time.sleep(1.2)  # 等待前端切片和预览生成
+                    time.sleep(1.5)  # 等待前端切片和预览生成
                 except Exception:
                     pass
+
+        # 等待主编辑表单展开（标题输入框或正文框就绪）
+        for _ in range(12):
+            form_ready = False
+            for by, sel in self.SELECTORS["title"] + self.SELECTORS["content_editor"]:
+                try:
+                    elems = self.driver.find_elements(by, sel)
+                    if any(e.is_displayed() for e in elems):
+                        form_ready = True
+                        break
+                except Exception:
+                    pass
+            if form_ready:
+                break
+            time.sleep(0.5)
+            self.dismiss_popovers()
 
         return True, f"已按顺序上传 {uploaded_count}/{len(image_items)} 张素材图片"
 
@@ -649,6 +685,20 @@ class XiaohongshuPublisher(BasePublisher):
         if not body_match:
             discrepancies.append(f"正文字数差异较大：期望约 {exp_len} 字，检测到 {act_len} 字")
 
+        # 4. 回读话题标签 (从正文或输入区提取)
+        import re
+        actual_tags = []
+        if actual_body:
+            actual_tags = re.findall(r'#([^\s#]+)', actual_body)
+
+        tags_match = True
+        if expected_tags and actual_tags:
+            overlap = set(t.lstrip("#") for t in expected_tags) & set(actual_tags)
+            tags_match = len(overlap) > 0
+        elif expected_tags and not actual_tags:
+            # 话题若在专用组件中未在正文渲染，保留提示但不强阻断
+            pass
+
         passed = title_match and body_match
         return ValidationDiff(
             passed=passed,
@@ -660,9 +710,9 @@ class XiaohongshuPublisher(BasePublisher):
             body_length_actual=act_len,
             media_count_expected=expected_media_count,
             media_count_actual=actual_media_count,
-            tags_match=True,
+            tags_match=tags_match,
             tags_expected=expected_tags,
-            tags_actual=[],
+            tags_actual=actual_tags,
             discrepancies=discrepancies
         )
 

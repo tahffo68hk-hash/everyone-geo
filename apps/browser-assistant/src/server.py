@@ -159,27 +159,35 @@ async def open_platform_login(payload: dict):
 async def check_platform_login(payload: dict):
     channel = payload.get("channel", "ZHIHU")
     account_id = payload.get("account_id", "default")
-    if not browser_manager.is_driver_running(channel, account_id):
-        # 自动启动受控浏览器
-        browser_manager.get_or_create_driver(channel, account_id, headless=False)
-    driver = browser_manager.get_or_create_driver(channel, account_id)
-    publisher = registry.get_publisher(channel, driver)
-
-    # 若当前处于空标签页，自动加载创作平台以提取登录态
     try:
-        curr = driver.current_url.lower()
-        if not curr or curr in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
-            publisher.open_editor()
-    except Exception:
-        pass
+        if not browser_manager.is_driver_running(channel, account_id):
+            # 自动启动受控浏览器
+            browser_manager.get_or_create_driver(channel, account_id, headless=False)
+        driver = browser_manager.get_or_create_driver(channel, account_id)
+        publisher = registry.get_publisher(channel, driver)
 
-    is_logged_in, msg, extra = publisher.check_login()
-    return {
-        "channel": channel,
-        "is_logged_in": is_logged_in,
-        "message": msg,
-        "extra": extra
-    }
+        # 若当前处于空标签页，自动加载创作平台以提取登录态
+        try:
+            curr = driver.current_url.lower()
+            if not curr or curr in ["data:,", "about:blank", "chrome://new-tab-page/", "chrome://newtab/"]:
+                publisher.open_editor()
+        except Exception:
+            pass
+
+        is_logged_in, msg, extra = publisher.check_login()
+        return {
+            "channel": channel,
+            "is_logged_in": is_logged_in,
+            "message": msg,
+            "extra": extra
+        }
+    except Exception as e:
+        return {
+            "channel": channel,
+            "is_logged_in": False,
+            "message": f"受控浏览器未能启动或检测失败: {e}",
+            "extra": {"error": str(e)}
+        }
 
 
 @app.post("/api/browser/clear-profile", dependencies=[Depends(require_auth)])

@@ -15,6 +15,16 @@ from selenium.common.exceptions import WebDriverException
 from .config import PROFILES_DIR, SCREENSHOTS_DIR, settings
 
 
+def _kill_processes_for_profile(profile_path: Path):
+    """清理与该 Profile 关联的残留孤儿 Chrome 进程，防止 DevToolsActivePort 锁冲突"""
+    try:
+        path_str = str(profile_path).replace("\\", "\\\\")
+        cmd = f"Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | Where-Object {{ $_.CommandLine -like '*{path_str}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+        subprocess.run(["powershell", "-NoProfile", "-Command", cmd], timeout=5, capture_output=True)
+    except Exception:
+        pass
+
+
 class BrowserManager:
     """管理针对各平台与账号的受控 Chrome 实例"""
     def __init__(self):
@@ -123,7 +133,8 @@ class BrowserManager:
 
             profile_path = self.get_profile_path(channel, account_id)
 
-            # 启动前清理陈旧锁文件以防旧会话非正常退出残留阻塞
+            # 启动前清理陈旧锁文件与残留孤儿进程以防旧会话非正常退出残留阻塞
+            _kill_processes_for_profile(profile_path)
             for lock_name in ["DevToolsActivePort", "SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]:
                 lock_file = profile_path / lock_name
                 if lock_file.exists():
@@ -140,7 +151,8 @@ class BrowserManager:
             options.add_argument("--no-default-browser-check")
             options.add_argument("--disable-search-engine-choice-screen")
             options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_argument("--remote-debugging-port=0")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--disable-features=Translate,OptimizationHints,MediaRouter")
             options.add_argument("--disable-background-networking")
             options.add_argument("--disable-sync")
