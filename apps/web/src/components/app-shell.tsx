@@ -188,6 +188,12 @@ function IconActivity({ className = "w-4 h-4" }: { className?: string }) {
 
 const navGroups: NavGroup[] = [
   {
+    groupTitle: "快速上手",
+    items: [
+      { label: "快速开始", path: "/app/quick-start", icon: IconSparkles },
+    ],
+  },
+  {
     groupTitle: "GEO 监测与洞察",
     items: [
       { label: "总览看板", path: "/app", icon: IconDashboard, exact: true },
@@ -522,7 +528,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               error={context.error}
               retry={context.refresh}
             />
-          ) : !context.projectId && mainModule !== "projects" ? (
+          ) : !context.projectId && mainModule !== "projects" && pathname !== "/app/quick-start" ? (
             <EmptyState
               title="还没有监测项目"
               description="创建项目后，监测 AI 是否提及品牌、分析竞品、发现内容缺口，并验证优化效果。"
