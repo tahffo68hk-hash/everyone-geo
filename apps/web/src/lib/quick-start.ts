@@ -9,6 +9,11 @@ export type QuickStartQuestion = {
   rationale: string;
 };
 
+export type QuickStartQuestionState = {
+  suiteId: string;
+  questions: QuickStartQuestion[];
+};
+
 const BENCHMARK_CATEGORIES = [
   "tool-discovery",
   "comparison",
@@ -72,6 +77,32 @@ export function buildBenchmarkQueries(questions: QuickStartQuestion[]) {
     queryType: question.queryType,
     source: "BUILDER",
   }));
+}
+
+export function replaceQuickStartQuestions<T extends QuickStartQuestionState>(current: T, questions: QuickStartQuestion[]): T {
+  return { ...current, questions, suiteId: "" };
+}
+
+export function extractQuickStartRecommendations(input: unknown): Record<string, unknown>[] {
+  const payload = input && typeof input === "object" && "data" in input
+    ? (input as { data: unknown }).data
+    : input;
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { recommendations?: unknown }).recommendations)
+      ? (payload as { recommendations: unknown[] }).recommendations
+      : payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+        ? (payload as { items: unknown[] }).items
+        : [];
+  return rows.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+}
+
+export function selectReportAnalysis<T extends { analysisVersion?: string }>(analyses: T[], analysisVersion: string): T | null {
+  return analyses.find((analysis) => analysis.analysisVersion === analysisVersion) ?? null;
+}
+
+export function quickStartPendingProjectKey(userId: string): string {
+  return `geolens:quick-start:${userId}:pending-project`;
 }
 
 export function quickStartStorageKey(userId: string, projectId: string): string {

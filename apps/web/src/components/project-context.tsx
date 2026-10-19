@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 
 export type ProjectOption = { id: string; name: string };
 type Identity = { user: { id: string; name: string | null; email: string }; organizations: { id: string; name: string; slug?: string; role?: string }[] };
-type Context = { projects: ProjectOption[]; projectId: string; project?: ProjectOption; setProjectId: (id: string) => void; target: { canonicalName: string; productCategory: string | null } | null; me: Identity | null; loading: boolean; error: string; resourceName: string; refresh: () => void };
+type Context = { projects: ProjectOption[]; projectId: string; project?: ProjectOption; setProjectId: (id: string) => void; target: { projectId: string; canonicalName: string; productCategory: string | null } | null; me: Identity | null; loading: boolean; error: string; resourceName: string; refresh: () => void };
 const ProjectContext = createContext<Context | null>(null);
 
 // Resolve resource ownership using existing API relations; never infer it from a remembered project.

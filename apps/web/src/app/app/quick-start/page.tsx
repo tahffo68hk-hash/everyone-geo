@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectContext } from "@/components/project-context";
 import { PageHeader, StatusBadge } from "@/components/ui";
 import { api } from "@/lib/api";
 import {
   buildBenchmarkQueries,
+  extractQuickStartRecommendations,
   normalizeGeneratedQuestions,
+  quickStartPendingProjectKey,
   quickStartStorageKey,
+  replaceQuickStartQuestions,
+  selectReportAnalysis,
   type QuickStartQuestion,
 } from "@/lib/quick-start";
 
@@ -19,6 +23,7 @@ type Engine = { id: string; key: string; name: string; provider: string; model: 
 type FlowState = {
   step: number;
   brandName: string;
+  organizationId: string;
   website: string;
   industry: string;
   category: string;
@@ -43,6 +48,7 @@ type FlowState = {
 const initialFlow: FlowState = {
   step: 0,
   brandName: "",
+  organizationId: "",
   website: "",
   industry: "",
   category: "",
@@ -70,7 +76,6 @@ const unwrap = <T,>(value: unknown): T => {
   if (value && typeof value === "object" && "data" in value) return (value as { data: T }).data;
   return value as T;
 };
-const asList = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : value && typeof value === "object" && Array.isArray((value as { items?: unknown }).items) ? (value as { items: T[] }).items : [];
 const pct = (value: unknown) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "暂无数据";
 const safeError = (error: unknown) => error instanceof Error ? error.message : "操作失败，请重试。";
 
@@ -83,35 +88,42 @@ function providerLabel(provider: string) {
 
 export default function QuickStartPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedProjectId = searchParams.get("project") ?? "";
   const { projectId, project, target, projects, me, loading: contextLoading } = useProjectContext();
   const [projectOverride, setProjectOverride] = useState("");
   const activeProjectId = projectOverride || projectId;
   const storageKey = useMemo(() => quickStartStorageKey(me?.user.id ?? "guest", activeProjectId || "new"), [me?.user.id, activeProjectId]);
+  const pendingProjectKey = useMemo(() => quickStartPendingProjectKey(me?.user.id ?? "guest"), [me?.user.id]);
   const [flow, setFlow] = useState<FlowState>(initialFlow);
   const [hydrated, setHydrated] = useState(false);
+  const [hydratedStorageKey, setHydratedStorageKey] = useState("");
   const [engines, setEngines] = useState<Engine[]>([]);
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [run, setRun] = useState<{ status: string; progress: number; completedRuns: number; plannedRuns: number; provider: string; engine?: { model?: string; name?: string } } | null>(null);
+  const [run, setRun] = useState<{ status: string; progress: number; completedRuns: number; plannedRuns: number; analyzedRuns: number; terminal?: boolean; provider: string; engine?: { model?: string; name?: string } } | null>(null);
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
   const [evidence, setEvidence] = useState<Array<Record<string, unknown>>>([]);
   const [recommendations, setRecommendations] = useState<Array<Record<string, unknown>>>([]);
   const [advanced, setAdvanced] = useState(false);
   const processingRun = useRef("");
   const processedReport = useRef("");
+  const activeProjectRef = useRef(activeProjectId);
+  activeProjectRef.current = activeProjectId;
 
   const update = (patch: Partial<FlowState>) => setFlow((current) => ({ ...current, ...patch }));
 
   useEffect(() => {
     if (contextLoading) return;
     setHydrated(false);
+    setHydratedStorageKey("");
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<FlowState>;
         setFlow({ ...initialFlow, ...parsed, questions: Array.isArray(parsed.questions) ? parsed.questions : [] });
-      } else if (target?.canonicalName) {
+      } else if (target?.canonicalName && target.projectId === activeProjectId) {
         setFlow({ ...initialFlow, brandName: target.canonicalName, category: target.productCategory ?? "" });
       } else {
         setFlow(initialFlow);
@@ -120,17 +132,39 @@ export default function QuickStartPage() {
       setFlow(initialFlow);
     }
     setHydrated(true);
+    setHydratedStorageKey(storageKey);
   }, [contextLoading, storageKey]);
 
   useEffect(() => {
-    if (!hydrated || !me?.user.id) return;
-    localStorage.setItem(storageKey, JSON.stringify(flow));
-  }, [flow, hydrated, me?.user.id, storageKey]);
+    if (contextLoading || !me?.user.id || projectOverride) return;
+    const pendingProjectId = localStorage.getItem(pendingProjectKey);
+    if (!pendingProjectId) return;
+    if (requestedProjectId && requestedProjectId !== pendingProjectId) {
+      localStorage.removeItem(pendingProjectKey);
+      return;
+    }
+    if (projectId === pendingProjectId) {
+      localStorage.removeItem(pendingProjectKey);
+      return;
+    }
+    if (!requestedProjectId) router.replace(`/app/quick-start?project=${encodeURIComponent(pendingProjectId)}`);
+  }, [contextLoading, me?.user.id, pendingProjectKey, projectId, projectOverride, requestedProjectId, router]);
 
   useEffect(() => {
-    if (!target?.canonicalName || flow.brandName) return;
+    if (!projectOverride || !projectId) return;
+    setProjectOverride("");
+    localStorage.removeItem(pendingProjectKey);
+  }, [pendingProjectKey, projectId, projectOverride]);
+
+  useEffect(() => {
+    if (!hydrated || hydratedStorageKey !== storageKey || !me?.user.id) return;
+    localStorage.setItem(storageKey, JSON.stringify(flow));
+  }, [flow, hydrated, hydratedStorageKey, me?.user.id, storageKey]);
+
+  useEffect(() => {
+    if (!target?.canonicalName || target.projectId !== activeProjectId || flow.brandName) return;
     update({ brandName: target.canonicalName, category: target.productCategory ?? "" });
-  }, [target?.canonicalName, target?.productCategory, flow.brandName]);
+  }, [activeProjectId, target?.canonicalName, target?.productCategory, flow.brandName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,7 +173,11 @@ export default function QuickStartPage() {
       .catch(() => { if (!cancelled) setEngines([]); });
     if (!projects.length) {
       api<Array<{ id: string; name: string }>>("/organizations")
-        .then((result) => { if (!cancelled) setOrganizations(result); })
+        .then((result) => {
+          if (cancelled) return;
+          setOrganizations(result);
+          setFlow((current) => current.organizationId || !result[0] ? current : { ...current, organizationId: result[0].id });
+        })
         .catch(() => { if (!cancelled) setOrganizations([]); });
     }
     return () => { cancelled = true; };
@@ -162,11 +200,12 @@ export default function QuickStartPage() {
     ? `/app/content/distribution?project=${encodeURIComponent(activeProjectId)}&draftId=${encodeURIComponent(flow.draftId)}&channel=${encodeURIComponent(flow.channel)}`
     : `/app/content?project=${encodeURIComponent(activeProjectId)}`;
 
-  const ensureProject = useCallback(async (brandName: string, industry: string) => {
+  const ensureProject = useCallback(async (brandName: string, industry: string, organizationId: string) => {
     if (activeProjectId) return { id: activeProjectId, created: false };
     const availableOrganizations = organizations.length ? organizations : await api<Array<{ id: string; name: string }>>("/organizations");
     if (!availableOrganizations.length) throw new Error("当前账号还没有可用组织，无法创建项目。请先在 GeoLens 中创建或加入组织。");
-    const created = await api<{ id: string }>(`/organizations/${availableOrganizations[0].id}/projects`, json("POST", {
+    const organization = availableOrganizations.find((candidate) => candidate.id === organizationId) ?? availableOrganizations[0];
+    const created = await api<{ id: string }>(`/organizations/${organization.id}/projects`, json("POST", {
       name: brandName,
       industry: industry || undefined,
       description: `由快速开始创建的 GEO 监测项目：${brandName}`,
@@ -195,7 +234,6 @@ export default function QuickStartPage() {
       brandName, industry, category, website, competitorsText,
       questions, step: 1, suiteId: "", runId: "", reportId: "", diagnosisId: "", recommendationRunId: "", aiRecommendation: null, draftId: "",
     };
-    setFlow(nextFlow);
     return nextFlow;
   };
 
@@ -206,8 +244,22 @@ export default function QuickStartPage() {
     if (!confirmPaidAi("品牌解析与监测问题生成")) return;
     setBusy("正在准备项目并生成监测问题…"); setError("");
     try {
-      const projectContext = await ensureProject(brandName, flow.industry.trim());
+      const projectContext = await ensureProject(brandName, flow.industry.trim(), flow.organizationId);
       const projectForBrand = projectContext.id;
+      if (projectContext.created) {
+        const pendingFlow = {
+          ...flow,
+          brandName,
+          industry: flow.industry.trim(),
+          category: flow.category.trim(),
+          website: flow.website.trim(),
+          competitorsText: flow.competitorsText.trim(),
+        };
+        localStorage.setItem(quickStartStorageKey(me?.user.id ?? "guest", projectForBrand), JSON.stringify(pendingFlow));
+        localStorage.setItem(pendingProjectKey, projectForBrand);
+        setFlow(pendingFlow);
+        setProjectOverride(projectForBrand);
+      }
       const resolved = await api<unknown>(`/projects/${projectForBrand}/ai/resolve-brand`, json("POST", {
         provider: flow.aiProvider,
         brandName,
@@ -226,9 +278,10 @@ export default function QuickStartPage() {
         description: industry ? `行业：${industry}` : null,
       }));
       const nextFlow = await generateQuestions(projectForBrand, brandName, industry, category, competitorsText, flow.website.trim());
-      if (projectContext.created) {
-        localStorage.setItem(quickStartStorageKey(me?.user.id ?? "guest", projectForBrand), JSON.stringify(nextFlow));
-        setProjectOverride(projectForBrand);
+      if (activeProjectRef.current && activeProjectRef.current !== projectForBrand) return;
+      setFlow(nextFlow);
+      localStorage.setItem(quickStartStorageKey(me?.user.id ?? "guest", projectForBrand), JSON.stringify(nextFlow));
+      if (projectId !== projectForBrand) {
         router.replace(`/app/quick-start?project=${encodeURIComponent(projectForBrand)}`);
       }
     } catch (cause) {
@@ -242,7 +295,8 @@ export default function QuickStartPage() {
     if (!confirmPaidAi("重新生成监测问题")) return;
     setBusy("正在重新生成问题…"); setError("");
     try {
-      await generateQuestions(activeProjectId, flow.brandName, flow.industry, flow.category, flow.competitorsText, flow.website);
+      const nextFlow = await generateQuestions(activeProjectId, flow.brandName, flow.industry, flow.category, flow.competitorsText, flow.website);
+      if (activeProjectRef.current === activeProjectId) setFlow(nextFlow);
     } catch (cause) { setError(safeError(cause)); }
     finally { setBusy(""); }
   };
@@ -273,7 +327,7 @@ export default function QuickStartPage() {
       }
       const created = await api<{ id: string }>(`/benchmark-suites/${suiteId}/runs`, json("POST", { engineId: selectedRunEngine.id, runType: flow.runType }));
       update({ suiteId, runId: created.id, engineId: selectedRunEngine.id, step: 2, reportId: "", diagnosisId: "", recommendationRunId: "", aiRecommendation: null });
-      setRun({ status: "PENDING", progress: 0, completedRuns: 0, plannedRuns: flow.questions.length, provider: selectedRunEngine.provider, engine: { model: selectedRunEngine.model, name: selectedRunEngine.name } });
+      setRun({ status: "PENDING", progress: 0, completedRuns: 0, plannedRuns: flow.questions.length, analyzedRuns: 0, terminal: false, provider: selectedRunEngine.provider, engine: { model: selectedRunEngine.model, name: selectedRunEngine.name } });
     } catch (cause) { setError(safeError(cause)); }
     finally { setBusy(""); }
   };
@@ -294,7 +348,8 @@ export default function QuickStartPage() {
           const runResult = await api<Record<string, unknown>>(`/runs/${row.runId}`);
           const evidenceRow = runResult.evidence as Record<string, unknown> | null;
           const analyses = Array.isArray(evidenceRow?.analyses) ? evidenceRow.analyses as Array<Record<string, unknown>> : [];
-          return { ...row, rawResponse: evidenceRow?.rawResponse ?? null, analysis: analyses[0] ?? null };
+          const analysisVersion = typeof reportResult.analysisVersion === "string" ? reportResult.analysisVersion : "";
+          return { ...row, rawResponse: evidenceRow?.rawResponse ?? null, analysis: selectReportAnalysis(analyses, analysisVersion) };
         } catch { return row; }
       }));
       setEvidence(withAnswers);
@@ -304,7 +359,7 @@ export default function QuickStartPage() {
       const recommendationRun = await api<{ id: string }>(`/diagnoses/${diagnosis.id}/recommendations`, json("POST"));
       update({ recommendationRunId: recommendationRun.id });
       const generated = await api<unknown>(`/recommendation-runs/${recommendationRun.id}/recommendations`);
-      setRecommendations(asList<Record<string, unknown>>(generated));
+      setRecommendations(extractQuickStartRecommendations(generated));
     } catch (cause) {
       processedReport.current = "";
       setError(`报告已生成；诊断或证据加载暂未完成：${safeError(cause)}`);
@@ -313,6 +368,21 @@ export default function QuickStartPage() {
     }
   }, []);
 
+  const createReportForRun = useCallback(async (runId: string, projectForReport: string) => {
+    setBusy("正在整理正式检测报告…"); setError("");
+    try {
+      const existing = await api<Array<Record<string, unknown>>>(`/projects/${projectForReport}/reports`);
+      let reportRow = existing.find((item) => item.benchmarkRunId === runId);
+      if (!reportRow) reportRow = await api<Record<string, unknown>>(`/benchmark-runs/${runId}/reports`, json("POST", {}));
+      const reportId = String(reportRow.id ?? "");
+      if (!reportId) throw new Error("检测完成，但正式报告没有返回编号。");
+      update({ reportId, step: 3 });
+      await loadReportContext(reportId, projectForReport);
+    } catch (cause) {
+      setError(`检测已结束，但正式报告暂未生成：${safeError(cause)}`);
+    } finally { setBusy(""); }
+  }, [loadReportContext]);
+
   useEffect(() => {
     if (flow.step !== 2 || !flow.runId || !activeProjectId) return;
     let cancelled = false;
@@ -320,7 +390,7 @@ export default function QuickStartPage() {
     const poll = async () => {
       try {
         const current = await api<{
-          id: string; status: string; progress: number; completedRuns: number; plannedRuns: number;
+          id: string; status: string; progress: number; completedRuns: number; plannedRuns: number; analyzedRuns: number;
           provider: string; terminal?: boolean; engine?: { model?: string; name?: string };
         }>(`/benchmark-runs/${flow.runId}`);
         if (cancelled) return;
@@ -328,14 +398,12 @@ export default function QuickStartPage() {
         if (current.terminal || ["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"].includes(current.status)) {
           if (processingRun.current === flow.runId) return;
           processingRun.current = flow.runId;
-          const existing = await api<Array<Record<string, unknown>>>(`/projects/${activeProjectId}/reports`);
-          let reportRow = existing.find((item) => item.benchmarkRunId === flow.runId);
-          if (!reportRow) reportRow = await api<Record<string, unknown>>(`/benchmark-runs/${flow.runId}/reports`, json("POST", {}));
           if (cancelled) return;
-          const reportId = String(reportRow.id ?? "");
-          if (!reportId) throw new Error("检测完成，但正式报告没有返回编号。");
-          update({ reportId, step: 3 });
-          await loadReportContext(reportId, activeProjectId);
+          if (current.analyzedRuns <= 0) {
+            setError("本次检测没有成功分析样本，未生成报告。你可以重试检测，项目和问题集会保留。");
+            return;
+          }
+          await createReportForRun(flow.runId, activeProjectId);
         } else {
           timer = setTimeout(poll, 2200);
         }
@@ -349,7 +417,7 @@ export default function QuickStartPage() {
     };
     void poll();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [activeProjectId, flow.runId, flow.step, loadReportContext]);
+  }, [activeProjectId, createReportForRun, flow.runId, flow.step]);
 
   useEffect(() => {
     if (flow.step !== 3 || !flow.reportId || !activeProjectId) return;
@@ -425,15 +493,15 @@ export default function QuickStartPage() {
     setFlow(initialFlow); setRun(null); setReport(null); setEvidence([]); setRecommendations([]); setError("");
   };
 
-  const addQuestion = () => update({ questions: [...flow.questions, {
+  const addQuestion = () => setFlow((current) => replaceQuickStartQuestions(current, [...current.questions, {
     id: `manual-${Date.now()}`, text: "", category: "tool-discovery", intent: "用户决策", queryType: "DISCOVERY", rationale: "",
-  }] });
+  }]));
 
-  const updateQuestion = (id: string, patch: Partial<QuickStartQuestion>) => update({
-    questions: flow.questions.map((question) => question.id === id ? { ...question, ...patch } : question),
-  });
+  const updateQuestion = (id: string, patch: Partial<QuickStartQuestion>) => setFlow((current) => replaceQuickStartQuestions(current,
+    current.questions.map((question) => question.id === id ? { ...question, ...patch } : question),
+  ));
 
-  const removeQuestion = (id: string) => update({ questions: flow.questions.filter((question) => question.id !== id) });
+  const removeQuestion = (id: string) => setFlow((current) => replaceQuickStartQuestions(current, current.questions.filter((question) => question.id !== id)));
 
   if (contextLoading || !hydrated) return <div className="surface p-8 text-sm text-slate-500">正在加载快速开始…</div>;
 
@@ -442,7 +510,7 @@ export default function QuickStartPage() {
       <PageHeader
         title="快速开始"
         description="用一份品牌监测报告，快速走完 GEO 检测、优化建议和内容准备。结果会进入当前 GeoLens 正式项目。"
-        badge={<span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">{project?.name ?? "引导式工作流"}</span>}
+        badge={<span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">{projects.find((candidate) => candidate.id === activeProjectId)?.name ?? project?.name ?? (flow.brandName || "引导式工作流")}</span>}
         actions={<Link className="ui-button secondary" href={`/app?project=${encodeURIComponent(activeProjectId)}`}>完整工作台</Link>}
       />
 
@@ -469,6 +537,7 @@ export default function QuickStartPage() {
             <details className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" open={advanced} onToggle={(event) => setAdvanced((event.currentTarget as HTMLDetailsElement).open)}>
               <summary className="cursor-pointer text-sm font-semibold text-slate-700">高级设置：官网、行业、竞品和 AI Provider</summary>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {!activeProjectId && organizations.length > 1 && <label className="text-xs font-medium text-slate-600 sm:col-span-2">新项目所属组织<select className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={flow.organizationId} onChange={(event) => update({ organizationId: event.target.value })}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label>}
                 <label className="text-xs font-medium text-slate-600">官网地址<input className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={flow.website} onChange={(event) => update({ website: event.target.value })} placeholder="https://example.com" /></label>
                 <label className="text-xs font-medium text-slate-600">行业（可留空，由 AI 推断）<input className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={flow.industry} onChange={(event) => update({ industry: event.target.value })} placeholder="例如：协同办公软件" /></label>
                 <label className="text-xs font-medium text-slate-600 sm:col-span-2">竞品名称（可选，用逗号分隔）<input className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={flow.competitorsText} onChange={(event) => update({ competitorsText: event.target.value })} placeholder="例如：品牌甲，品牌乙" /></label>
@@ -527,10 +596,11 @@ export default function QuickStartPage() {
           </div>
           <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" className="ui-button secondary" onClick={() => update({ step: 1 })}>← 返回问题</button><button type="button" className="ui-button primary" disabled={Boolean(busy) || !selectedRunEngine} onClick={beginRun}>{busy || (flow.runType === "demo" ? "开始 Mock 检测" : "预检并开始真实检测")} →</button></div>
         </> : <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">检测任务正在执行</h3><p className="mt-1 text-xs text-slate-600">{run?.engine?.name || selectedRunEngine?.name} · {run?.engine?.model || selectedRunEngine?.model} · {providerLabel(run?.provider || selectedRunEngine?.provider || "")}</p></div><StatusBadge status={run?.status ?? "QUEUED"} /></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{run?.terminal ? (run.analyzedRuns > 0 ? "检测完成，正在准备报告" : "检测结束，暂无可用分析") : "检测任务正在执行"}</h3><p className="mt-1 text-xs text-slate-600">{run?.engine?.name || selectedRunEngine?.name} · {run?.engine?.model || selectedRunEngine?.model} · {providerLabel(run?.provider || selectedRunEngine?.provider || "")}</p></div><StatusBadge status={run?.status ?? "QUEUED"} /></div>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${Math.max(3, run?.progress ?? 0)}%` }} /></div>
           <div className="mt-2 flex justify-between text-xs text-slate-500"><span>{run?.completedRuns ?? 0} / {run?.plannedRuns ?? flow.questions.length} 个问题已完成</span><span>{run?.progress ?? 0}%</span></div>
           <p className="mt-4 text-xs leading-5 text-slate-600">任务结果会自动归档到 Benchmark 和 Evidence。你可以刷新页面，向导会继续恢复检测进度。</p>
+          {run?.terminal && !flow.reportId && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"><p className="text-xs leading-5 text-slate-600">{run.analyzedRuns > 0 ? "检测样本已有分析，但报告暂未完成。" : "没有成功分析的样本，因此不会生成空报告。"}</p>{run.analyzedRuns > 0 ? <button type="button" className="ui-button secondary" disabled={Boolean(busy)} onClick={() => createReportForRun(flow.runId, activeProjectId)}>{busy || "重试生成报告"}</button> : <button type="button" className="ui-button secondary" onClick={() => { processingRun.current = ""; setRun(null); setError(""); update({ runId: "", reportId: "" }); }}>重新运行检测</button>}</div>}
         </div>}
       </section>}
 
