@@ -1067,84 +1067,180 @@ export class AiService {
 
     const requestedProvider = dto.provider || "mock";
     const useReal = requestedProvider !== "mock";
-    const gatewayInput = {
-      idempotencyKey,
-      title: sourceTitle,
-      body: sourceBody,
-      summary: revision.summary,
-      instructions: dto.instructions || "",
-      perspective: dto.perspective || "THIRD_PERSON",
-      tone: dto.tone || "PROFESSIONAL",
-      contentType: dto.contentType || "AUTO",
-      channels: channels.map((channel) => ({
-        channel,
-        requiresVideo: VIDEO_SCRIPT_CHANNELS.has(channel),
-        limits: limitsForChannel(channel),
-      })),
-    };
-    let budget: AdaptationBudget | null = null;
-    if (useReal) {
-      if (requestedProvider !== "auto" && requestedProvider !== "deepseek") {
-        throw new BadRequestException("本次只允许 DeepSeek Flash。其他付费模型已拒绝，未发出请求。");
+
+    const channelRawResults: Array<Record<string, unknown>> = [];
+    let aggregatedInputTokens = 0;
+    let aggregatedOutputTokens = 0;
+    let aggregatedTotalTokens = 0;
+    let aggregatedCost: number | null = null;
+    let maxLatencyMs = 0;
+    let lastGenerationId: string | null = null;
+    let resolvedProvider = useReal ? "deepseek" : "mock";
+    let resolvedModel = useReal ? ADAPTATION_REAL_MODEL : (dto.model || "mock-ai-engine");
+
+    // 针对每个目标渠道独立执行适配与隔离生成，防止大长文 Token 溢出与全量失效
+    for (const channel of channels) {
+      const channelIdempotencyKey = adaptationIdempotencyKey({
+        promptVersion,
+        revisionId: revision.id,
+        title: sourceTitle,
+        body: sourceBody,
+        channels: [channel],
+        instructions: dto.instructions,
+      });
+
+      // 1. 检查单渠道 Replay 缓存
+      if (!dto.force) {
+        const replay = await this.findAdaptationReplay(project.organizationId, draftId, promptVersion, channelIdempotencyKey);
+        if (replay) {
+          const rawList = (replay.outputSnapshot as { channels?: unknown[] } | null)?.channels;
+          if (Array.isArray(rawList) && rawList.length > 0) {
+            channelRawResults.push({
+              ...(rawList[0] as Record<string, unknown>),
+              channel,
+              status: "SUCCESS",
+              generationMode: replay.provider === "mock" ? "MOCK" : "REAL_LLM",
+            });
+            continue;
+          }
+        }
       }
-      const promptDef = AI_PROMPTS[promptVersion];
-      budget = assessAdaptationBudget(promptDef.systemPrompt, promptDef.buildUserPrompt(gatewayInput));
-      if (!adaptationBudgetAllowsCall(budget)) {
-        throw new BadRequestException(
-          `真实调用已拦截：最坏费用 $${budget.worstCaseUsd} 超过 $${budget.ceilingUsd}。未发出请求。`,
+
+      // 2. 根据渠道形态定制单渠道 Token 预算
+      let chMaxTokens = 1500;
+      if (channel === "ZHIHU" || channel === "WECHAT_OFFICIAL_ACCOUNT") {
+        chMaxTokens = 2500; // 长文渠道支持深度展开与完整小标题
+      } else if (channel === "DOUYIN" || channel === "BILIBILI" || channel === "WECHAT_CHANNELS" || channel === "KUAISHOU") {
+        chMaxTokens = 1800; // 视频渠道支持完整分镜头口播脚本
+      } else if (channel === "XIAOHONGSHU") {
+        chMaxTokens = 1200; // 精炼社交图文与表情段落
+      } else if (channel === "WEIBO") {
+        chMaxTokens = 800; // 微博精简短文
+      }
+
+      const singleGatewayInput = {
+        idempotencyKey: channelIdempotencyKey,
+        title: sourceTitle,
+        body: sourceBody,
+        summary: revision.summary,
+        instructions: dto.instructions || "",
+        perspective: dto.perspective || "THIRD_PERSON",
+        tone: dto.tone || "PROFESSIONAL",
+        contentType: dto.contentType || "AUTO",
+        channels: [{
+          channel,
+          requiresVideo: VIDEO_SCRIPT_CHANNELS.has(channel),
+          limits: limitsForChannel(channel),
+        }],
+      };
+
+      // 3. 真实调用门禁校验
+      if (useReal) {
+        if (requestedProvider !== "auto" && requestedProvider !== "deepseek") {
+          throw new BadRequestException("本次只允许 DeepSeek Flash。其他付费模型已拒绝，未发出请求。");
+        }
+        const promptDef = AI_PROMPTS[promptVersion];
+        const chBudget = assessAdaptationBudget(promptDef.systemPrompt, promptDef.buildUserPrompt(singleGatewayInput));
+        if (!adaptationBudgetAllowsCall(chBudget)) {
+          throw new BadRequestException(
+            `真实调用已拦截：渠道 ${channel} 最坏费用 $${chBudget.worstCaseUsd} 超过门禁 $${chBudget.ceilingUsd}。未发出请求。`,
+          );
+        }
+        realAdaptationAttempts += 1;
+        this.logger.log(
+          `adaptation real gate channel=${channel} model=${ADAPTATION_REAL_MODEL} attempt=${realAdaptationAttempts}`,
         );
       }
-      realAdaptationAttempts += 1;
-      this.logger.log(
-        `adaptation real gate model=${ADAPTATION_REAL_MODEL} worstCaseUsd=${budget.worstCaseUsd} inputTokensUpper=${budget.inputTokensUpper} maxOutputTokens=${budget.maxOutputTokens} attempt=${realAdaptationAttempts}`,
-      );
-    }
 
-    const generated = await this.gateway.generateStructured<{ channels: Array<Record<string, unknown>> }>({
-      organizationId: project.organizationId,
-      projectId: project.id,
-      userId,
-      feature: CONTENT_ADAPTATION_FEATURE,
-      entityType: "ContentDraft",
-      entityId: draftId,
-      provider: useReal ? "deepseek" : "mock",
-      model: useReal ? ADAPTATION_REAL_MODEL : dto.model,
-      temperature: dto.temperature ?? 0.2,
-      maxTokens: useReal ? ADAPTATION_MAX_OUTPUT_TOKENS : dto.maxTokens,
-      maxRetries: useReal ? 0 : undefined,
-      disableRepair: useReal,
-      thinking: useReal ? "disabled" : undefined,
-      jsonObject: useReal,
-      timeoutMs: useReal ? 60_000 : undefined,
-      promptVersion,
-      idempotencyKey: dto.force ? `${idempotencyKey}:${randomUUID()}` : idempotencyKey,
-      input: gatewayInput,
-    });
+      // 4. 执行单渠道独立生成与故障隔离
+      try {
+        const generated = await this.gateway.generateStructured<{ channels: Array<Record<string, unknown>> }>({
+          organizationId: project.organizationId,
+          projectId: project.id,
+          userId,
+          feature: CONTENT_ADAPTATION_FEATURE,
+          entityType: "ContentDraft",
+          entityId: draftId,
+          provider: useReal ? "deepseek" : "mock",
+          model: useReal ? ADAPTATION_REAL_MODEL : dto.model,
+          temperature: dto.temperature ?? 0.2,
+          maxTokens: useReal ? chMaxTokens : (dto.maxTokens || chMaxTokens),
+          maxRetries: useReal ? 0 : undefined,
+          disableRepair: useReal,
+          thinking: useReal ? "disabled" : undefined,
+          jsonObject: useReal,
+          timeoutMs: useReal ? 60_000 : undefined,
+          promptVersion,
+          idempotencyKey: dto.force ? `${channelIdempotencyKey}:${randomUUID()}` : channelIdempotencyKey,
+          input: singleGatewayInput,
+        });
+
+        resolvedProvider = generated.provider;
+        resolvedModel = generated.actualModel || generated.model;
+        if (generated.generationId) lastGenerationId = generated.generationId;
+        if (generated.inputTokens) aggregatedInputTokens += generated.inputTokens;
+        if (generated.outputTokens) aggregatedOutputTokens += generated.outputTokens;
+        if (generated.totalTokens) aggregatedTotalTokens += generated.totalTokens;
+        if (generated.estimatedCost != null) {
+          aggregatedCost = Number(((aggregatedCost || 0) + generated.estimatedCost).toFixed(6));
+        }
+        if (generated.latencyMs > maxLatencyMs) maxLatencyMs = generated.latencyMs;
+
+        const firstCh = generated.data?.channels?.[0];
+        if (firstCh) {
+          channelRawResults.push({
+            ...firstCh,
+            channel,
+            status: "SUCCESS",
+            generationMode: useReal ? "REAL_LLM" : "MOCK",
+          });
+        } else {
+          channelRawResults.push({
+            channel,
+            title: sourceTitle,
+            body: sourceBody,
+            status: "SUCCESS",
+            generationMode: "MOCK",
+          });
+        }
+      } catch (chErr: any) {
+        this.logger.error(`[AiService] Channel adaptation failed for ${channel}: ${chErr.message}`);
+        channelRawResults.push({
+          channel,
+          title: sourceTitle,
+          body: sourceBody,
+          status: "FAILED",
+          error: chErr.message || "该渠道大模型适配失败",
+          generationMode: "FAILED",
+          omittedClaims: [`该渠道大模型适配失败: ${chErr.message}`],
+        });
+      }
+    }
 
     return {
       ...this.presentAdaptation({
         draftId,
         revisionId: revision.id,
-        promptVersion: generated.promptVersion,
-        provider: generated.provider,
-        model: generated.actualModel || generated.model,
-        inputTokens: generated.inputTokens,
-        outputTokens: generated.outputTokens,
-        totalTokens: generated.totalTokens,
-        estimatedCost: generated.estimatedCost,
-        latencyMs: generated.latencyMs,
-        generationId: generated.generationId ?? null,
+        promptVersion,
+        provider: resolvedProvider,
+        model: resolvedModel,
+        inputTokens: aggregatedInputTokens || null,
+        outputTokens: aggregatedOutputTokens || null,
+        totalTokens: aggregatedTotalTokens || null,
+        estimatedCost: aggregatedCost,
+        latencyMs: maxLatencyMs,
+        generationId: lastGenerationId,
         replayed: false,
-        rawChannels: generated.data?.channels,
+        rawChannels: channelRawResults,
         requestedChannels: channels,
         sourceTitle,
         sourceBody,
         sourceText,
       }),
-      promptCacheHitTokens: generated.promptCacheHitTokens ?? null,
-      promptCacheMissTokens: generated.promptCacheMissTokens ?? null,
-      reasoningTokens: generated.reasoningTokens ?? null,
-      budget,
+      promptCacheHitTokens: null,
+      promptCacheMissTokens: null,
+      reasoningTokens: null,
+      budget: null,
     };
   }
 
@@ -1202,7 +1298,10 @@ export class AiService {
             : raw
               ? []
               : ["模型未返回该渠道，已回退为原文"],
-        },
+          status: (raw?.status as any) || "SUCCESS",
+          error: (raw?.error as any) || null,
+          generationMode: (raw?.generationMode as any) || (input.provider === "mock" ? "MOCK" : "REAL_LLM"),
+        } as any,
         input.sourceText,
         limitsForChannel(channel),
         VIDEO_SCRIPT_CHANNELS.has(channel),

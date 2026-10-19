@@ -181,7 +181,8 @@ export class AiGatewayService {
     }
 
     const execPromise = (async () => {
-      // 1. 获取 Prompt
+      try {
+        // 1. 获取 Prompt
       const promptDef = AI_PROMPTS[req.promptVersion];
       if (!promptDef) {
         throw new BadRequestException(`未知的 promptVersion: ${req.promptVersion}`);
@@ -379,7 +380,15 @@ Please return ONLY the corrected, valid JSON conforming to the original schema. 
             completedAt,
           });
 
-          throw new BadRequestException(errorMessage);
+          throw new BadRequestException({
+            statusCode: 400,
+            error: "Bad Request",
+            message: errorMessage,
+            code: errorCode,
+            feature: req.feature,
+            provider: activeProvider,
+            model: response.model,
+          });
         }
       }
 
@@ -429,15 +438,15 @@ Please return ONLY the corrected, valid JSON conforming to the original schema. 
         startedAt: startedAt.toISOString(),
         completedAt: completedAt.toISOString(),
       };
+      } finally {
+        if (debounceKey) {
+          pendingRequests.delete(debounceKey);
+        }
+      }
     })();
 
     if (debounceKey) {
       pendingRequests.set(debounceKey, execPromise);
-      execPromise
-        .finally(() => {
-          pendingRequests.delete(debounceKey);
-        })
-        .catch(() => {});
     }
 
     return execPromise;

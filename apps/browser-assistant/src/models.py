@@ -76,7 +76,7 @@ class StepLog(BaseModel):
 class MediaItem(BaseModel):
     index: int = 0
     type: str = "IMAGE"                          # IMAGE / VIDEO / COVER
-    url: str
+    url: str = ""
     local_path: str | None = None
     mime_type: str = "image/png"
     size_bytes: int | None = None

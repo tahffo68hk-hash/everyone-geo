@@ -45,6 +45,10 @@ export interface AdaptationChannelDraft {
   omittedClaims: string[];
   riskNotes: string[];
   adjustments: string[];
+  status?: "SUCCESS" | "FAILED";
+  error?: string | null;
+  isComplete?: boolean;
+  generationMode?: "REAL_LLM" | "MOCK" | "RULE_TRANSFORM" | "FAILED";
 }
 
 const UNSOURCED_RISK = /(\d+(?:\.\d+)?%|https?:\/\/\S+|\[\d+\])/g;
@@ -127,6 +131,13 @@ export function constrainAdaptationChannel(
     }
   }
 
+  const isLongArticle = raw.channel === "ZHIHU" || raw.channel === "WECHAT_OFFICIAL_ACCOUNT";
+  let isComplete = true;
+  if (isLongArticle && body.length < 150) {
+    isComplete = false;
+    adjustments.push("长文渠道正文字数偏少，建议检查完整性");
+  }
+
   return {
     channel: raw.channel,
     title,
@@ -136,5 +147,9 @@ export function constrainAdaptationChannel(
     omittedClaims: (raw.omittedClaims || []).filter((item) => item.trim()).slice(0, 8),
     riskNotes: [...new Set(riskNotes)].slice(0, 8),
     adjustments,
+    status: (raw as any).status || "SUCCESS",
+    error: (raw as any).error || null,
+    isComplete,
+    generationMode: (raw as any).generationMode || "MOCK",
   };
 }

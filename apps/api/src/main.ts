@@ -15,10 +15,11 @@ import { ensureEnvLoaded } from "./config/env";
 ensureEnvLoaded();
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  console.error("[CRITICAL] Unhandled Promise Rejection at:", promise, "reason:", reason);
 });
 process.on("uncaughtException", (err) => {
-  console.error("Uncaught Exception thrown:", err);
+  console.error("[FATAL] Uncaught Exception encountered. Exiting to allow controlled restart:", err);
+  process.exit(1);
 });
 
 async function bootstrap() {

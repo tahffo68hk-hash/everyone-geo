@@ -16,13 +16,50 @@ from .config import PROFILES_DIR, SCREENSHOTS_DIR, settings
 
 
 def _kill_processes_for_profile(profile_path: Path):
-    """清理与该 Profile 关联的残留孤儿 Chrome 进程，防止 DevToolsActivePort 锁冲突"""
+    """
+    仅清理明确归属于当前 Browser Assistant 专用 Profile 的残留孤儿 Chrome 进程。
+    严禁结束用户的日常 Chrome 进程或其他自动化任务的 Chrome。
+    """
     try:
-        path_str = str(profile_path).replace("\\", "\\\\")
-        cmd = f"Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | Where-Object {{ $_.CommandLine -like '*{path_str}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
-        subprocess.run(["powershell", "-NoProfile", "-Command", cmd], timeout=5, capture_output=True)
+        resolved_target = profile_path.resolve()
+        resolved_root = PROFILES_DIR.resolve()
+
+        # 严格安全断言：必须且仅能位于 PROFILES_DIR 子目录，绝不逃逸
+        if not str(resolved_target).startswith(str(resolved_root)) or resolved_target == resolved_root:
+            return
+
+        target_str = str(resolved_target).replace("\\", "\\\\")
+        # 匹配命令行中严格指定该专用 Profile user-data-dir 的 Chrome 进程，排除用户常规日常浏览器
+        ps_cmd = (
+            f"Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | "
+            f"Where-Object {{ $_.CommandLine -and ($_.CommandLine -like '*--user-data-dir=*{target_str}*') }} | "
+            f"ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+        )
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], timeout=5, capture_output=True)
     except Exception:
         pass
+
+
+def _clean_stale_profile_locks(profile_path: Path):
+    """
+    清理非正常退出遗留的陈旧锁文件。
+    若锁文件正被存活进程独占占用，绝不删除。
+    """
+    for lock_name in ["DevToolsActivePort", "SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]:
+        lock_file = profile_path / lock_name
+        if not lock_file.exists():
+            continue
+        try:
+            # 尝试测试文件句柄占用状态
+            with open(lock_file, "a+"):
+                pass
+            # 能够无冲突打开，说明无存活进程持有该文件锁，可安全解开陈旧残留
+            lock_file.unlink(missing_ok=True)
+        except (PermissionError, OSError):
+            # 正在被系统或存活进程独占使用，严禁强行删除
+            pass
+        except Exception:
+            pass
 
 
 class BrowserManager:
@@ -133,15 +170,9 @@ class BrowserManager:
 
             profile_path = self.get_profile_path(channel, account_id)
 
-            # 启动前清理陈旧锁文件与残留孤儿进程以防旧会话非正常退出残留阻塞
+            # 启动前清理陈旧孤儿进程与未被占用的孤立锁文件
             _kill_processes_for_profile(profile_path)
-            for lock_name in ["DevToolsActivePort", "SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]:
-                lock_file = profile_path / lock_name
-                if lock_file.exists():
-                    try:
-                        lock_file.unlink(missing_ok=True)
-                    except Exception:
-                        pass
+            _clean_stale_profile_locks(profile_path)
 
             options = Options()
             # 关键：指定独立的 User Data Directory，杜绝接管用户日常浏览器 Profile
@@ -231,12 +262,20 @@ class BrowserManager:
                 self._last_healthy_check[key] = time.time()
                 return driver
             except WebDriverException as e:
-                # 常见错误：Profile 目录被另一个 Chrome 实例独占锁定
-                if "user data directory is already in use" in str(e).lower():
-                    raise RuntimeError(
-                        f"浏览器 Profile 目录已被占用：{profile_path}。请先关闭冲突的 Chrome 窗口后重试。"
-                    ) from e
-                raise RuntimeError(f"启动 Chrome 失败：{e}") from e
+                err_str = str(e)
+                diag_reason = "Chrome 启动失败"
+                recovery = "请点击【清理本地会话】后重试启动"
+                if "user data directory is already in use" in err_str.lower():
+                    diag_reason = f"浏览器 Profile 目录已被占用锁定：{profile_path}"
+                    recovery = "请检查并关闭该平台对应的受控 Chrome 窗口，或在工作台点击【清理本地会话】"
+                elif "devtoolsactiveport file doesn't exist" in err_str.lower() or "chrome failed to start: crashed" in err_str.lower():
+                    diag_reason = "Chrome 进程启动后异常退出 (DevToolsActivePort 锁冲突或崩溃)"
+                    recovery = "系统已自动探测并清理残留孤儿进程，请点击【重试启动】"
+                elif "cannot find chrome binary" in err_str.lower():
+                    diag_reason = "系统未检测到 Google Chrome 浏览器可执行程序"
+                    recovery = "请确认已安装 Google Chrome 浏览器并已加入系统 PATH"
+
+                raise RuntimeError(f"{diag_reason}。详细信息: {err_str}。建议操作: {recovery}") from e
 
     def close_driver(self, channel: str, account_id: str = "default") -> bool:
         """安全关闭指定会话的浏览器进程"""
