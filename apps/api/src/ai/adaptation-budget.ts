@@ -8,7 +8,7 @@ export const DEEPSEEK_FLASH_PEAK_USD_PER_MILLION = {
 } as const;
 
 export const ADAPTATION_REAL_MODEL = "deepseek-flash";
-export const ADAPTATION_MAX_OUTPUT_TOKENS = 1536;
+export const ADAPTATION_MAX_OUTPUT_TOKENS = 4096;
 export const ADAPTATION_BUDGET_CEILING_USD = 0.08;
 
 export interface AdaptationBudget {

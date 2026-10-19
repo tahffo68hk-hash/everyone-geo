@@ -433,9 +433,11 @@ Please return ONLY the corrected, valid JSON conforming to the original schema. 
 
     if (debounceKey) {
       pendingRequests.set(debounceKey, execPromise);
-      execPromise.finally(() => {
-        pendingRequests.delete(debounceKey);
-      });
+      execPromise
+        .finally(() => {
+          pendingRequests.delete(debounceKey);
+        })
+        .catch(() => {});
     }
 
     return execPromise;

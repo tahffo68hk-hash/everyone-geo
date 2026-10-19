@@ -415,13 +415,13 @@ export class AiController {
    */
   @Post("projects/:id/content-drafts/:draftId/ai/channel-adaptation")
   @HttpCode(200)
-  adaptContentChannels(
+  async adaptContentChannels(
     @CurrentUser() u: JwtUserPayload,
     @Param("id", ParseUUIDPipe) id: string,
     @Param("draftId", ParseUUIDPipe) draftId: string,
     @Body() dto: AdaptContentChannelsDto,
   ) {
-    return this.aiService.adaptContentChannels(u.sub, id, draftId, dto);
+    return await this.aiService.adaptContentChannels(u.sub, id, draftId, dto);
   }
 
   /**
