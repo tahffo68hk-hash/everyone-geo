@@ -1073,6 +1073,9 @@ export class AiService {
       body: sourceBody,
       summary: revision.summary,
       instructions: dto.instructions || "",
+      perspective: dto.perspective || "THIRD_PERSON",
+      tone: dto.tone || "PROFESSIONAL",
+      contentType: dto.contentType || "AUTO",
       channels: channels.map((channel) => ({
         channel,
         requiresVideo: VIDEO_SCRIPT_CHANNELS.has(channel),

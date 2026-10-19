@@ -123,6 +123,35 @@ class ZhihuPublisher(BasePublisher):
         except Exception as e:
             return False, f"打开知乎登录页失败：{e}"
 
+    def navigate_creator_center(self) -> tuple[bool, str]:
+        """导航至知乎专栏写作中心"""
+        try:
+            curr_url = self.driver.current_url.lower()
+            if "zhuanlan.zhihu.com/write" not in curr_url:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(1.8)
+            self.handle_new_tab()
+            return True, "已成功进入知乎专栏写作中心"
+        except Exception as e:
+            return False, f"进入知乎写作中心失败：{e}"
+
+    def select_content_type(self, content_type: str = "ARTICLE") -> tuple[bool, str]:
+        """选择知乎创作类型（专栏文章）"""
+        self.handle_new_tab()
+        return True, "知乎专栏写作模式就绪"
+
+    def ensure_editor_ready(self) -> tuple[bool, str]:
+        """确认知乎专栏编辑器 DOM 就绪"""
+        self.handle_new_tab()
+        for by, sel in self.SELECTORS["title"] + self.SELECTORS["content_editor"]:
+            try:
+                elems = self.driver.find_elements(by, sel)
+                if any(e.is_displayed() for e in elems):
+                    return True, "知乎专栏文章编辑器 DOM 已就绪"
+            except Exception:
+                pass
+        return True, "知乎专栏页面就绪"
+
     def open_editor(self) -> tuple[bool, str]:
         """打开知乎专栏写作页面"""
         try:

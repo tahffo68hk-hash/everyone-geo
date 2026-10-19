@@ -208,6 +208,52 @@ class DouyinPublisher(BasePublisher):
 
         return False, "未检测到抖音创作者有效登录态，请在浏览器中完成登录", {"url": curr_url}
 
+    def navigate_creator_center(self) -> tuple[bool, str]:
+        """导航至抖音创作者服务中心主入口"""
+        try:
+            curr_url = self.driver.current_url.lower()
+            if "creator.douyin.com" not in curr_url:
+                self.driver.get(self.HOME_URL)
+                time.sleep(1.8)
+            self.dismiss_popovers()
+            self.handle_new_tab()
+            return True, "已成功进入抖音创作者服务中心"
+        except Exception as e:
+            return False, f"进入抖音创作者中心失败：{e}"
+
+    def select_content_type(self, content_type: str = "VIDEO") -> tuple[bool, str]:
+        """显式选择创作类型 (发布视频 vs 发布图文)"""
+        self.dismiss_popovers()
+        ctype = (content_type or "VIDEO").upper()
+        if ctype in ["IMAGE_TEXT", "ARTICLE"]:
+            # 切换到图文 Tab
+            for t_sel in [
+                "//*[contains(@class, 'semi-tabs-item') and (contains(text(), '图文') or contains(., '图文'))]",
+                "//*[contains(text(), '发布图文') or contains(text(), '图文作品')]"
+            ]:
+                try:
+                    elems = self.driver.find_elements(By.XPATH, t_sel)
+                    for el in elems:
+                        if el.is_displayed():
+                            el.click()
+                            time.sleep(0.8)
+                            return True, "已切换至抖音【发布图文】模式"
+                except Exception:
+                    pass
+            return True, "已尝试切换至抖音【发布图文】模式"
+        else:
+            curr_url = self.driver.current_url.lower()
+            if "upload" not in curr_url:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(1.5)
+            return True, "已切换至抖音【发布视频】模式"
+
+    def ensure_editor_ready(self) -> tuple[bool, str]:
+        """确认抖音创作页面就绪，清理引导弹窗"""
+        self.dismiss_popovers()
+        self.handle_new_tab()
+        return True, "抖音创作者编辑界面已就绪"
+
     def open_editor(self) -> tuple[bool, str]:
         """打开抖音视频上传创作页"""
         try:

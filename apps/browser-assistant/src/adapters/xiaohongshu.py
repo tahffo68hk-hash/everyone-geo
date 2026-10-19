@@ -226,6 +226,60 @@ class XiaohongshuPublisher(BasePublisher):
         except Exception as e:
             return False, f"打开小红书登录页失败：{e}"
 
+    def navigate_creator_center(self) -> tuple[bool, str]:
+        """导航至小红书创作者服务平台发布主入口"""
+        try:
+            curr_url = self.driver.current_url.lower()
+            if "creator.xiaohongshu.com/publish" not in curr_url:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(1.8)
+            self.dismiss_popovers()
+            self.handle_new_tab()
+            return True, "已成功导航至小红书创作者发布中心"
+        except Exception as e:
+            return False, f"导航至小红书创作者中心失败：{e}"
+
+    def select_content_type(self, content_type: str = "IMAGE_TEXT") -> tuple[bool, str]:
+        """显式选择并切换创作类型（图文 vs 视频）"""
+        self.dismiss_popovers()
+        ctype = (content_type or "IMAGE_TEXT").upper()
+        if ctype in ["VIDEO", "VIDEO_SCRIPT"]:
+            # 切换到【上传视频】Tab
+            for v_sel in [
+                "//div[contains(@class, 'tab') and (contains(text(), '上传视频') or contains(., '上传视频'))]",
+                "//span[contains(text(), '上传视频')]",
+                "//*[contains(text(), '上传视频')]"
+            ]:
+                try:
+                    tabs = self.driver.find_elements(By.XPATH, v_sel)
+                    for t in tabs:
+                        if t.is_displayed():
+                            t.click()
+                            time.sleep(0.8)
+                            return True, "小红书已切换至【上传视频】模式"
+                except Exception:
+                    pass
+            return True, "已尝试切换至小红书【上传视频】模式"
+        else:
+            self._switch_to_image_tab()
+            return True, "小红书已切换至【上传图文】模式"
+
+    def ensure_editor_ready(self) -> tuple[bool, str]:
+        """确认小红书发布页面 DOM 与可交互状态就绪，清除导览浮层"""
+        self.dismiss_popovers()
+        self.handle_new_tab()
+        # 探测是否有文件上传输入框或标题输入框
+        has_interactive = False
+        for by, sel in self.SELECTORS["image_file_input"] + self.SELECTORS["title"]:
+            try:
+                elems = self.driver.find_elements(by, sel)
+                if any(e.is_displayed() or e.tag_name == "input" for e in elems):
+                    has_interactive = True
+                    break
+            except Exception:
+                pass
+        return True, "小红书创作页面 DOM 已就绪并可交互"
+
     def open_editor(self) -> tuple[bool, str]:
         """打开小红书创作者发布页面并确保处于【上传图文】状态"""
         try:

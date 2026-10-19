@@ -21,6 +21,25 @@ class TaskStatus(str, Enum):
     MANUAL_REQUIRED = "MANUAL_REQUIRED"          # 需人工接管处理（验证码、风控、表单结构变动等）
 
 
+class FsmState(str, Enum):
+    """标准 15 步可观察发布状态机 (FSM)"""
+    INITIALIZING = "INITIALIZING"                              # 1. 调起并初始化受控浏览器
+    SESSION_CHECK = "SESSION_CHECK"                            # 2. 检查会话与 Cookie 有效性
+    LOGIN_REQUIRED = "LOGIN_REQUIRED"                          # 3. 未登录，进入等待扫码授权/人工接管
+    CREATOR_CENTER_NAVIGATION = "CREATOR_CENTER_NAVIGATION"    # 4. 导航至平台创作者服务中心主入口
+    CONTENT_TYPE_SELECTION = "CONTENT_TYPE_SELECTION"          # 5. 显式切换或点击创作类型 (图文/视频/专栏)
+    EDITOR_READY = "EDITOR_READY"                              # 6. 编辑器 DOM 与可交互状态就绪，清除导览弹窗
+    TITLE_FILL = "TITLE_FILL"                                  # 7. 填写标题并执行字数上限与特殊符号校验
+    BODY_FILL = "BODY_FILL"                                    # 8. 写入正文描述 (富文本/Markdown/纯文本段落)
+    MEDIA_UPLOAD = "MEDIA_UPLOAD"                              # 9. 上传图片或视频素材，等待平台切片解析完成
+    TAG_FILL = "TAG_FILL"                                      # 10. 填写话题标签与平台分类
+    COVER_SELECTION = "COVER_SELECTION"                        # 11. 选择或上传独立封面图片
+    VALIDATION = "VALIDATION"                                  # 12. 双向核验填写字段与原始内容一致性
+    READY_FOR_REVIEW = "READY_FOR_REVIEW"                      # 13. 滚动至最终发布区，停留在发布前供人工审核
+    BLOCKED = "BLOCKED"                                        # 14. 遇到验证码、风控阻断或结构异常，等待接管
+    FAILED = "FAILED"                                          # 15. 执行失败并保留现场快照与诊断信息
+
+
 class StepName(str, Enum):
     CHECK_LOGIN = "CHECK_LOGIN"                  # 1. 检查目标平台登录状态
     OPEN_EDITOR = "OPEN_EDITOR"                  # 2. 打开对应的内容创作页面
@@ -49,6 +68,9 @@ class StepLog(BaseModel):
     timestamp: str
     duration_ms: int | None = None
     data: dict[str, Any] | None = None
+    fsm_state: FsmState | None = None
+    screenshot_path: str | None = None
+    recovery_guidance: str | None = None
 
 
 class MediaItem(BaseModel):
@@ -101,6 +123,7 @@ class CreatePublishTaskRequest(BaseModel):
     source_draft_id: str | None = None
     source_revision_id: str | None = None
     publication_id: str | None = None
+    content_type: str = "IMAGE_TEXT"             # IMAGE_TEXT / VIDEO / ARTICLE
     headless: bool = False                       # 自动化测试时可选 True，人工时默认 False
 
 
@@ -118,6 +141,11 @@ class TaskStatusResponse(BaseModel):
     account_id: str
     status: TaskStatus
     current_step: StepName | None = None
+    fsm_state: FsmState | None = None
+    current_state_title: str | None = None
+    resumable: bool = False
+    screenshot_path: str | None = None
+    recovery_guidance: str | None = None
     steps: list[StepLog] = Field(default_factory=list)
     validation: ValidationDiff | None = None
     manual_package: ManualPublishPackage | None = None

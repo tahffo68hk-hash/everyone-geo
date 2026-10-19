@@ -220,21 +220,18 @@ describe("Multi-Provider M6D e2e", () => {
       expect(noCfg.status).toBe(400);
       expect(String(noCfg.body.message)).toContain("未配置");
 
-      // 配置就绪但 planned=2 > cap=1 → 400，明示计划真实调用次数
+      // 配置就绪，真实 Run 正常放行创建（不再受上限限制）
       process.env.ENABLE_REAL_PROVIDERS = "true";
       process.env.QWEN_API_KEY = "sk-m6d-e2e-fake-key";
       process.env.QWEN_MODEL = "qwen-plus";
-      process.env.REAL_PROVIDER_MAX_RUNS_PER_TASK = "1";
-      const overCap = await owner.post(`/benchmark-suites/${suite.id}/runs`).send({ engineId: ids.qw, runType: "real" });
-      expect(overCap.status).toBe(400);
-      expect(String(overCap.body.message)).toContain("2 次真实调用");
-      expect(String(overCap.body.message)).toMatch(/超过|上限/);
-      expect(String(overCap.body.message)).toContain("REAL_PROVIDER_MAX_RUNS_PER_TASK");
+      const runRes = await owner.post(`/benchmark-suites/${suite.id}/runs`).send({ engineId: ids.qw, runType: "real" });
+      expect(runRes.status).toBe(202);
+      expect(runRes.body.plannedRuns).toBe(2);
+      expect(runRes.body.runType).toBe("REAL");
     } finally {
       delete process.env.ENABLE_REAL_PROVIDERS;
       delete process.env.QWEN_API_KEY;
       delete process.env.QWEN_MODEL;
-      delete process.env.REAL_PROVIDER_MAX_RUNS_PER_TASK;
     }
   });
 

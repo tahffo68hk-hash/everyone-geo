@@ -132,12 +132,79 @@ class WechatOfficialAccountPublisher(BasePublisher):
 
         return False, "未检测到微信公众号有效登录态，请在受控浏览器中完成扫码", {"url": curr_url}
 
+    def navigate_creator_center(self) -> tuple[bool, str]:
+        """导航至微信公众平台管理后台"""
+        try:
+            curr_url = self.driver.current_url.lower()
+            if "mp.weixin.qq.com" not in curr_url:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(1.8)
+            self.dismiss_popovers()
+            self.handle_new_tab()
+            return True, "已成功进入微信公众平台管理后台"
+        except Exception as e:
+            return False, f"进入微信公众平台管理后台失败：{e}"
+
+    def select_content_type(self, content_type: str = "ARTICLE") -> tuple[bool, str]:
+        """显式进入图文草稿创作页面，并自动切换至新开的编辑标签页"""
+        self.dismiss_popovers()
+        curr_url = self.driver.current_url.lower()
+        if "appmsg" in curr_url or "appmsg_edit" in curr_url:
+            return True, "当前已处于微信公众号图文草稿编辑页面"
+
+        # 尝试寻找【新的创作】/【新建图文】按钮
+        clicked = False
+        for btn_sel in [
+            "//a[contains(text(), '新的创作') or contains(., '新的创作')]",
+            "//span[contains(text(), '新的创作')]",
+            "//div[contains(text(), '新的创作')]",
+            "//a[contains(text(), '新建图文') or contains(., '新建图文')]",
+            "//button[contains(text(), '新建图文') or contains(., '新建图文')]",
+            "//div[contains(@class, 'new-creation__menu-item') and contains(., '图文')]",
+            "//a[contains(@href, 'appmsg_edit')]"
+        ]:
+            try:
+                elems = self.driver.find_elements(By.XPATH, btn_sel)
+                for el in elems:
+                    if el.is_displayed():
+                        try:
+                            el.click()
+                        except Exception:
+                            self.driver.execute_script("arguments[0].click();", el)
+                        clicked = True
+                        time.sleep(1.5)
+                        break
+                if clicked:
+                    break
+            except Exception:
+                continue
+
+        # 关键：微信后台点击新建图文后通常会在新窗口 (New Window/Tab) 打开编辑器
+        self.handle_new_tab()
+        time.sleep(1.0)
+        self.dismiss_popovers()
+        return True, "已进入微信公众平台图文草稿创作页面"
+
+    def ensure_editor_ready(self) -> tuple[bool, str]:
+        """确认微信公众号图文编辑器 DOM 已就绪并可编辑"""
+        self.dismiss_popovers()
+        self.handle_new_tab()
+        for by, sel in self.SELECTORS["title"] + self.SELECTORS["content_editor"]:
+            try:
+                elems = self.driver.find_elements(by, sel)
+                if any(e.is_displayed() for e in elems):
+                    return True, "微信公众号图文编辑器 DOM 已就绪"
+            except Exception:
+                pass
+        return True, "微信公众号创作页面已加载"
+
     def open_editor(self) -> tuple[bool, str]:
         """打开微信公众平台首页或图文编辑器"""
         try:
             self.driver.get(self.CREATOR_URL)
             time.sleep(2.0)
             self.dismiss_popovers()
+            self.select_content_type("ARTICLE")
             return True, "已在受控浏览器打开微信公众平台"
         except Exception as e:
             return False, f"打开微信公众平台失败：{e}"
@@ -145,6 +212,7 @@ class WechatOfficialAccountPublisher(BasePublisher):
     def fill_title(self, title: str) -> tuple[bool, str]:
         """填写公众号图文标题（限 64 字）"""
         self.dismiss_popovers()
+        self.handle_new_tab()
         max_len = 64
         safe_title = title.strip()[:max_len]
 
@@ -162,7 +230,7 @@ class WechatOfficialAccountPublisher(BasePublisher):
                 continue
 
         if not title_input:
-            return True, "未在当前页面找到独立标题输入框，可能需先点击【新建图文】"
+            return False, "未在当前微信页面找到图文标题输入框，请确认受控 Chrome 是否停留在新建图文标签页"
 
         try:
             title_input.click()

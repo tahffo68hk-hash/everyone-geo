@@ -47,6 +47,9 @@ export interface StepLogItem {
   timestamp: string;
   duration_ms?: number | null;
   data?: Record<string, unknown> | null;
+  fsm_state?: string | null;
+  screenshot_path?: string | null;
+  recovery_guidance?: string | null;
 }
 
 export interface AssistantManualPackage {
@@ -85,6 +88,11 @@ export interface TaskStatusResponse {
     | "FAILED"
     | "MANUAL_REQUIRED";
   current_step: string | null;
+  fsm_state?: string | null;
+  current_state_title?: string | null;
+  resumable?: boolean;
+  screenshot_path?: string | null;
+  recovery_guidance?: string | null;
   steps: StepLogItem[];
   validation: ValidationDiff | null;
   manual_package: AssistantManualPackage | null;
@@ -105,6 +113,7 @@ export interface CreatePublishTaskPayload {
   title: string;
   body: string;
   tags?: string[];
+  content_type?: string;
   media_items?: Array<{
     index: number;
     type: string;

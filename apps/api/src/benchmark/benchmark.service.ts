@@ -5,7 +5,7 @@ import {
   detectTargetContamination,
   type AnalysisOutput, type MetricScopeResult, type MetricsOutput, type Sentiment,
 } from "@geo/core";
-import { enginePresentation, readRealProviderEnv } from "@geo/llm";
+import { enginePresentation } from "@geo/llm";
 import type { Prisma } from "@geo/database";
 import { PrismaService } from "../prisma.service";
 import { TenantService } from "../common/tenant.service";
@@ -23,8 +23,7 @@ import { StartBenchmarkRunDto } from "./dto/start-benchmark-run.dto";
  *     （queryText/category/intent/locale/weight/sortOrder/sanity + 源 id）；
  *     历史报告只读快照 → 未来编辑 Suite/Query 不改变历史 Run 的语义与指标，
  *     要换语义必须新建 suite 版本（v2）。
- *   - demo 只允许 mock provider；real 只允许 deepseek provider 且受
- *     REAL_PROVIDER_MAX_RUNS_PER_TASK 上限保护（plannedRuns > cap 直接拒绝）。
+ *   - demo 只允许 mock provider；real 允许真实 provider（deepseek / qwen）。
  *   - 指标聚合复用 geolens-v1 aggregateMetrics，不发明第二套指标；报告按
  *     overall / category / query 三级聚合。
  */
@@ -215,16 +214,7 @@ export class BenchmarkService implements OnModuleDestroy {
       throw new BadRequestException("Demo Run 只能使用 Mock 引擎（模拟数据，不产生真实调用）");
     }
 
-    const plannedRuns = enabledQueries.length; // M6A 单 Provider：queries × 1 engine
-    if (real) {
-      const cap = readRealProviderEnv(process.env).realProviderMaxRunsPerTask;
-      if (plannedRuns > cap) {
-        throw new BadRequestException(
-          `Benchmark Real Run 计划 ${plannedRuns} 次真实调用（${enabledQueries.length} queries × 1 provider），` +
-          `超过 REAL_PROVIDER_MAX_RUNS_PER_TASK=${cap} 上限。请提高上限并显式确认后重试；M6A 默认只跑 Mock/Demo。`,
-        );
-      }
-    }
+    const plannedRuns = enabledQueries.length;
     const suiteProject = suite.project;
     // M8E：冻结本次 Run 的 target 实体快照（canonicalName/aliases/entityType/
     // productCategory/website）——来自项目 primary Brand。Evidence.entitySnapshot
@@ -586,15 +576,6 @@ export class BenchmarkService implements OnModuleDestroy {
     }
 
     const plannedRuns = snapRows.length; // frozen queries × 1 provider
-    if (real) {
-      const cap = readRealProviderEnv(process.env).realProviderMaxRunsPerTask;
-      if (plannedRuns > cap) {
-        throw new BadRequestException(
-          `Frozen Re-test Real Run 计划 ${plannedRuns} 次真实调用（${snapRows.length} queries × 1 provider），` +
-          `超过 REAL_PROVIDER_MAX_RUNS_PER_TASK=${cap} 上限。请提高上限并显式确认后重试。`,
-        );
-      }
-    }
 
     const created = await this.db.client.$transaction(async tx => {
       // 为每个 snapshot 语义新建镜像 Query（保证文本 = 冻结快照，不受当前 Query 编辑影响）

@@ -236,6 +236,42 @@ class BilibiliPublisher(BasePublisher):
 
         return False, "未检测到 B站 创作者有效登录态，请在受控浏览器中完成登录", {"url": curr_url}
 
+    def navigate_creator_center(self) -> tuple[bool, str]:
+        """导航至 B站 创作者平台"""
+        try:
+            curr_url = self.driver.current_url.lower()
+            if "member.bilibili.com" not in curr_url:
+                self.driver.get(self.HOME_URL)
+                time.sleep(1.8)
+            self.dismiss_popovers()
+            self.handle_new_tab()
+            return True, "已成功导航至 B站 创作者中心"
+        except Exception as e:
+            return False, f"导航至 B站 创作者中心失败：{e}"
+
+    def select_content_type(self, content_type: str = "VIDEO") -> tuple[bool, str]:
+        """显式选择创作类型 (视频投稿 vs 专栏文章)"""
+        self.dismiss_popovers()
+        ctype = (content_type or "VIDEO").upper()
+        if ctype in ["ARTICLE", "COLUMN"]:
+            curr_url = self.driver.current_url.lower()
+            if "text/edit" not in curr_url:
+                self.driver.get("https://member.bilibili.com/platform/upload/text/edit")
+                time.sleep(2.0)
+            return True, "B站已切换至【专栏文章】创作模式"
+        else:
+            curr_url = self.driver.current_url.lower()
+            if "video/frame" not in curr_url:
+                self.driver.get(self.CREATOR_URL)
+                time.sleep(2.0)
+            return True, "B站已切换至【视频投稿】模式"
+
+    def ensure_editor_ready(self) -> tuple[bool, str]:
+        """确认 B站 编辑界面就绪，清除未保存草稿提示 ("不用了")"""
+        self.dismiss_popovers()
+        self.handle_new_tab()
+        return True, "B站 稿件编辑界面就绪"
+
     def open_editor(self) -> tuple[bool, str]:
         """打开 B站 视频投稿页面"""
         try:

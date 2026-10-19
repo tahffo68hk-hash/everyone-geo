@@ -26,6 +26,7 @@ interface BrowserAssistedPanelProps {
   activeChannelKey: string;
   onChannelSelect: (ch: string) => void;
   onPublicationUpdated?: () => void;
+  overrideContent?: { title: string; body: string; tags: string[]; videoScript?: string } | null;
 }
 
 export function BrowserAssistedPanel({
@@ -35,6 +36,7 @@ export function BrowserAssistedPanel({
   activeChannelKey,
   onChannelSelect,
   onPublicationUpdated,
+  overrideContent,
 }: BrowserAssistedPanelProps) {
   // 助手与浏览器状态
   const [assistantOnline, setAssistantOnline] = useState<boolean | null>(null);
@@ -117,7 +119,11 @@ export function BrowserAssistedPanel({
 
   // 同步草稿内容到编辑态与配图列表
   useEffect(() => {
-    if (selectedDraft) {
+    if (overrideContent) {
+      setEditTitle(overrideContent.title || "");
+      setEditBody(overrideContent.body || "");
+      setEditTags(Array.isArray(overrideContent.tags) ? overrideContent.tags : []);
+    } else if (selectedDraft) {
       let initTitle = selectedDraft.title || "";
       if (activeChannelKey === "XIAOHONGSHU" && initTitle.length > 20) {
         initTitle = initTitle.slice(0, 20);
@@ -128,7 +134,11 @@ export function BrowserAssistedPanel({
       setEditBody(draftBody);
       const rawTags = (latestRev as any)?.tags || (selectedDraft as any)?.tags || [];
       setEditTags(Array.isArray(rawTags) ? rawTags : []);
+    }
+  }, [selectedDraft, activeChannelKey, overrideContent]);
 
+  useEffect(() => {
+    if (selectedDraft) {
       // 初始化素材图片
       const draftAssets = (selectedDraft as any)?.assets || (selectedDraft as any)?.media_items || [];
       if (Array.isArray(draftAssets) && draftAssets.length > 0) {
@@ -292,7 +302,7 @@ export function BrowserAssistedPanel({
         channel: activeChannelKey,
       });
       if (res.tags && res.tags.length > 0) {
-        const maxTags = activeChannel?.maxTags || 10;
+        const maxTags = (activeChannel as any)?.maxTags || 10;
         const merged = Array.from(new Set([...editTags, ...res.tags])).slice(0, maxTags);
         setEditTags(merged);
         setCopyFeedback(`✨ 已由 AI 为【${activeChannel?.name || activeChannelKey}】精准生成并填充 ${res.tags.length} 个标签！`);
@@ -450,6 +460,7 @@ export function BrowserAssistedPanel({
         title: payloadTitle,
         body: editBody,
         tags: editTags,
+        content_type: isVideoChannel ? "VIDEO" : "IMAGE_TEXT",
         media_items: mediaItems,
         source_draft_id: selectedDraft.id,
         source_revision_id: sourceRevId,
@@ -1359,30 +1370,85 @@ export function BrowserAssistedPanel({
           {/* 自动化流转进度与状态 */}
           {taskState && (
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="font-bold text-slate-800 text-sm">操作进度跟踪</span>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                    taskState.status === "PUBLISHED"
-                      ? "bg-emerald-100 text-emerald-800"
-                      : taskState.status === "AWAITING_CONFIRMATION"
-                      ? "bg-sky-100 text-sky-800"
-                      : taskState.status === "FAILED"
-                      ? "bg-rose-100 text-rose-800"
-                      : taskState.status === "MANUAL_REQUIRED"
-                      ? "bg-amber-100 text-amber-800"
-                      : taskState.status === "WAITING_FOR_LOGIN" || taskState.status === "PENDING_ACCOUNT_AUTH"
-                      ? "bg-amber-100 text-amber-800 border border-amber-300"
-                      : "bg-blue-50 text-blue-700"
-                  }`}
-                >
-                  {taskState.status === "PENDING_ACCOUNT_AUTH"
-                    ? "待账号授权 (PENDING_ACCOUNT_AUTH)"
-                    : taskState.status === "WAITING_FOR_LOGIN"
-                    ? "等待登录 (WAITING_FOR_LOGIN)"
-                    : taskState.status}
-                </span>
+              <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-2.5 gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-800 text-sm">FSM 自动化流转进度</span>
+                    {taskState.fsm_state && (
+                      <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-mono font-bold border border-indigo-200">
+                        {taskState.fsm_state}
+                      </span>
+                    )}
+                  </div>
+                  {taskState.current_state_title && (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      当前执行：<span className="font-medium text-slate-700">{taskState.current_state_title}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+                      taskState.status === "PUBLISHED"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : taskState.status === "AWAITING_CONFIRMATION"
+                        ? "bg-sky-100 text-sky-800"
+                        : taskState.status === "FAILED"
+                        ? "bg-rose-100 text-rose-800"
+                        : taskState.status === "MANUAL_REQUIRED"
+                        ? "bg-amber-100 text-amber-800"
+                        : taskState.status === "WAITING_FOR_LOGIN" || taskState.status === "PENDING_ACCOUNT_AUTH"
+                        ? "bg-amber-100 text-amber-800 border border-amber-300"
+                        : "bg-blue-50 text-blue-700"
+                    }`}
+                  >
+                    {taskState.status === "PENDING_ACCOUNT_AUTH"
+                      ? "待账号授权 (PENDING_ACCOUNT_AUTH)"
+                      : taskState.status === "WAITING_FOR_LOGIN"
+                      ? "等待登录 (WAITING_FOR_LOGIN)"
+                      : taskState.status}
+                  </span>
+                </div>
               </div>
+
+              {/* 异常阻断与诊断排错指引 (BLOCKED / FAILED) */}
+              {taskState.recovery_guidance && (
+                <div className="p-3.5 bg-amber-50/90 border border-amber-300 rounded-xl text-xs text-amber-900 flex flex-col gap-2">
+                  <div className="font-bold flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span>⚠️</span> 自动化执行诊断与恢复指引
+                    </span>
+                    {taskState.screenshot_path && (
+                      <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-mono">
+                        已截取现场诊断快照
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                    {taskState.recovery_guidance}
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    {taskState.resumable && (
+                      <button
+                        type="button"
+                        onClick={handleResumeTask}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs transition shadow-sm flex items-center gap-1"
+                      >
+                        <span>🔄</span>
+                        <span>解决后继续任务 (Resume)</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleManualTakeover}
+                      className="px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-800 rounded-lg font-medium text-xs transition"
+                    >
+                      切换人工接管
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* 比对校验结果卡片 */}
               {taskState.validation && (
@@ -1428,7 +1494,14 @@ export function BrowserAssistedPanel({
                     </span>
                     <div className="flex-1 leading-snug">
                       <div className="flex items-center justify-between text-slate-700 font-medium">
-                        <span>{st.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span>{st.name}</span>
+                          {st.fsm_state && (
+                            <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono font-normal">
+                              {st.fsm_state}
+                            </span>
+                          )}
+                        </div>
                         {st.duration_ms && <span className="text-[10px] text-slate-400">{st.duration_ms}ms</span>}
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">{st.message}</p>

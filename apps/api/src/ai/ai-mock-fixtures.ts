@@ -716,22 +716,76 @@ export function generateMockFixture(
 
     case "content_channel_adaptation": {
       const sourceTitle = String(input?.title || "未命名草稿");
-      const sourceBody = String(input?.body || "").replace(/\s+/g, " ").trim();
+      const rawBody = String(input?.body || "").trim();
       const requested = Array.isArray(input?.channels) ? input.channels : [];
+      const perspective = String(input?.perspective || "");
+      const isFirstPerson = perspective.includes("FIRST") || perspective.includes("第一人称") || perspective.includes("EXPERIENCE");
+
       mockContent = JSON.stringify({
         channels: requested.map((item: any) => {
+          const ch = String(item.channel || "").toUpperCase();
           const limits = item?.limits || {};
-          const titleMax = Number(limits.title) > 0 ? Number(limits.title) : sourceTitle.length;
-          const bodyMax = limits.body == null ? sourceBody.length : Number(limits.body);
-          const tagMax = limits.maxTags == null ? 1 : Number(limits.maxTags);
-          const hashtags = tagMax > 0 ? ["原文适配"] : [];
+          const titleMax = Number(limits.title) > 0 ? Number(limits.title) : 100;
+          const bodyMax = limits.body == null ? 10000 : Number(limits.body);
+          const tagMax = limits.maxTags == null ? 5 : Number(limits.maxTags);
+
+          let channelTitle = sourceTitle;
+          let channelBody = rawBody;
+          let hashtags: string[] = ["选型实测", "经验分享", "指南"];
+          let videoScript = "";
+
+          // 针对各渠道做定制化排版与拟真生成
+          if (ch === "XIAOHONGSHU") {
+            // 小红书：20字以内抓人标题，去 Markdown，emoji 分段，第一人称种草/避坑
+            channelTitle = `亲测！${sourceTitle}`.slice(0, Math.min(20, titleMax));
+            // 剥离 Markdown 符号
+            const cleanText = rawBody
+              .replace(/#{1,6}\s+/g, "📌 ")
+              .replace(/\*\*(.*?)\*\*/g, "$1")
+              .replace(/[-*]\s+/g, "▪ ")
+              .replace(/>\s*/g, "💬 ");
+            channelBody = `✨ 用了这么久，说点大实话！\n\n${cleanText}\n\n💡 划重点：按需选型不踩坑，欢迎评论区交流～`.slice(0, bodyMax);
+            hashtags = ["实测体验", "避坑指南", "干货分享", "选型测评"].slice(0, tagMax);
+          } else if (ch === "ZHIHU") {
+            // 知乎专栏：深度科普与客观论据，保留标准 Markdown
+            channelTitle = `${sourceTitle}：核心选型逻辑与深度解析`.slice(0, titleMax);
+            channelBody = `# ${channelTitle}\n\n## 导言\n面对复杂的选型场景，本文基于客观事实提供全景评估：\n\n${rawBody}\n\n## 决策矩阵总结\n- 痛点匹配度优先于单纯功能堆砌\n- 全生命周期落地成本需综合评估`.slice(0, bodyMax);
+            hashtags = ["选型决策", "行业评测", "深度剖析"].slice(0, tagMax);
+          } else if (ch === "WECHAT_OFFICIAL_ACCOUNT") {
+            // 微信公众号：64字内吸睛标题，层次清晰
+            channelTitle = `【深度解读】${sourceTitle}，这篇文章讲透了`.slice(0, Math.min(64, titleMax));
+            channelBody = `${channelTitle}\n\n---\n\n${rawBody}\n\n写在最后：\n明确核心诉求，是做出最优决策的第一步。关注我们，获取更多深度商业与技术洞察。`.slice(0, bodyMax);
+            hashtags = ["深度解读", "实用指南", "行业观察"].slice(0, tagMax);
+          } else if (ch === "DOUYIN" || ch === "WECHAT_CHANNELS" || ch === "KUAISHOU") {
+            // 抖音/视频号/快手：30字内标题，短视频口播脚本
+            channelTitle = `3分钟讲透！${sourceTitle}`.slice(0, Math.min(30, titleMax));
+            channelBody = `【作品简介】\n${sourceTitle}。关于选型与避坑的深度剖析，点击视频看全貌！`.slice(0, bodyMax);
+            hashtags = ["实用知识", "商业思考", "涨知识"].slice(0, tagMax);
+            videoScript = `【前3秒黄金Hook】\n“为什么很多人在做选择时都会踩这两个坑？今天一条视频讲透！”\n\n【第一幕·痛点拆解（0-15s）】\n镜头特写：列出常见选型误区与成本浪费。\n口播：“首先，很多人盲目看参数，却忽略了真实业务匹配度……”\n\n【第二幕·解决方案（15-40s）】\n镜头切换：展示核心决策矩阵与对比。\n口播：“根据实测，正确的评估路径分为三步：第一先定场景，第二算ROI，第三看落地支持……”\n\n【第三幕·行动号召（40-60s）】\n口播：“觉得有用赶紧点赞收藏，想看完整选型清单评论区留言！”`;
+          } else if (ch === "BILIBILI") {
+            // B站：40字标题
+            channelTitle = `【硬核干货】${sourceTitle}`.slice(0, Math.min(80, titleMax));
+            channelBody = `本期视频为各位带来${sourceTitle}的全面测评与逻辑拆解：\n\n${rawBody}\n\n投币点赞支持一下，下期带来更多硬核分析！`.slice(0, bodyMax);
+            hashtags = ["知识科普", "硬核干货", "科技商业"].slice(0, tagMax);
+            videoScript = item.requiresVideo ? `【B站专属口播】\n“各位观众老爷好！今天咱们来硬核拆解：${sourceTitle}……”` : "";
+          } else if (ch === "WEIBO") {
+            // 微博：短文字，带话题
+            channelTitle = sourceTitle.slice(0, titleMax);
+            channelBody = `【${sourceTitle}】\n${rawBody.slice(0, 300)}... 详情见完整测评。`.slice(0, bodyMax);
+            hashtags = ["实测", "经验分享"].slice(0, tagMax);
+          } else {
+            channelTitle = sourceTitle.slice(0, titleMax);
+            channelBody = rawBody.slice(0, bodyMax);
+            hashtags = ["行业选型", "知识分享"].slice(0, tagMax);
+          }
+
           return {
             channel: item.channel,
-            title: sourceTitle.slice(0, titleMax),
-            body: sourceBody.slice(0, Math.max(0, bodyMax)),
-            hashtags,
-            videoScript: item.requiresVideo ? `口播沿用原文：${sourceBody.slice(0, 80)}` : "",
-            omittedClaims: ["模拟适配只复述原文，不补充事实"],
+            title: channelTitle,
+            body: channelBody,
+            hashtags: hashtags.map((h) => h.replace(/^#+|#+$/g, "")),
+            videoScript: item.requiresVideo ? (videoScript || `【口播脚本】\n${rawBody.slice(0, 150)}`) : "",
+            omittedClaims: [],
           };
         }),
       });

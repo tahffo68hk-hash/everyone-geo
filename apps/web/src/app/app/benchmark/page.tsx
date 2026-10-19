@@ -372,10 +372,10 @@ export default function BenchmarkPage() {
                 <span className="font-semibold text-slate-700">计划运行数：{plannedRuns} 个测试问题 × 1 个模型服务 = {plannedRuns} 次运行</span>
                 {runType === "demo"
                   ? <span className={badge("bg-amber-100 text-amber-800", "演示模式 · 无真实调用")} />
-                  : <span className={badge("bg-teal-100 text-teal-800", "真实模式 · 需配置 DeepSeek 且受单任务上限约束")} />}
+                  : <span className={badge("bg-teal-100 text-teal-800", "真实模式 · 真实 API 调用")} />}
                 {runType === "real" && realEngine && !realEngine.configured && <span className={badge("bg-red-100 text-red-800", "DeepSeek 未配置/未启用")} />}
               </div>
-              <p className="mt-2 text-[11px] text-slate-500">真实运行受 REAL_PROVIDER_MAX_RUNS_PER_TASK 上限保护，超出会在创建时拒绝并报出计划调用数。</p>
+              <p className="mt-2 text-[11px] text-slate-500">真实运行将调用所选模型 API 进行评测。</p>
             </div>
             {startError && <p role="alert" className="mt-3 text-sm text-red-700">{startError}</p>}
 

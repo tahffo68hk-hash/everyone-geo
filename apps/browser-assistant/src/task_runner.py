@@ -8,7 +8,7 @@ from typing import Any
 import threading
 
 from .models import (
-    TaskStatus, StepName, StepStatus, StepLog,
+    TaskStatus, StepName, StepStatus, StepLog, FsmState,
     CreatePublishTaskRequest, TaskStatusResponse, ManualPublishPackage, ValidationDiff,
     MediaItem
 )
@@ -26,6 +26,11 @@ class TaskExecutionState:
         self.account_id = req.account_id
         self.status = TaskStatus.READY
         self.current_step: StepName | None = None
+        self.fsm_state: FsmState = FsmState.INITIALIZING
+        self.current_state_title: str = "任务启动与初始化"
+        self.resumable: bool = False
+        self.screenshot_path: str | None = None
+        self.recovery_guidance: str | None = None
         self.steps: list[StepLog] = []
         self.validation: ValidationDiff | None = None
         self.manual_package: ManualPublishPackage | None = None
@@ -89,9 +94,30 @@ class TaskExecutionState:
             generated_at=datetime.now(timezone.utc).isoformat()
         )
 
-    def add_log(self, step: StepName, name: str, status: StepStatus, msg: str, duration_ms: int | None = None, data: dict[str, Any] | None = None):
+    def add_log(
+        self,
+        step: StepName,
+        name: str,
+        status: StepStatus,
+        msg: str,
+        duration_ms: int | None = None,
+        data: dict[str, Any] | None = None,
+        fsm_state: FsmState | None = None,
+        screenshot_path: str | None = None,
+        recovery_guidance: str | None = None,
+        resumable: bool | None = None
+    ):
         with self.lock:
             safe_msg = sanitize_log_message(msg)
+            if fsm_state is not None:
+                self.fsm_state = fsm_state
+                self.current_state_title = name
+            if screenshot_path is not None:
+                self.screenshot_path = screenshot_path
+            if recovery_guidance is not None:
+                self.recovery_guidance = recovery_guidance
+            if resumable is not None:
+                self.resumable = resumable
             log = StepLog(
                 step=step,
                 name=name,
@@ -99,7 +125,10 @@ class TaskExecutionState:
                 message=safe_msg,
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 duration_ms=duration_ms,
-                data=data
+                data=data,
+                fsm_state=fsm_state or self.fsm_state,
+                screenshot_path=screenshot_path,
+                recovery_guidance=recovery_guidance
             )
             self.steps.append(log)
             self.updated_at = datetime.now(timezone.utc).isoformat()
@@ -113,6 +142,11 @@ class TaskExecutionState:
                 account_id=self.account_id,
                 status=self.status,
                 current_step=self.current_step,
+                fsm_state=self.fsm_state,
+                current_state_title=self.current_state_title,
+                resumable=self.resumable,
+                screenshot_path=self.screenshot_path,
+                recovery_guidance=self.recovery_guidance,
                 steps=list(self.steps),
                 validation=self.validation,
                 manual_package=self.manual_package,
@@ -348,80 +382,142 @@ class TaskManager:
         return prepared
 
     def _run_task_pipeline(self, state: TaskExecutionState):
-        """核心 9 步发布流水线执行函数"""
+        """核心 15 步可观察状态机 (FSM) 自动化执行流水线"""
+        from .config import TEMP_DIR
         req = state.req
         channel = state.channel
         account_id = state.account_id
 
-        # 1. 启动受控浏览器
+        # 1. 状态 1: INITIALIZING (启动或连接受控浏览器)
         try:
-            state.add_log(StepName.CHECK_LOGIN, "启动浏览器", StepStatus.RUNNING, f"正在调起 {channel} 受控 Chrome 实例 (Profile: {channel}_{account_id})")
+            state.add_log(
+                StepName.CHECK_LOGIN,
+                "启动受控浏览器 (INITIALIZING)",
+                StepStatus.RUNNING,
+                f"正在调起 {channel} 受控 Chrome 实例 (Profile: {channel}_{account_id})",
+                fsm_state=FsmState.INITIALIZING
+            )
             driver = browser_manager.get_or_create_driver(
                 channel=channel,
                 account_id=account_id,
                 headless=req.headless
             )
-            state.add_log(StepName.CHECK_LOGIN, "浏览器已就绪", StepStatus.SUCCESS, f"已成功调起并连接 {channel} 受控 Chrome 实例")
             publisher = registry.get_publisher(channel, driver)
+            state.add_log(
+                StepName.CHECK_LOGIN,
+                "浏览器已就绪 (INITIALIZING)",
+                StepStatus.SUCCESS,
+                f"已成功调起并建立与 {channel} 受控 Chrome 实例的连接",
+                fsm_state=FsmState.INITIALIZING
+            )
         except Exception as e:
             state.status = TaskStatus.MANUAL_REQUIRED
+            state.fsm_state = FsmState.FAILED
             state.is_manual_takeover = True
             state.error_message = f"调起浏览器失败：{e}"
-            state.add_log(StepName.CHECK_LOGIN, "启动浏览器失败", StepStatus.FAILED, f"{e}。已保留当前任务并开启人工接管模式，请使用右侧发布包手动完成发布。")
+            state.recovery_guidance = "请检查 ChromeDriver 路径与 Chrome 安装，或直接使用右侧人工发布包"
+            state.add_log(
+                StepName.CHECK_LOGIN,
+                "启动浏览器失败 (FAILED)",
+                StepStatus.FAILED,
+                f"{e}。已保留当前任务并开启人工接管模式，请使用右侧发布包手动完成发布。",
+                fsm_state=FsmState.FAILED,
+                recovery_guidance=state.recovery_guidance
+            )
             return
 
         browser_manager.mark_busy(channel, account_id)
+
+        def _check_blocked(step_name: StepName, current_fsm: FsmState) -> bool:
+            """检测风控阻断/滑块验证并保留现场快照"""
+            is_blocked, block_msg = publisher.detect_blocking()
+            if is_blocked:
+                snap_path = str(TEMP_DIR / f"blocked_{req.task_id[:8]}.png")
+                publisher.capture_screenshot(snap_path)
+                state.status = TaskStatus.MANUAL_REQUIRED
+                state.fsm_state = FsmState.BLOCKED
+                state.screenshot_path = snap_path
+                state.recovery_guidance = block_msg
+                state.resumable = True
+                state.add_log(
+                    step_name,
+                    "遇到安全验证阻断 (BLOCKED)",
+                    StepStatus.FAILED,
+                    block_msg,
+                    fsm_state=FsmState.BLOCKED,
+                    screenshot_path=snap_path,
+                    recovery_guidance=block_msg,
+                    resumable=True
+                )
+                return True
+            return False
+
         try:
             # 检查是否为未适配渠道（人工回退）
             if not registry.is_fully_automated(channel):
                 state.status = TaskStatus.MANUAL_REQUIRED
+                state.fsm_state = FsmState.READY_FOR_REVIEW
                 state.is_manual_takeover = True
                 publisher.open_editor()
                 state.add_log(
                     StepName.OPEN_EDITOR,
-                    "人工辅助发布模式",
+                    "人工辅助发布模式 (MANUAL_FALLBACK)",
                     StepStatus.SUCCESS,
-                    f"{channel} 暂未开放完全无人值守自动化。已为您在受控浏览器打开官方创作页面，请使用右侧发布包手动粘贴发布。"
+                    f"{channel} 暂未开放完全无人值守自动化。已为您在受控浏览器打开官方创作页面，请使用右侧发布包手动粘贴发布。",
+                    fsm_state=FsmState.READY_FOR_REVIEW
                 )
                 return
 
-            # 2. 步骤 1: 检查登录态
+            # 2. 状态 2: SESSION_CHECK (检查登录态与 Cookie)
             state.current_step = StepName.CHECK_LOGIN
             state.status = TaskStatus.FILLING
             t0 = time.time()
-            state.add_log(StepName.CHECK_LOGIN, "检查登录状态", StepStatus.RUNNING, f"正在打开官方页面并检测 {channel} 登录态...")
+            state.add_log(
+                StepName.CHECK_LOGIN,
+                "检查会话有效性 (SESSION_CHECK)",
+                StepStatus.RUNNING,
+                f"正在检测 {channel} 登录 Cookie 与活跃会话凭据...",
+                fsm_state=FsmState.SESSION_CHECK
+            )
 
-            # 先尝试访问官方页面探测登录
-            publisher.open_editor()
             is_logged_in, login_msg, extra = publisher.check_login()
             duration = int((time.time() - t0) * 1000)
 
+            # 3. 状态 3: LOGIN_REQUIRED (未登录，等待创作者扫码授权)
             if not is_logged_in:
                 state.status = TaskStatus.PENDING_ACCOUNT_AUTH
+                state.fsm_state = FsmState.LOGIN_REQUIRED
+                state.resumable = True
+                state.recovery_guidance = "请使用对应手机 App 扫码登录。扫码完成后系统将自动继续，无需重新提交"
                 state.add_log(
                     StepName.CHECK_LOGIN,
-                    "等待创作者扫码登录 (PENDING_ACCOUNT_AUTH)",
+                    "等待创作者扫码授权 (LOGIN_REQUIRED)",
                     StepStatus.RUNNING,
                     f"{login_msg}。受控 Chrome 窗口已保持打开并展示登录界面。创作者扫码授权后系统将自动继续原任务，无需重新创建内容。",
-                    duration
+                    duration_ms=duration,
+                    fsm_state=FsmState.LOGIN_REQUIRED,
+                    recovery_guidance=state.recovery_guidance,
+                    resumable=True
                 )
 
                 # 持续监听扫码授权状态（持续 180 秒）
                 poll_deadline = time.time() + 180
                 while time.time() < poll_deadline and not state.is_cancelled:
                     if state.is_manual_takeover or state.is_paused:
-                        break
+                        return
                     time.sleep(2.0)
                     try:
                         ok_recheck, msg_recheck, _ = publisher.check_login()
                         if ok_recheck:
                             is_logged_in = True
                             state.status = TaskStatus.FILLING
+                            state.fsm_state = FsmState.SESSION_CHECK
                             state.add_log(
                                 StepName.CHECK_LOGIN,
-                                "扫码授权成功 (REAL_LOGIN_PASS)",
+                                "扫码授权成功 (SESSION_CHECK)",
                                 StepStatus.SUCCESS,
-                                f"已检测到创作者登录成功（{msg_recheck}），原任务自动继续执行！"
+                                f"已检测到创作者登录成功（{msg_recheck}），原任务自动继续执行！",
+                                fsm_state=FsmState.SESSION_CHECK
                             )
                             break
                     except Exception:
@@ -429,32 +525,92 @@ class TaskManager:
 
                 if not is_logged_in:
                     state.status = TaskStatus.PENDING_ACCOUNT_AUTH
+                    state.fsm_state = FsmState.LOGIN_REQUIRED
                     state.add_log(
                         StepName.CHECK_LOGIN,
                         "等待扫码超时或已暂停",
                         StepStatus.FAILED,
-                        "未在限定时间内完成扫码。受控 Chrome 保持打开，扫码完成后可在控制台点击【已完成登录，继续原任务】恢复执行。"
+                        "未在限定时间内完成扫码。受控 Chrome 保持打开，扫码完成后可在控制台点击【已完成登录，继续原任务】恢复执行。",
+                        fsm_state=FsmState.LOGIN_REQUIRED,
+                        recovery_guidance="扫码完成后点击【已完成登录，继续原任务】",
+                        resumable=True
                     )
                     return
             else:
-                state.add_log(StepName.CHECK_LOGIN, "登录状态正常 (REAL_LOGIN_PASS)", StepStatus.SUCCESS, login_msg, duration)
+                state.add_log(
+                    StepName.CHECK_LOGIN,
+                    "会话凭据有效 (SESSION_CHECK)",
+                    StepStatus.SUCCESS,
+                    login_msg,
+                    duration_ms=duration,
+                    fsm_state=FsmState.SESSION_CHECK
+                )
 
             if not self._wait_if_paused(state):
                 return
 
-            # 3. 步骤 2: 打开创作页面
+            # 4. 状态 4: CREATOR_CENTER_NAVIGATION (导航至平台创作者中心主入口)
             state.current_step = StepName.OPEN_EDITOR
-            mode_desc = "视频发布模式" if publisher.is_video_channel() else "图文发布模式"
-            state.add_log(StepName.OPEN_EDITOR, "切换创作页面", StepStatus.RUNNING, f"正在切换至 {mode_desc}...")
+            state.add_log(
+                StepName.OPEN_EDITOR,
+                "导航创作者服务中心 (CREATOR_CENTER_NAVIGATION)",
+                StepStatus.RUNNING,
+                f"正在导航至 {channel} 创作者服务中心主入口...",
+                fsm_state=FsmState.CREATOR_CENTER_NAVIGATION
+            )
             t0 = time.time()
-            ok, msg = publisher.open_editor()
-            duration = int((time.time() - t0) * 1000)
-            if not ok:
+            ok_nav, msg_nav = publisher.navigate_creator_center()
+            dur_nav = int((time.time() - t0) * 1000)
+            if not ok_nav:
+                snap_path = str(TEMP_DIR / f"fail_nav_{req.task_id[:8]}.png")
+                publisher.capture_screenshot(snap_path)
                 state.status = TaskStatus.FAILED
-                state.error_message = msg
-                state.add_log(StepName.OPEN_EDITOR, "打开创作页失败", StepStatus.FAILED, msg, duration)
+                state.fsm_state = FsmState.FAILED
+                state.error_message = msg_nav
+                state.screenshot_path = snap_path
+                state.recovery_guidance = "创作者中心页面导航失败，请检查网络连接或在浏览器中刷新"
+                state.add_log(StepName.OPEN_EDITOR, "导航创作者中心失败 (FAILED)", StepStatus.FAILED, msg_nav, dur_nav, fsm_state=FsmState.FAILED, screenshot_path=snap_path)
                 return
-            state.add_log(StepName.OPEN_EDITOR, "创作页已就绪", StepStatus.SUCCESS, msg, duration)
+            if _check_blocked(StepName.OPEN_EDITOR, FsmState.CREATOR_CENTER_NAVIGATION):
+                return
+            state.add_log(StepName.OPEN_EDITOR, "创作者中心已就绪 (CREATOR_CENTER_NAVIGATION)", StepStatus.SUCCESS, msg_nav, dur_nav, fsm_state=FsmState.CREATOR_CENTER_NAVIGATION)
+
+            if not self._wait_if_paused(state):
+                return
+
+            # 5. 状态 5: CONTENT_TYPE_SELECTION (显式选择创作类型：图文/视频/长文)
+            content_type = getattr(req, "content_type", None) or ("VIDEO" if publisher.is_video_channel() else "IMAGE_TEXT")
+            state.add_log(
+                StepName.OPEN_EDITOR,
+                "选择创作类型 (CONTENT_TYPE_SELECTION)",
+                StepStatus.RUNNING,
+                f"正在选择并切换至创作类型：{content_type}...",
+                fsm_state=FsmState.CONTENT_TYPE_SELECTION
+            )
+            t0 = time.time()
+            ok_type, msg_type = publisher.select_content_type(content_type)
+            dur_type = int((time.time() - t0) * 1000)
+            if _check_blocked(StepName.OPEN_EDITOR, FsmState.CONTENT_TYPE_SELECTION):
+                return
+            state.add_log(StepName.OPEN_EDITOR, "创作类型已切换 (CONTENT_TYPE_SELECTION)", StepStatus.SUCCESS, msg_type, dur_type, fsm_state=FsmState.CONTENT_TYPE_SELECTION)
+
+            if not self._wait_if_paused(state):
+                return
+
+            # 6. 状态 6: EDITOR_READY (确认编辑器 DOM 就绪，清除各类新手引导和遮罩浮层)
+            state.add_log(
+                StepName.OPEN_EDITOR,
+                "确认编辑器可交互 (EDITOR_READY)",
+                StepStatus.RUNNING,
+                "正在检测编辑器 DOM 元素就绪状态并清除阻断浮层与引导...",
+                fsm_state=FsmState.EDITOR_READY
+            )
+            t0 = time.time()
+            ok_ready, msg_ready = publisher.ensure_editor_ready()
+            dur_ready = int((time.time() - t0) * 1000)
+            if _check_blocked(StepName.OPEN_EDITOR, FsmState.EDITOR_READY):
+                return
+            state.add_log(StepName.OPEN_EDITOR, "编辑器表单就绪 (EDITOR_READY)", StepStatus.SUCCESS, msg_ready, dur_ready, fsm_state=FsmState.EDITOR_READY)
 
             if not self._wait_if_paused(state):
                 return
@@ -463,25 +619,33 @@ class TaskManager:
             upload_media_first = getattr(publisher, "upload_media_first", False) or publisher.is_video_channel() or channel in ["XIAOHONGSHU", "BILIBILI", "DOUYIN", "WECHAT_CHANNELS", "KUAISHOU"]
 
             if upload_media_first:
-                # 步骤: 上传素材与配图/视频
+                # 7. 状态 9: MEDIA_UPLOAD (上传图片或视频素材，等待平台切片解析完成)
                 state.current_step = StepName.UPLOAD_MEDIA
                 media_desc = "视频及封面素材" if publisher.is_video_channel() else "配图素材"
-                state.add_log(StepName.UPLOAD_MEDIA, "上传素材", StepStatus.RUNNING, f"正在准备并上传 {len(req.media_items)} 项{media_desc}以激活编辑器...")
+                state.add_log(
+                    StepName.UPLOAD_MEDIA,
+                    f"上传素材 (MEDIA_UPLOAD)",
+                    StepStatus.RUNNING,
+                    f"正在准备并上传 {len(req.media_items)} 项{media_desc}以激活编辑器...",
+                    fsm_state=FsmState.MEDIA_UPLOAD
+                )
                 t0 = time.time()
                 prepared_items = self._prepare_local_media_items(req.media_items, req.task_id)
-                ok, msg = publisher.upload_media(prepared_items)
-                duration = int((time.time() - t0) * 1000)
-                if not ok and publisher.is_video_channel():
+                ok_med, msg_med = publisher.upload_media(prepared_items)
+                dur_med = int((time.time() - t0) * 1000)
+                if not ok_med and publisher.is_video_channel():
                     state.status = TaskStatus.MANUAL_REQUIRED
-                    state.error_message = msg
-                    state.add_log(StepName.UPLOAD_MEDIA, "视频上传失败", StepStatus.FAILED, f"{msg}。已保留当前受控浏览器，请人工接管", duration)
+                    state.fsm_state = FsmState.BLOCKED
+                    state.error_message = msg_med
+                    state.recovery_guidance = "请检查视频格式并手动拖拽视频至受控浏览器上传区"
+                    state.add_log(StepName.UPLOAD_MEDIA, "视频上传受阻 (BLOCKED)", StepStatus.FAILED, f"{msg_med}。已保留当前受控浏览器，请人工接管", dur_med, fsm_state=FsmState.BLOCKED, recovery_guidance=state.recovery_guidance)
                     return
-                state.add_log(StepName.UPLOAD_MEDIA, "素材上传完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
-                time.sleep(1.2)  # 等待前端切片渲染与编辑器表单展开
+                state.add_log(StepName.UPLOAD_MEDIA, "素材上传完成 (MEDIA_UPLOAD)", StepStatus.SUCCESS if ok_med else StepStatus.SKIPPED, msg_med, dur_med, fsm_state=FsmState.MEDIA_UPLOAD)
+                time.sleep(1.2)
 
-                # 视频渠道强制核验平台处理、缩略图与转码状态
-                if publisher.is_video_channel() and ok:
-                    state.add_log(StepName.UPLOAD_MEDIA, "视频处理监测", StepStatus.RUNNING, "正在检测平台视频切片、转码解析与缩略图状态...")
+                # 视频渠道监测转码
+                if publisher.is_video_channel() and ok_med:
+                    state.add_log(StepName.UPLOAD_MEDIA, "视频转码处理监测 (MEDIA_UPLOAD)", StepStatus.RUNNING, "正在检测平台视频切片、转码解析与缩略图状态...", fsm_state=FsmState.MEDIA_UPLOAD)
                     t_up = time.time()
                     ok_up = False
                     msg_up = ""
@@ -492,113 +656,128 @@ class TaskManager:
                     dur_up = int((time.time() - t_up) * 1000)
                     if not ok_up:
                         state.status = TaskStatus.MANUAL_REQUIRED
+                        state.fsm_state = FsmState.BLOCKED
                         state.error_message = msg_up
-                        state.add_log(StepName.UPLOAD_MEDIA, "视频转码处理异常", StepStatus.FAILED, f"{msg_up}。请在受控浏览器中人工核查", dur_up)
+                        state.recovery_guidance = "平台视频转码中或提示异常，请在受控浏览器查看提示"
+                        state.add_log(StepName.UPLOAD_MEDIA, "视频转码未完成 (BLOCKED)", StepStatus.FAILED, f"{msg_up}。请在受控浏览器中人工核查", dur_up, fsm_state=FsmState.BLOCKED, recovery_guidance=state.recovery_guidance)
                         return
-                    state.add_log(StepName.UPLOAD_MEDIA, "视频转码就绪", StepStatus.SUCCESS, msg_up, dur_up)
+                    state.add_log(StepName.UPLOAD_MEDIA, "视频转码就绪 (MEDIA_UPLOAD)", StepStatus.SUCCESS, msg_up, dur_up, fsm_state=FsmState.MEDIA_UPLOAD)
 
                 if not self._wait_if_paused(state):
                     return
 
-                # 步骤: 填写标题
+                # 8. 状态 7: TITLE_FILL (填写标题并校验字数上限)
                 state.current_step = StepName.FILL_TITLE
                 title_display = req.title[:30] if len(req.title) > 30 else req.title
-                state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.RUNNING, f"正在输入标题：{title_display}...")
+                state.add_log(StepName.FILL_TITLE, "填写标题 (TITLE_FILL)", StepStatus.RUNNING, f"正在输入标题：{title_display}...", fsm_state=FsmState.TITLE_FILL)
                 t0 = time.time()
-                ok, msg = publisher.fill_title(req.title)
-                duration = int((time.time() - t0) * 1000)
-                if not ok:
+                ok_ti, msg_ti = publisher.fill_title(req.title)
+                dur_ti = int((time.time() - t0) * 1000)
+                if not ok_ti:
                     state.status = TaskStatus.MANUAL_REQUIRED
-                    state.error_message = msg
-                    state.add_log(StepName.FILL_TITLE, "填写标题失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    state.fsm_state = FsmState.BLOCKED
+                    state.error_message = msg_ti
+                    state.recovery_guidance = "标题框定位未响应，请在受控浏览器中手动粘贴标题"
+                    state.add_log(StepName.FILL_TITLE, "填写标题受阻 (BLOCKED)", StepStatus.FAILED, f"{msg_ti}。已保留当前进度，请手动接管", dur_ti, fsm_state=FsmState.BLOCKED, recovery_guidance=state.recovery_guidance)
                     return
-                state.add_log(StepName.FILL_TITLE, "标题填写成功", StepStatus.SUCCESS, msg, duration)
+                state.add_log(StepName.FILL_TITLE, "标题填写成功 (TITLE_FILL)", StepStatus.SUCCESS, msg_ti, dur_ti, fsm_state=FsmState.TITLE_FILL)
 
                 if not self._wait_if_paused(state):
                     return
 
-                # 步骤: 填写正文富文本 / 视频描述
+                # 9. 状态 8: BODY_FILL (写入正文描述 / 简介)
                 state.current_step = StepName.FILL_CONTENT
                 content_desc = "视频简介描述" if publisher.is_video_channel() else "正文内容"
-                state.add_log(StepName.FILL_CONTENT, f"填写{content_desc}", StepStatus.RUNNING, f"正在写入{content_desc}（共 {len(req.body)} 字）...")
+                state.add_log(StepName.FILL_CONTENT, f"填写{content_desc} (BODY_FILL)", StepStatus.RUNNING, f"正在写入{content_desc}（共 {len(req.body)} 字）...", fsm_state=FsmState.BODY_FILL)
                 t0 = time.time()
-                ok, msg = publisher.fill_content(req.body)
-                duration = int((time.time() - t0) * 1000)
-                if not ok:
+                ok_cnt, msg_cnt = publisher.fill_content(req.body)
+                dur_cnt = int((time.time() - t0) * 1000)
+                if not ok_cnt:
                     state.status = TaskStatus.MANUAL_REQUIRED
-                    state.error_message = msg
-                    state.add_log(StepName.FILL_CONTENT, f"填写{content_desc}失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    state.fsm_state = FsmState.BLOCKED
+                    state.error_message = msg_cnt
+                    state.recovery_guidance = "正文输入未响应，请在受控浏览器中手动粘贴正文"
+                    state.add_log(StepName.FILL_CONTENT, f"填写{content_desc}受阻 (BLOCKED)", StepStatus.FAILED, f"{msg_cnt}。已保留当前进度，请手动接管", dur_cnt, fsm_state=FsmState.BLOCKED, recovery_guidance=state.recovery_guidance)
                     return
-                state.add_log(StepName.FILL_CONTENT, f"{content_desc}填写成功", StepStatus.SUCCESS, msg, duration)
+                state.add_log(StepName.FILL_CONTENT, f"{content_desc}填写成功 (BODY_FILL)", StepStatus.SUCCESS, msg_cnt, dur_cnt, fsm_state=FsmState.BODY_FILL)
 
                 if not self._wait_if_paused(state):
                     return
             else:
-                # 步骤: 填写标题
+                # 状态 7: TITLE_FILL
                 state.current_step = StepName.FILL_TITLE
                 title_display = req.title[:30] if len(req.title) > 30 else req.title
-                state.add_log(StepName.FILL_TITLE, "填写标题", StepStatus.RUNNING, f"正在输入标题：{title_display}...")
+                state.add_log(StepName.FILL_TITLE, "填写标题 (TITLE_FILL)", StepStatus.RUNNING, f"正在输入标题：{title_display}...", fsm_state=FsmState.TITLE_FILL)
                 t0 = time.time()
-                ok, msg = publisher.fill_title(req.title)
-                duration = int((time.time() - t0) * 1000)
-                if not ok:
+                ok_ti, msg_ti = publisher.fill_title(req.title)
+                dur_ti = int((time.time() - t0) * 1000)
+                if not ok_ti:
                     state.status = TaskStatus.MANUAL_REQUIRED
-                    state.error_message = msg
-                    state.add_log(StepName.FILL_TITLE, "填写标题失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    state.fsm_state = FsmState.BLOCKED
+                    state.error_message = msg_ti
+                    state.recovery_guidance = "标题框定位未响应，请在受控浏览器中手动粘贴标题"
+                    state.add_log(StepName.FILL_TITLE, "填写标题受阻 (BLOCKED)", StepStatus.FAILED, f"{msg_ti}。已保留当前进度，请手动接管", dur_ti, fsm_state=FsmState.BLOCKED, recovery_guidance=state.recovery_guidance)
                     return
-                state.add_log(StepName.FILL_TITLE, "标题填写成功", StepStatus.SUCCESS, msg, duration)
+                state.add_log(StepName.FILL_TITLE, "标题填写成功 (TITLE_FILL)", StepStatus.SUCCESS, msg_ti, dur_ti, fsm_state=FsmState.TITLE_FILL)
 
                 if not self._wait_if_paused(state):
                     return
 
-                # 步骤: 填写正文富文本
+                # 状态 8: BODY_FILL
                 state.current_step = StepName.FILL_CONTENT
-                state.add_log(StepName.FILL_CONTENT, "填写正文", StepStatus.RUNNING, f"正在写入正文内容（共 {len(req.body)} 字）...")
+                state.add_log(StepName.FILL_CONTENT, "填写正文 (BODY_FILL)", StepStatus.RUNNING, f"正在写入正文内容（共 {len(req.body)} 字）...", fsm_state=FsmState.BODY_FILL)
                 t0 = time.time()
-                ok, msg = publisher.fill_content(req.body)
-                duration = int((time.time() - t0) * 1000)
-                if not ok:
+                ok_cnt, msg_cnt = publisher.fill_content(req.body)
+                dur_cnt = int((time.time() - t0) * 1000)
+                if not ok_cnt:
                     state.status = TaskStatus.MANUAL_REQUIRED
-                    state.error_message = msg
-                    state.add_log(StepName.FILL_CONTENT, "填写正文失败", StepStatus.FAILED, f"{msg}。已保留当前进度，请手动接管", duration)
+                    state.fsm_state = FsmState.BLOCKED
+                    state.error_message = msg_cnt
+                    state.recovery_guidance = "正文输入未响应，请在受控浏览器中手动粘贴正文"
+                    state.add_log(StepName.FILL_CONTENT, "填写正文受阻 (BLOCKED)", StepStatus.FAILED, f"{msg_cnt}。已保留当前进度，请手动接管", dur_cnt, fsm_state=FsmState.BLOCKED, recovery_guidance=state.recovery_guidance)
                     return
-                state.add_log(StepName.FILL_CONTENT, "正文填写成功", StepStatus.SUCCESS, msg, duration)
+                state.add_log(StepName.FILL_CONTENT, "正文填写成功 (BODY_FILL)", StepStatus.SUCCESS, msg_cnt, dur_cnt, fsm_state=FsmState.BODY_FILL)
 
                 if not self._wait_if_paused(state):
                     return
 
-                # 步骤: 上传素材与配图
+                # 状态 9: MEDIA_UPLOAD
                 state.current_step = StepName.UPLOAD_MEDIA
-                state.add_log(StepName.UPLOAD_MEDIA, "上传素材", StepStatus.RUNNING, f"正在准备并按序上传 {len(req.media_items)} 张素材图片...")
+                state.add_log(StepName.UPLOAD_MEDIA, "上传素材 (MEDIA_UPLOAD)", StepStatus.RUNNING, f"正在准备并按序上传 {len(req.media_items)} 张素材图片...", fsm_state=FsmState.MEDIA_UPLOAD)
                 t0 = time.time()
                 prepared_items = self._prepare_local_media_items(req.media_items, req.task_id)
-                ok, msg = publisher.upload_media(prepared_items)
-                duration = int((time.time() - t0) * 1000)
-                state.add_log(StepName.UPLOAD_MEDIA, "素材上传完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
+                ok_med, msg_med = publisher.upload_media(prepared_items)
+                dur_med = int((time.time() - t0) * 1000)
+                state.add_log(StepName.UPLOAD_MEDIA, "素材上传完成 (MEDIA_UPLOAD)", StepStatus.SUCCESS if ok_med else StepStatus.SKIPPED, msg_med, dur_med, fsm_state=FsmState.MEDIA_UPLOAD)
 
                 if not self._wait_if_paused(state):
                     return
 
-            # 7. 步骤 6: 填入话题标签
+            # 10. 状态 10: TAG_FILL (填写话题标签与平台分类)
             state.current_step = StepName.FILL_TAGS
-            state.add_log(StepName.FILL_TAGS, "填写标签", StepStatus.RUNNING, "正在添加话题标签...")
+            state.add_log(StepName.FILL_TAGS, "填写标签 (TAG_FILL)", StepStatus.RUNNING, "正在添加话题标签...", fsm_state=FsmState.TAG_FILL)
             t0 = time.time()
-            ok, msg = publisher.fill_tags(req.tags)
-            duration = int((time.time() - t0) * 1000)
-            state.add_log(StepName.FILL_TAGS, "标签填写完成", StepStatus.SUCCESS if ok else StepStatus.SKIPPED, msg, duration)
-
-            # 附加：必要声明与分区设置 (如自制声明、AI生成标记)
-            try:
-                publisher.fill_required_declarations()
-            except Exception:
-                pass
+            ok_tag, msg_tag = publisher.fill_tags(req.tags)
+            dur_tag = int((time.time() - t0) * 1000)
+            state.add_log(StepName.FILL_TAGS, "标签填写完成 (TAG_FILL)", StepStatus.SUCCESS if ok_tag else StepStatus.SKIPPED, msg_tag, dur_tag, fsm_state=FsmState.TAG_FILL)
 
             if not self._wait_if_paused(state):
                 return
 
-            # 8. 步骤 7: 双向一致性比对校验
+            # 11. 状态 11: COVER_SELECTION (选择或上传独立封面图片与自制声明)
+            state.add_log(StepName.FILL_TAGS, "封面与声明设置 (COVER_SELECTION)", StepStatus.RUNNING, "正在处理封面设置与原创合规声明...", fsm_state=FsmState.COVER_SELECTION)
+            try:
+                publisher.fill_required_declarations()
+            except Exception:
+                pass
+            state.add_log(StepName.FILL_TAGS, "封面与声明就绪 (COVER_SELECTION)", StepStatus.SUCCESS, "封面与声明检查完成", fsm_state=FsmState.COVER_SELECTION)
+
+            if not self._wait_if_paused(state):
+                return
+
+            # 12. 状态 12: VALIDATION (双向核验页面填写内容与原始内容的一致性)
             state.current_step = StepName.VALIDATE_DRAFT
-            state.add_log(StepName.VALIDATE_DRAFT, "一致性比对", StepStatus.RUNNING, "正在从页面 DOM 反读数据执行双向比对校验...")
+            state.add_log(StepName.VALIDATE_DRAFT, "一致性比对 (VALIDATION)", StepStatus.RUNNING, "正在从页面 DOM 反读数据执行双向比对校验...", fsm_state=FsmState.VALIDATION)
             t0 = time.time()
             validation = publisher.validate_draft(
                 expected_title=req.title,
@@ -606,43 +785,70 @@ class TaskManager:
                 expected_tags=req.tags,
                 expected_media_count=len(req.media_items)
             )
-            duration = int((time.time() - t0) * 1000)
+            dur_val = int((time.time() - t0) * 1000)
             state.validation = validation
 
             if validation.passed:
                 state.add_log(
                     StepName.VALIDATE_DRAFT,
-                    "一致性比对通过",
+                    "一致性比对通过 (VALIDATION)",
                     StepStatus.SUCCESS,
                     f"内容校验通过：标题完全匹配，正文字数基本吻合（检测到 {validation.body_length_actual} 字）",
-                    duration
+                    dur_val,
+                    fsm_state=FsmState.VALIDATION
                 )
             else:
                 dis_str = "；".join(validation.discrepancies)
                 state.add_log(
                     StepName.VALIDATE_DRAFT,
-                    "一致性比对提醒",
+                    "一致性比对提醒 (VALIDATION)",
                     StepStatus.RUNNING,
                     f"校验发现差异（{dis_str}），已进入人工确认阶段供作者核查",
-                    duration
+                    dur_val,
+                    fsm_state=FsmState.VALIDATION
                 )
 
-            # 9. 步骤 8: 准备确认 (绝对不擅自点击最终发布按钮)
+            # 13. 状态 13: READY_FOR_REVIEW (滚动至最终确认区域，停留在发布前供人工审核)
             state.current_step = StepName.PREPARE_CONFIRMATION
             t0 = time.time()
-            ok, msg = publisher.prepare_for_confirmation()
-            duration = int((time.time() - t0) * 1000)
+            ok_prep, msg_prep = publisher.prepare_for_confirmation()
+            dur_prep = int((time.time() - t0) * 1000)
 
             # 截图存证
-            browser_manager.take_screenshot(channel, account_id, f"draft_ready_{req.task_id[:8]}")
+            snap_file = browser_manager.take_screenshot(channel, account_id, f"draft_ready_{req.task_id[:8]}")
+            state.screenshot_path = snap_file
 
             state.status = TaskStatus.AWAITING_CONFIRMATION
+            state.fsm_state = FsmState.READY_FOR_REVIEW
             state.add_log(
                 StepName.PREPARE_CONFIRMATION,
-                "等待最终人工确认",
+                "等待最终人工确认 (READY_FOR_REVIEW)",
                 StepStatus.SUCCESS,
                 "所有内容已自动填入完毕并通过比对。当前浏览器已停留在最终发布确认区，请创作者核对无误后在浏览器中点击【发布】或在 GeoLens 面板完成发布结果确认。",
-                duration
+                dur_prep,
+                fsm_state=FsmState.READY_FOR_REVIEW,
+                screenshot_path=snap_file
+            )
+        except Exception as e:
+            # 状态 15: FAILED (执行失败并保留现场快照与诊断日志)
+            snap_path = str(TEMP_DIR / f"fail_{req.task_id[:8]}.png")
+            try:
+                publisher.capture_screenshot(snap_path)
+                state.screenshot_path = snap_path
+            except Exception:
+                pass
+            state.status = TaskStatus.FAILED
+            state.fsm_state = FsmState.FAILED
+            state.error_message = f"执行异常：{e}"
+            state.recovery_guidance = "请检查受控浏览器控制台或手动接管完成本次发布"
+            state.add_log(
+                state.current_step or StepName.OPEN_EDITOR,
+                "执行异常 (FAILED)",
+                StepStatus.FAILED,
+                f"流水线执行异常：{e}",
+                fsm_state=FsmState.FAILED,
+                screenshot_path=state.screenshot_path,
+                recovery_guidance=state.recovery_guidance
             )
         finally:
             browser_manager.mark_idle(channel, account_id)

@@ -443,25 +443,23 @@ describe("Benchmark M6A e2e", () => {
     }
   });
 
-  it("Real Run guard：plannedRuns > cap → 400 且报出计划调用数", async () => {
+  it("Real Run：已移除单任务上限限制，计划真实调用可正常放行创建", async () => {
     const previous = process.env.ENABLE_REAL_PROVIDERS;
     const previousKey = process.env.DEEPSEEK_API_KEY;
     process.env.ENABLE_REAL_PROVIDERS = "true";
     process.env.DEEPSEEK_API_KEY = "sk-m6a-test-not-real";
-    process.env.REAL_PROVIDER_MAX_RUNS_PER_TASK = "3";
     try {
       const before = await prisma.benchmarkRun.count({ where: { suiteId: ids.seededSuiteId } });
       const res = await owner.post(`/benchmark-suites/${ids.seededSuiteId}/runs`)
         .send({ engineId: ids.engines[1], runType: "real" });
-      expect(res.status).toBe(400);
-      expect(String(res.body.message)).toContain("24 次真实调用");
-      expect(String(res.body.message)).toContain("REAL_PROVIDER_MAX_RUNS_PER_TASK=3");
+      expect(res.status).toBe(202);
+      expect(res.body.plannedRuns).toBe(24);
+      expect(res.body.runType).toBe("REAL");
       const after = await prisma.benchmarkRun.count({ where: { suiteId: ids.seededSuiteId } });
-      expect(after).toBe(before);
+      expect(after).toBe(before + 1);
     } finally {
       if (previous === undefined) delete process.env.ENABLE_REAL_PROVIDERS; else process.env.ENABLE_REAL_PROVIDERS = previous;
       if (previousKey === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = previousKey;
-      delete process.env.REAL_PROVIDER_MAX_RUNS_PER_TASK;
     }
   });
 

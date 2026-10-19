@@ -625,6 +625,18 @@ export class AdaptContentChannelsDto extends BaseAiOptionsDto {
   @MaxLength(500)
   instructions?: string;
 
+  @IsOptional()
+  @IsString()
+  perspective?: string;
+
+  @IsOptional()
+  @IsString()
+  tone?: string;
+
+  @IsOptional()
+  @IsString()
+  contentType?: string;
+
   /** 为 true 时忽略相同原文的已有结果，重新调用模型。 */
   @IsOptional()
   @IsBoolean()

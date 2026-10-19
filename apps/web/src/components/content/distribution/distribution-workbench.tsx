@@ -23,8 +23,17 @@ import {
 import { listContentDrafts, createContentDraft, type Draft } from "@/lib/content-api";
 import { generateAiDraft, type AiResponseMeta, type ContentDraftResult } from "@/lib/ai-api";
 import { api } from "@/lib/api";
-import { StatusBadge, LoadingSkeleton, EmptyState } from "@/components/ui";
+import { StatusBadge, EmptyState, LoadingSkeleton } from "@/components/ui";
 import { BrowserAssistedPanel } from "./browser-assisted-panel";
+import {
+  CHANNEL_SPECS,
+  normalizeTitleForChannel,
+  normalizeBodyForChannel,
+  normalizeTagsForChannel,
+  validateChannelContent,
+  getAllChannelSpecs,
+  type ChannelRuleSpec,
+} from "@/lib/channel-rules";
 
 const VIDEO_SCRIPT_CHANNELS = new Set(["DOUYIN", "WECHAT_CHANNELS", "BILIBILI", "KUAISHOU"]);
 
@@ -274,8 +283,23 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
   const [publishingMode, setPublishingMode] = useState<"BROWSER_ASSISTED" | "MANUAL_GUIDE" | "BATCH_MATRIX">(
     "BROWSER_ASSISTED",
   );
-  const [activeAssistedChannel, setActiveAssistedChannel] = useState<string>(urlChannel || "ZHIHU");
-  const [activeManualChannel, setActiveManualChannel] = useState<string>(urlChannel || "ZHIHU");
+  const [activeAssistedChannel, setActiveAssistedChannel] = useState<string>(urlChannel || "XIAOHONGSHU");
+  const [activeManualChannel, setActiveManualChannel] = useState<string>(urlChannel || "XIAOHONGSHU");
+
+  // 渠道 AI 适配高级选项 (基调、视角、内容形态与引擎)
+  const [adaptTone, setAdaptTone] = useState<string>("PROFESSIONAL");
+  const [adaptPerspective, setAdaptPerspective] = useState<string>("FIRST_PERSON");
+  const [adaptContentType, setAdaptContentType] = useState<string>("ARTICLE");
+  const [adaptProvider, setAdaptProvider] = useState<"auto" | "deepseek" | "qwen" | "mock">("auto");
+
+  // 素材多媒体管理
+  const [mediaAssets, setMediaAssets] = useState<
+    Array<{ type: "COVER" | "IMAGE" | "VIDEO"; url: string; note?: string }>
+  >([]);
+  const [showMediaAdd, setShowMediaAdd] = useState(false);
+  const [newMediaType, setNewMediaType] = useState<"COVER" | "IMAGE" | "VIDEO">("COVER");
+  const [newMediaUrl, setNewMediaUrl] = useState("");
+  const [newMediaNote, setNewMediaNote] = useState("");
 
   // 批量矩阵渠道选择
   const [channelSelections, setChannelSelections] = useState<
@@ -439,7 +463,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
       .filter((v) => v.violations.length > 0);
   }, [selectedChannelsList, channelSelections, channelLimitsMap, editedContent]);
 
-  // 适配预览
+  // 适配预览（纯规则基线）
   async function handleAdaptPreview() {
     if (!selectedDraftId || !projectId || selectedChannelsList.length === 0) return;
     setAdapting(true);
@@ -455,13 +479,16 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
 
       const edits: Record<string, { title: string; body: string; tags: string[] }> = {};
       for (const item of res.channels) {
+        const normTitle = normalizeTitleForChannel(item.title, item.channel);
+        const normBody = normalizeBodyForChannel(item.body, item.channel);
+        const normTags = normalizeTagsForChannel(item.tags || [], item.channel);
         edits[item.channel] = {
-          title: item.title,
-          body: item.body,
-          tags: item.tags || [],
+          title: normTitle,
+          body: normBody,
+          tags: normTags,
         };
       }
-      setEditedContent(edits);
+      setEditedContent((prev) => ({ ...prev, ...edits }));
     } catch (err: any) {
       setErrorMsg(err.message || "渠道内容适配失败");
     } finally {
@@ -483,28 +510,48 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
     setAiRunning(true);
     setErrorMsg(null);
     try {
+      const providerToUse = adaptProvider === "mock" ? "mock" : (aiUseReal ? adaptProvider : "mock");
       const res = await adaptContentWithAi(projectId, selectedDraftId, {
         channels: selectedChannelsList,
-        provider: aiUseReal ? "auto" : "mock",
+        provider: providerToUse,
         force,
+        perspective: adaptPerspective,
+        tone: adaptTone,
+        contentType: adaptContentType,
       });
       setAiResult(res);
       const draftsMap: Record<string, { title: string; body: string; tags: string; videoScript: string }> = {};
+      const edits: Record<string, { title: string; body: string; tags: string[] }> = {};
       for (const item of res.channels) {
+        const normTitle = normalizeTitleForChannel(item.title, item.channel);
+        const normBody = normalizeBodyForChannel(item.body, item.channel);
+        const normTags = normalizeTagsForChannel(item.hashtags || [], item.channel);
         draftsMap[item.channel] = {
-          title: item.title,
-          body: item.body,
-          tags: item.hashtags.join(" "),
+          title: normTitle,
+          body: normBody,
+          tags: normTags.join(" "),
           videoScript: item.videoScript || "",
         };
+        edits[item.channel] = {
+          title: normTitle,
+          body: normBody,
+          tags: normTags,
+        };
+        if (item.videoScript) {
+          setConfirmedScripts((prev) => ({ ...prev, [item.channel]: item.videoScript || "" }));
+        }
       }
       setAiDrafts(draftsMap);
+      setEditedContent((prev) => ({ ...prev, ...edits }));
+      if (!activePreviewChannel && res.channels.length > 0) {
+        setActivePreviewChannel(res.channels[0].channel);
+      }
       setActionSuccess(
         res.replayed
-          ? "已复用相同原文的上次适配结果，未再次调用模型。确认前不会提交或发布。"
+          ? "已复用相同原文的上次适配结果，未再次调用模型。所有选中平台文案已按平台规则排版就绪。"
           : res.realAi
-            ? "真实模型已生成渠道适配。请对照原文并确认，确认前不会提交或发布。"
-            : "这是模拟适配，不是真实模型结果。请对照原文并确认，确认前不会提交或发布。",
+            ? `✨ 真实 AI (${res.model || res.provider}) 已生成 ${res.channels.length} 个平台的定制文案（已按平台规范剥离/保留Markdown、格式化标签与脚本）！`
+            : `【本地模拟适配】已生成 ${res.channels.length} 个平台的定制文案与排版结构。`,
       );
     } catch (err: any) {
       setErrorMsg(err.message || "AI 渠道适配失败");
@@ -711,7 +758,6 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
         ...created,
         title: created.title || aiGeneratedDraft.title.trim(),
         topic: created.topic || aiTopic.trim(),
-        body: (created as any).body || aiGeneratedDraft.body.trim(),
         latestRevision: created.latestRevision || {
           id: (created as any).latestRevision?.id || `rev-${created.id}`,
           version: 1,
@@ -735,7 +781,7 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
               },
             ],
         tags: aiGeneratedDraft.tags || [],
-      };
+      } as any as Draft;
 
       setDrafts((prev) => [fullCreatedDraft, ...prev.filter((d) => d.id !== created.id)]);
       setSelectedDraftId(created.id);
@@ -1399,71 +1445,647 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
             )}
           </div>
         )}
+
+        {/* 素材配图与视频管理 */}
+        <div className="pt-4 border-t border-slate-100 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>🎨</span> 配图与视频素材准备
+              </span>
+              <span className="text-[11px] text-slate-500">
+                （小红书需 1-9 张图且首图为封面；视频类平台需上传成片或使用口播脚本）
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMediaAdd(!showMediaAdd)}
+              className="text-xs text-teal-700 hover:text-teal-800 font-semibold flex items-center gap-1"
+            >
+              <span>{showMediaAdd ? "收起" : "+ 添加素材文件/链接"}</span>
+            </button>
+          </div>
+
+          {showMediaAdd && (
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-2.5 text-xs animate-fade-in">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">素材类型</label>
+                <select
+                  value={newMediaType}
+                  onChange={(e) => setNewMediaType(e.target.value as any)}
+                  className="ui-input w-full text-xs"
+                >
+                  <option value="COVER">封面首图 (COVER)</option>
+                  <option value="IMAGE">正文插图 (IMAGE)</option>
+                  <option value="VIDEO">视频成片 (VIDEO)</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">网络 URL 或 本地磁盘绝对路径</label>
+                <input
+                  type="text"
+                  placeholder="如 https://... 或 D:/assets/cover.jpg / video.mp4"
+                  value={newMediaUrl}
+                  onChange={(e) => setNewMediaUrl(e.target.value)}
+                  className="ui-input w-full text-xs font-mono"
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newMediaUrl.trim()) {
+                      setMediaAssets((prev) => [
+                        ...prev,
+                        { type: newMediaType, url: newMediaUrl.trim(), note: newMediaNote.trim() || undefined },
+                      ]);
+                      setNewMediaUrl("");
+                      setNewMediaNote("");
+                    }
+                  }}
+                  className="ui-button primary text-xs w-full py-2 font-bold"
+                >
+                  添加至素材库
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mediaAssets.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {mediaAssets.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 shadow-xs"
+                >
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      item.type === "COVER"
+                        ? "bg-amber-100 text-amber-800"
+                        : item.type === "VIDEO"
+                          ? "bg-purple-100 text-purple-800"
+                          : "bg-blue-100 text-blue-800"
+                    }`}
+                  >
+                    {item.type === "COVER" ? "封面图" : item.type === "VIDEO" ? "视频文件" : "插图"}
+                  </span>
+                  <span className="max-w-[200px] truncate font-mono text-[11px]" title={item.url}>
+                    {item.url}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMediaAssets((prev) => prev.filter((_, i) => i !== idx))}
+                    className="text-slate-400 hover:text-rose-600 font-bold ml-1"
+                    title="移除此素材"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-500 bg-slate-50/80 px-3.5 py-2.5 rounded-xl border border-dashed border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <span>💡 暂未指定外部素材文件。受控 Chrome 助手将优先从草稿内容提取插图，或在执行到【素材上传】步骤时调起文件选择器供人工指认。</span>
+              <span className="text-teal-700 font-semibold">发布前规则校验将自动检查图片/视频是否满足平台要求</span>
+            </div>
+          )}
+        </div>
       </section>
 
       {/* ============================================================== */}
-      {/* 步骤 2：选择发布方式与平台（本地自动化助手 vs 纯人工指引） */}
+      {/* 步骤 2：选择平台与 AI 适配 */}
       {/* ============================================================== */}
-      <section className="space-y-4">
-        {/* 发布方式 Switcher */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
-              2
-            </span>
-            <h2 className="text-base font-bold text-slate-900">选择发布方式与执行平台</h2>
+      <section className="surface p-6 space-y-6 rounded-2xl border border-slate-200/80 bg-white shadow-xs" id="step-2-adaptation">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+                2
+              </span>
+              <h2 className="text-base font-bold text-slate-900">选择平台与 AI 适配</h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              全览 11 大平台能力规格（自动化 vs 人工指引），由 AI 根据平台特性深度重写排版、叙述视角、Emoji 与标签格式。
+            </p>
           </div>
 
-          <div className="flex gap-2">
+          {/* 快捷批量选择按钮 */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <button
               type="button"
-              onClick={() => setPublishingMode("BROWSER_ASSISTED")}
-              className={`flex items-center gap-1.5 py-2 px-4 rounded-xl text-xs font-bold transition border ${
-                publishingMode === "BROWSER_ASSISTED"
-                  ? "border-blue-600 bg-blue-50 text-blue-700 shadow-xs ring-1 ring-blue-500/20"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-              }`}
+              onClick={() => {
+                const next: Record<string, { selected: boolean; mode: "AUTO" | "MANUAL" }> = {};
+                for (const ch of Object.keys(CHANNEL_SPECS)) {
+                  next[ch] = { selected: true, mode: CHANNEL_SPECS[ch]?.browserAssistedAvailable ? "AUTO" : "MANUAL" };
+                }
+                setChannelSelections(next as any);
+              }}
+              className="px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium"
             >
-              <span>🌐</span>
-              <span>浏览器辅助发布 (Selenium V2A)</span>
-              <span className="text-[9px] bg-blue-200 text-blue-800 px-1.5 py-0.2 rounded-full font-bold">
-                自动化
-              </span>
+              全选所有平台
             </button>
-
             <button
               type="button"
-              onClick={() => setPublishingMode("MANUAL_GUIDE")}
-              className={`flex items-center gap-1.5 py-2 px-4 rounded-xl text-xs font-bold transition border ${
-                publishingMode === "MANUAL_GUIDE"
-                  ? "border-teal-600 bg-teal-50 text-teal-800 shadow-xs ring-1 ring-teal-500/20"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-              }`}
+              onClick={() => {
+                const next: Record<string, { selected: boolean; mode: "AUTO" | "MANUAL" }> = {};
+                for (const ch of Object.keys(CHANNEL_SPECS)) {
+                  next[ch] = {
+                    selected: Boolean(CHANNEL_SPECS[ch]?.browserAssistedAvailable),
+                    mode: "AUTO",
+                  };
+                }
+                setChannelSelections(next as any);
+              }}
+              className="px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium"
             >
-              <span>🧭</span>
-              <span>纯人工发布精准指引</span>
-              <span className="text-[9px] bg-teal-200 text-teal-800 px-1.5 py-0.2 rounded-full font-bold">
-                高合规
-              </span>
+              全选受控自动化平台 (8个)
             </button>
-
             <button
               type="button"
-              onClick={() => setPublishingMode("BATCH_MATRIX")}
-              className={`flex items-center gap-1.5 py-2 px-3 rounded-xl text-xs font-medium transition border ${
-                publishingMode === "BATCH_MATRIX"
-                  ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-xs"
-                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
-              }`}
+              onClick={() => {
+                const next: Record<string, { selected: boolean; mode: "AUTO" | "MANUAL" }> = {};
+                for (const ch of ["XIAOHONGSHU", "ZHIHU", "WECHAT_OFFICIAL_ACCOUNT"]) {
+                  next[ch] = { selected: true, mode: "AUTO" };
+                }
+                setChannelSelections(next as any);
+              }}
+              className="px-2.5 py-1 rounded-lg border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-700 font-medium"
             >
-              <span>📋</span>
-              <span>多渠道批量矩阵 (V1)</span>
+              仅核心三平台 (小红书/知乎/公众号)
+            </button>
+            <button
+              type="button"
+              onClick={() => setChannelSelections({})}
+              className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 font-medium"
+            >
+              清空
             </button>
           </div>
         </div>
 
-        {/* 方式 1: 本地受控浏览器辅助发布 (Selenium V2A) */}
-        {publishingMode === "BROWSER_ASSISTED" && (
+        {/* 11 平台矩阵卡片平铺 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+          {Object.values(CHANNEL_SPECS).map((spec) => {
+            const isSelected = Boolean(channelSelections[spec.id]?.selected);
+            const isAssisted = spec.browserAssistedAvailable;
+
+            return (
+              <div
+                key={spec.id}
+                onClick={() => toggleChannel(spec.id)}
+                className={`relative rounded-xl border p-3.5 transition-all cursor-pointer flex flex-col justify-between select-none ${
+                  isSelected
+                    ? "border-blue-600 bg-blue-50/20 shadow-xs ring-1 ring-blue-500/30"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs"
+                }`}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}} // handled by parent onClick
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-xl leading-none">{spec.icon}</span>
+                      <span className="font-bold text-xs text-slate-900 truncate">{spec.name}</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium shrink-0">
+                      {spec.category}
+                    </span>
+                  </div>
+
+                  {/* 自动化能力标识 */}
+                  <div className="flex flex-wrap gap-1">
+                    {isAssisted ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                        🌐 受控 Chrome 辅助自动填写
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                        📋 人工发布指引包
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 规格标签 */}
+                  <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-600 pt-1">
+                    <span className="bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate">
+                      标题: ≤{spec.titleLimit.max}字
+                    </span>
+                    <span className="bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate">
+                      正文: ≤{spec.bodyLimit.max}字
+                    </span>
+                    <span className="bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate">
+                      标签: {spec.tagsLimit.format === "DOUBLE_HASH" ? "#话题#" : spec.tagsLimit.format === "HASH" ? "#话题" : "纯文本"}
+                    </span>
+                    <span className="bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate">
+                      {spec.mediaSpecs.videoRequired ? "需视频成片" : spec.mediaSpecs.minImages > 0 ? `需${spec.mediaSpecs.minImages}-${spec.mediaSpecs.maxImages}张图` : "图片可选"}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 line-clamp-2 pt-0.5">
+                    {spec.description}
+                  </p>
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400">入口: {spec.creationTypeLabel}</span>
+                  <span className={`font-semibold ${isSelected ? "text-blue-700" : "text-slate-400"}`}>
+                    {isSelected ? "已加入分发队列 ✓" : "点击勾选"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* AI 适配控制条 */}
+        <div className="rounded-xl border border-teal-200/90 bg-teal-50/20 p-4 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">✨</span>
+              <span className="text-xs font-bold text-teal-900">AI 平台深度定制与规则适配引擎</span>
+              <span className="text-[11px] text-teal-700">（已选 {selectedChannelsList.length} 个目标平台）</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={aiUseReal}
+                  disabled={!realAiAvailable || aiRunning}
+                  onChange={(e) => setAiUseReal(e.target.checked)}
+                  className="rounded border-slate-300 text-teal-700 focus:ring-teal-500 w-3.5 h-3.5"
+                />
+                <span>{realAiAvailable ? "使用真实大模型 (产生 API 费用)" : "真实模型未配置 (本地智能模拟)"}</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">适配风格基调 (Tone)</label>
+              <select
+                value={adaptTone}
+                onChange={(e) => setAdaptTone(e.target.value)}
+                className="ui-input w-full text-xs bg-white font-medium"
+              >
+                <option value="PROFESSIONAL">专业深度科普（严谨论证、小标题与事实架构）</option>
+                <option value="SEEDING">真实体验种草（第一人称实测、生动口吻、Emoji表情）</option>
+                <option value="OFFICIAL">官方权威解答（品牌全景、选型指南与白皮书）</option>
+                <option value="SCRIPT">短视频分镜测评（景别、口播台词、画面指示与BGM）</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">叙述人称视角 (Perspective)</label>
+              <select
+                value={adaptPerspective}
+                onChange={(e) => setAdaptPerspective(e.target.value)}
+                className="ui-input w-full text-xs bg-white font-medium"
+              >
+                <option value="FIRST_PERSON">第一人称体验视角（“我实测”、“真实心得”）</option>
+                <option value="THIRD_PERSON">第三人称客观视角（行业观察、权威第三方评价）</option>
+                <option value="BRAND_VOICE">企业官方视角（权威发布、品牌声明与服务承诺）</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">内容输出形态 (Content Type)</label>
+              <select
+                value={adaptContentType}
+                onChange={(e) => setAdaptContentType(e.target.value)}
+                className="ui-input w-full text-xs bg-white font-medium"
+              >
+                <option value="ARTICLE">图文专栏长文（适合知乎、微信公众号、企业CMS）</option>
+                <option value="NOTE">种草短图文笔记（适合小红书、微博、百家号）</option>
+                <option value="VIDEO_SCRIPT">短视频口播脚本（适合抖音、B站、视频号、快手）</option>
+              </select>
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => handleAiAdapt(false)}
+                disabled={aiRunning || selectedChannelsList.length === 0}
+                className="ui-button primary w-full text-xs font-bold py-2 shadow-xs flex items-center justify-center gap-1.5"
+              >
+                {aiRunning ? (
+                  <span>⏳ 正在生成多平台定制文案...</span>
+                ) : (
+                  <>
+                    <span>✨</span>
+                    <span>一键 AI 适配所选平台 ({selectedChannelsList.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 选定平台专属预览与实时规则校验 */}
+        {selectedChannelsList.length > 0 && (
+          <div className="space-y-4 pt-2 border-t border-slate-100">
+            {/* 渠道切换 Tabs */}
+            <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+              {selectedChannelsList.map((chKey) => {
+                const spec = CHANNEL_SPECS[chKey] || { name: chKey, icon: "📌" };
+                const isCur = activePreviewChannel === chKey;
+                return (
+                  <button
+                    key={chKey}
+                    type="button"
+                    onClick={() => setActivePreviewChannel(chKey)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+                      isCur
+                        ? "border-slate-900 bg-slate-900 text-white shadow-xs"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span>{spec.icon}</span>
+                    <span>{spec.name}</span>
+                    {editedContent[chKey]?.title && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 当前选中渠道预览与微调卡片 */}
+            {activePreviewChannel && (() => {
+              const spec = CHANNEL_SPECS[activePreviewChannel] || CHANNEL_SPECS.XIAOHONGSHU;
+              const content = editedContent[activePreviewChannel] || {
+                title: currentDraft?.title || "",
+                body: currentDraft?.latestRevision?.body || "",
+                tags: currentDraft?.topic ? [currentDraft.topic] : [],
+              };
+              const validation = validateChannelContent(
+                {
+                  title: content.title,
+                  body: content.body,
+                  tags: content.tags,
+                  mediaCount: mediaAssets.filter((m) => m.type !== "VIDEO").length,
+                  hasVideo: mediaAssets.some((m) => m.type === "VIDEO"),
+                  hasCover: mediaAssets.some((m) => m.type === "COVER"),
+                },
+                activePreviewChannel,
+              );
+
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+                  {/* 左侧 2 列：可编辑内容与实时规则标签 */}
+                  <div className="lg:col-span-2 space-y-4 p-5 rounded-xl border border-slate-200 bg-slate-50/50">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{spec.icon}</span>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900">{spec.name} 专属定制文案</h4>
+                          <span className="text-[11px] text-slate-500">
+                            {spec.browserAssistedAvailable ? "支持本地受控 Chrome 辅助自动填表" : "提供规范人工发布指引包"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 规则校验徽章 */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                        <span
+                          className={`px-2 py-0.5 rounded font-bold ${
+                            content.title.length <= spec.titleLimit.max
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-rose-50 text-rose-700 border border-rose-200"
+                          }`}
+                        >
+                          标题: {content.title.length}/{spec.titleLimit.max} 字
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded font-bold ${
+                            content.body.length <= spec.bodyLimit.max
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-rose-50 text-rose-700 border border-rose-200"
+                          }`}
+                        >
+                          正文: {content.body.length}/{spec.bodyLimit.max} 字
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                          {spec.bodyLimit.supportsMarkdown ? "支持 Markdown" : "纯文本 (去MD语法)"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {validation.warnings.length > 0 && (
+                      <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-1">
+                        {validation.warnings.map((w, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5">
+                            <span>⚠️</span>
+                            <span>{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 标题输入 */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                        <label>平台标题 ({spec.titleLimit.label})</label>
+                        <button
+                          type="button"
+                          onClick={() => copyText(content.title, "标题")}
+                          className="text-teal-700 hover:underline font-normal text-[11px]"
+                        >
+                          复制标题
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={content.title}
+                        onChange={(e) =>
+                          setEditedContent((prev) => ({
+                            ...prev,
+                            [activePreviewChannel]: { ...prev[activePreviewChannel], title: e.target.value },
+                          }))
+                        }
+                        className="ui-input w-full text-xs font-medium"
+                      />
+                    </div>
+
+                    {/* 正文输入 */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                        <label>平台正文排版 ({spec.bodyLimit.label})</label>
+                        <button
+                          type="button"
+                          onClick={() => copyText(content.body, "正文")}
+                          className="text-teal-700 hover:underline font-normal text-[11px]"
+                        >
+                          复制正文
+                        </button>
+                      </div>
+                      <textarea
+                        rows={10}
+                        value={content.body}
+                        onChange={(e) =>
+                          setEditedContent((prev) => ({
+                            ...prev,
+                            [activePreviewChannel]: { ...prev[activePreviewChannel], body: e.target.value },
+                          }))
+                        }
+                        className="ui-input w-full text-xs font-mono leading-relaxed"
+                      />
+                    </div>
+
+                    {/* 话题标签 */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        话题标签 ({spec.tagsLimit.label})
+                      </label>
+                      <input
+                        type="text"
+                        value={Array.isArray(content.tags) ? content.tags.join(" ") : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value.split(/\s+/).filter(Boolean);
+                          setEditedContent((prev) => ({
+                            ...prev,
+                            [activePreviewChannel]: { ...prev[activePreviewChannel], tags: raw },
+                          }));
+                        }}
+                        className="ui-input w-full text-xs"
+                      />
+                    </div>
+
+                    {/* 视频分镜脚本 (如果是视频渠道) */}
+                    {(spec.primaryFormat === "VIDEO_SCRIPT" || spec.supportedFormats.includes("VIDEO_SCRIPT")) && (
+                      <div className="space-y-1 pt-2 border-t border-slate-200">
+                        <label className="block text-xs font-semibold text-purple-900">
+                          🎬 短视频分镜脚本与口播台词 (带镜头描述、口播与 BGM 建议)
+                        </label>
+                        <textarea
+                          rows={6}
+                          placeholder="镜头 1：【特写/抓人钩子】口播词：... 画面：... BGM：轻快卡点"
+                          value={confirmedScripts[activePreviewChannel] || aiDrafts[activePreviewChannel]?.videoScript || ""}
+                          onChange={(e) =>
+                            setConfirmedScripts((prev) => ({ ...prev, [activePreviewChannel]: e.target.value }))
+                          }
+                          className="ui-input w-full text-xs font-mono bg-purple-50/20 border-purple-200 text-slate-800"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 右侧 1 列：平台规则规范与进入第 3 步操作卡 */}
+                  <div className="space-y-4 p-5 rounded-xl border border-slate-200 bg-white">
+                    <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <span>📌</span> {spec.name} 规则合规指南
+                    </h4>
+
+                    <div className="space-y-2 text-xs text-slate-600">
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-1 text-[11px]">
+                        <div><strong>发布入口：</strong>{spec.creationTypeLabel}</div>
+                        <div><strong>官方后台：</strong><a href={spec.creatorUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">访问创作者后台 ↗</a></div>
+                        <div><strong>封面规范：</strong>{spec.mediaSpecs.imageRatio}</div>
+                      </div>
+
+                      <div className="text-[11px] text-slate-500 leading-relaxed">
+                        {spec.tips}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (spec.browserAssistedAvailable) {
+                            setActiveAssistedChannel(activePreviewChannel);
+                            setPublishingMode("BROWSER_ASSISTED");
+                          } else {
+                            setActiveManualChannel(activePreviewChannel);
+                            setPublishingMode("MANUAL_GUIDE");
+                          }
+                          const step3 = document.getElementById("step-3-execution");
+                          if (step3) step3.scrollIntoView({ behavior: "smooth" });
+                        }}
+                        className="ui-button primary w-full text-xs font-bold py-2.5 shadow-md flex items-center justify-center gap-1.5"
+                      >
+                        <span>🚀 设为执行目标并进入第 3 步 →</span>
+                      </button>
+
+                      <div className="text-center">
+                        <span className="text-[11px] text-slate-400">
+                          {spec.browserAssistedAvailable ? "将调起本地受控 Chrome 辅助填表" : "将调起纯人工精准指引包"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </section>
+
+      {/* ============================================================== */}
+      {/* 步骤 3：发布前准备与受控执行 */}
+      {/* ============================================================== */}
+      <section className="space-y-5" id="step-3-execution">
+        <div className="surface p-6 rounded-2xl border border-slate-200/80 bg-white shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+                  3
+                </span>
+                <h2 className="text-base font-bold text-slate-900">发布前准备与受控执行</h2>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                受控环境自动填写与规范审核。严格遵循 PREPARE_ONLY 安全准则，永不越权点击最终公开提交。
+              </p>
+            </div>
+
+            {/* 当前目标平台与快速切换 */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">执行平台：</span>
+              <div className="flex flex-wrap gap-1">
+                {selectedChannelsList.map((chKey) => {
+                  const spec = CHANNEL_SPECS[chKey] || { name: chKey, icon: "📌" };
+                  const isCurrent = activeAssistedChannel === chKey;
+                  return (
+                    <button
+                      key={chKey}
+                      type="button"
+                      onClick={() => {
+                        setActiveAssistedChannel(chKey);
+                        setActiveManualChannel(chKey);
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition border ${
+                        isCurrent
+                          ? "border-blue-600 bg-blue-50 text-blue-700 shadow-xs ring-1 ring-blue-500/20"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>{spec.icon}</span>
+                      <span>{spec.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* PREPARE_ONLY 安全兜底告知 */}
+          <div className="p-3.5 rounded-xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
+            <span className="text-base leading-none">🛡️</span>
+            <div className="space-y-0.5">
+              <div className="font-bold">受控安全执行保障 (PREPARE_ONLY 模式已强制激活)</div>
+              <p className="text-[11px] text-blue-700 leading-relaxed">
+                本地受控 Chrome 助手仅负责：调起独立 Profile 隔离浏览器、进入创作者中心对应入口、自动填入定制标题、正文排版与标签，并在【确认发布】或【公开提交】按钮前完全停住，绝不替用户对外发送。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 执行模式分支：如果是自动化支持渠道则调起 BrowserAssistedPanel，否则展示人工指引 */}
+        {CHANNEL_SPECS[activeAssistedChannel]?.browserAssistedAvailable ? (
           <BrowserAssistedPanel
             projectId={projectId}
             selectedDraft={currentDraft}
@@ -1471,54 +2093,21 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
             activeChannelKey={activeAssistedChannel}
             onChannelSelect={setActiveAssistedChannel}
             onPublicationUpdated={() => loadPublications(1)}
+            overrideContent={editedContent[activeAssistedChannel] || null}
           />
-        )}
-
-        {/* 方式 2: 纯人工发布精准指引 (Manual Publishing Guidance) */}
-        {publishingMode === "MANUAL_GUIDE" && (
+        ) : (
           <div className="surface p-6 space-y-6 rounded-2xl border border-slate-200/80 bg-white shadow-xs">
-            {/* 平台选择 Pills */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">选择要发布的目标平台：</span>
-                <span className="text-[11px] text-slate-400">
-                  支持一键直达官方创作者页面、字段精准复制与事后回填落成 GEO 资产
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(CHANNEL_PLATFORM_CONFIG).map(([k, conf]) => {
-                  const isCur = activeManualChannel === k;
-                  return (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setActiveManualChannel(k)}
-                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition border ${
-                        isCur
-                          ? "border-teal-600 bg-teal-50 text-teal-900 shadow-xs ring-1 ring-teal-500/30"
-                          : "border-slate-200 bg-slate-50/50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
-                      }`}
-                    >
-                      <span className="text-sm">{conf.icon}</span>
-                      <span>{conf.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 当前平台的指引主体卡片 */}
+            {/* 纯人工发布精准指引卡片 */}
             {(() => {
               const conf = CHANNEL_PLATFORM_CONFIG[activeManualChannel] || CHANNEL_PLATFORM_CONFIG.ZHIHU;
-              const draftTitle = currentDraft?.title || "（暂无标题）";
-              const draftBody = currentDraft?.latestRevision?.body || "（暂无正文）";
-              const draftTags = currentDraft?.topic
-                ? [currentDraft.topic]
-                : ["GEO优选", "事实证据"];
+              const content = editedContent[activeManualChannel] || {
+                title: currentDraft?.title || "（暂无标题）",
+                body: currentDraft?.latestRevision?.body || "（暂无正文）",
+                tags: currentDraft?.topic ? [currentDraft.topic] : ["GEO优选"],
+              };
 
               return (
                 <div className="space-y-5 rounded-xl border border-slate-200 bg-slate-50/40 p-5">
-                  {/* 头部：平台名 + 创作者中心直达 */}
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-4">
                     <div className="flex items-center gap-2.5">
                       <span className="text-2xl">{conf.icon}</span>
@@ -1528,531 +2117,79 @@ export function DistributionWorkbench({ projectId }: { projectId: string }) {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <a
-                        href={conf.creatorUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 shadow-sm flex items-center gap-1.5"
+                    <a
+                      href={conf.creatorUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 shadow-sm flex items-center gap-1.5"
+                    >
+                      <span>打开 {conf.label} 创作页面</span>
+                      <span>↗</span>
+                    </a>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-700">标题</span>
+                        <button
+                          type="button"
+                          onClick={() => copyText(content.title, "标题")}
+                          className="text-teal-700 text-[11px] hover:underline"
+                        >
+                          复制标题
+                        </button>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs font-medium">
+                        {content.title}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-700">标签</span>
+                        <button
+                          type="button"
+                          onClick={() => copyText(content.tags.join(" "), "标签")}
+                          className="text-teal-700 text-[11px] hover:underline"
+                        >
+                          复制标签
+                        </button>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs font-medium">
+                        {content.tags.join(" ")}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700">正文内容</span>
+                      <button
+                        type="button"
+                        onClick={() => copyText(content.body, "正文")}
+                        className="text-teal-700 text-[11px] hover:underline"
                       >
-                        <span>打开 {conf.label} 创作页面</span>
-                        <span>↗</span>
-                      </a>
+                        复制正文
+                      </button>
                     </div>
+                    <pre className="p-3.5 bg-white rounded-lg border border-slate-200 text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed">
+                      {content.body}
+                    </pre>
                   </div>
 
-                  {/* 字段映射卡片流 */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* 字段 1：文章/笔记标题 */}
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2 flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-teal-500" />
-                            【文章/笔记标题】对应字段
-                          </span>
-                          <span className="text-[11px] text-slate-400 font-mono">{draftTitle.length} 字</span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 mb-2">{conf.titleFieldGuide}</p>
-                        <div className="rounded-lg bg-slate-50 p-2.5 text-xs font-medium text-slate-800 border border-slate-100 select-all">
-                          {draftTitle}
-                        </div>
-                      </div>
-                      <div className="pt-2 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => copyText(draftTitle, "标题")}
-                          className="ui-button secondary text-xs py-1 px-3"
-                        >
-                          📄 一键复制标题
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 字段 2：标签/话题词 */}
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2 flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-blue-500" />
-                            【话题 / 标签】对应字段
-                          </span>
-                          <span className="text-[11px] text-slate-400 font-mono">{draftTags.length} 个标签</span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 mb-2">{conf.tagsFieldGuide}</p>
-                        <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-slate-50 border border-slate-100 min-h-10 items-center">
-                          {draftTags.map((t, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 border border-blue-200"
-                            >
-                              #{t}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="pt-2 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => copyText(draftTags.map((t) => `#${t}`).join(" "), "话题标签")}
-                          className="ui-button secondary text-xs py-1 px-3"
-                        >
-                          🏷️ 一键复制全部标签
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 字段 3：正文内容 */}
-                    <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-4 space-y-2">
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                          【正文与排版】对应字段
-                        </span>
-                        <span className="text-[11px] text-slate-400 font-mono">{draftBody.length} 字</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">{conf.bodyFieldGuide}</p>
-                      <div className="max-h-44 overflow-y-auto rounded-lg bg-slate-50 p-3 text-xs text-slate-700 border border-slate-100 font-mono whitespace-pre-wrap leading-relaxed select-all">
-                        {draftBody}
-                      </div>
-                      <div className="pt-2 flex items-center justify-between">
-                        <span className="text-[11px] text-slate-400">
-                          可直接点击右侧按钮复制完整正文，然后粘贴至平台富文本框
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => copyText(draftBody, "正文内容")}
-                          className="ui-button primary text-xs py-1.5 px-4 font-bold"
-                        >
-                          📝 一键复制完整正文
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 平台规则 Checklist & 闭环行动栏 */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-2">
-                    <div className="lg:col-span-2 rounded-xl border border-amber-200 bg-amber-50/50 p-4 space-y-2">
-                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                        <span>🛡️</span> {conf.label} 平台合规与审核要点
-                      </span>
-                      <ul className="space-y-1.5 text-xs text-amber-800">
-                        {conf.guidelines.map((rule, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-[11px] font-bold text-amber-600">·</span>
-                            <span className="leading-relaxed">{rule}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 flex flex-col justify-between">
-                      <div className="space-y-1">
-                        <span className="text-xs font-bold text-slate-900 block">完成人工发布了吗？</span>
-                        <p className="text-[11px] text-slate-500 leading-relaxed">
-                          在 {conf.label} 点击发布并获取公开链接后，请回填地址，系统将立即沉淀为 GEO
-                          监测资产并进入定期效果再测。
-                        </p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <button
-                          type="button"
-                          onClick={() => handleCreateSingleManualTask(activeManualChannel)}
-                          className="w-full rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white hover:bg-teal-700 shadow-sm flex items-center justify-center gap-1.5"
-                        >
-                          <span>✨</span>
-                          <span>已发布？回填公开落地链接</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const manualPkg: ManualPublishingPackage = {
-                              channel: activeManualChannel,
-                              title: draftTitle,
-                              body: draftBody,
-                              hashtags: draftTags,
-                              checklist: conf.guidelines,
-                              assetManifest: [],
-                              videoScript: null,
-                              callToAction: "欢迎在评论区或正文中留下您的见解或进行进一步咨询。",
-                              generatedAt: new Date().toISOString(),
-                            };
-                            downloadManualPackage(manualPkg, activeManualChannel);
-                          }}
-                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
-                        >
-                          <span>💾</span>
-                          <span>下载发布包 JSON</span>
-                        </button>
-                      </div>
-                    </div>
+                  <div className="pt-3 border-t border-slate-200 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleCreateSingleManualTask(activeManualChannel)}
+                      className="ui-button primary text-xs font-bold px-4 py-2"
+                    >
+                      已在官方后台发布，回填真实访问链接 →
+                    </button>
                   </div>
                 </div>
               );
             })()}
-          </div>
-        )}
-
-        {/* 方式 3: 多渠道批量分发中心 (高级矩阵) */}
-        {publishingMode === "BATCH_MATRIX" && (
-          <div className="space-y-6">
-            <section className="surface p-5 space-y-4 rounded-xl border border-slate-200 bg-white">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                    <span>🌐</span> 目标渠道矩阵勾选与模式设置
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    同时支持【官方 API 授权自动同步】与【多端人工辅助分发】，随心勾选多个平台同时执行。
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500">
-                    已选 <strong className="text-teal-700 font-bold">{selectedChannelsList.length}</strong> 个渠道
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleAdaptPreview}
-                    disabled={adapting || selectedChannelsList.length === 0}
-                    className="ui-button secondary text-xs"
-                  >
-                    {adapting ? "正在适配..." : "🔄 重新生成各端变体预览"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                {channels.map((ch) => {
-                  const conf = CHANNEL_PLATFORM_CONFIG[ch.channel] || {
-                    label: ch.name,
-                    color: "slate",
-                    badgeBg: "bg-slate-100 text-slate-700",
-                    creatorUrl: "#",
-                    icon: "📌",
-                    description: ch.description,
-                  };
-                  const selection = channelSelections[ch.channel] || { selected: false, mode: "MANUAL" };
-                  const isSelected = selection.selected;
-
-                  return (
-                    <div
-                      key={ch.channel}
-                      className={`rounded-xl border p-3.5 transition-all flex flex-col justify-between ${
-                        isSelected
-                          ? "border-teal-600 bg-teal-50/20 shadow-xs ring-1 ring-teal-500/30"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
-                      <div className="space-y-2.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <label className="flex items-center gap-2 cursor-pointer flex-1">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggleChannel(ch.channel)}
-                              className="rounded border-slate-300 text-teal-700 focus:ring-teal-500 w-4 h-4 cursor-pointer"
-                            />
-                            <span className="text-lg leading-none">{conf.icon}</span>
-                            <span className="font-semibold text-xs text-slate-900 truncate">{conf.label}</span>
-                          </label>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                            {ch.category}
-                          </span>
-                        </div>
-
-                        <div className="flex flex-wrap gap-1">
-                          {ch.supportsAuto ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              ⚡ 官方自动同步
-                              {ch.autoCapability === "DRAFT_ONLY" ? " (草稿箱)" : ""}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                              📋 人工辅助发布包
-                            </span>
-                          )}
-                          {ch.requiresVideo && (
-                            <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                              🎬 视频类
-                            </span>
-                          )}
-                        </div>
-
-                        <p className="text-[11px] text-slate-500 leading-normal line-clamp-2">
-                          {ch.description}
-                        </p>
-                      </div>
-
-                      <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2 text-xs">
-                        <div className="flex items-center justify-between">
-                          {ch.supportsAuto && ch.connected ? (
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setChannelMode(ch.channel, "AUTO")}
-                                className={`text-[11px] px-2 py-0.5 rounded font-semibold ${
-                                  selection.mode === "AUTO"
-                                    ? "bg-teal-700 text-white"
-                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                }`}
-                              >
-                                自动
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setChannelMode(ch.channel, "MANUAL")}
-                                className={`text-[11px] px-2 py-0.5 rounded font-semibold ${
-                                  selection.mode === "MANUAL"
-                                    ? "bg-slate-800 text-white"
-                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                }`}
-                              >
-                                人工
-                              </button>
-                            </div>
-                          ) : ch.supportsAuto && !ch.connected ? (
-                            <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                              未连接账号（仅人工）
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-slate-400">仅支持人工辅助</span>
-                          )}
-
-                          {selection.mode === "AUTO" && ch.autoCapability !== "DRAFT_ONLY" && (
-                            <select
-                              value={selection.targetStatus || "publish"}
-                              onChange={(e) =>
-                                setChannelTargetStatus(ch.channel, e.target.value as "draft" | "publish")
-                              }
-                              className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5"
-                            >
-                              <option value="publish">直接发布</option>
-                              <option value="draft">存草稿箱</option>
-                            </select>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* 多端变体预览与微调 */}
-            {selectedChannelsList.length > 0 && (
-              <section className="surface p-5 space-y-4 rounded-xl border border-slate-200 bg-white">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                      <span>🎨</span> 多端变体预览与排版微调
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      规则预览会立即填入编辑区。AI 适配需要单独生成，并在确认后才写入编辑区。
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={aiUseReal}
-                        disabled={!realAiAvailable || aiRunning}
-                        onChange={(e) => setAiUseReal(e.target.checked)}
-                      />
-                      <span>{realAiAvailable ? "启用真实模型（产生 API 费用）" : "真实模型未配置（仅模拟）"}</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleAiAdapt(false)}
-                      disabled={aiRunning}
-                      className="ui-button primary text-xs py-1.5 px-3"
-                    >
-                      {aiRunning ? "正在生成渠道适配..." : aiUseReal ? "AI 生成（真实付费）" : "AI 生成（本地模拟）"}
-                    </button>
-                  </div>
-                </div>
-
-                {/* 渠道标签切换 */}
-                <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
-                  {selectedChannelsList.map((chKey) => {
-                    const conf = CHANNEL_PLATFORM_CONFIG[chKey] || { label: chKey, icon: "📌" };
-                    const isCurrent = activePreviewChannel === chKey;
-                    return (
-                      <button
-                        key={chKey}
-                        type="button"
-                        onClick={() => setActivePreviewChannel(chKey)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                          isCurrent
-                            ? "bg-slate-900 text-white shadow-xs"
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                      >
-                        <span>{conf.icon}</span>
-                        <span>{conf.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* 当前选中的渠道预览与微调内容 */}
-                {activePreviewChannel && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-2">
-                    <div className="space-y-3.5 bg-slate-50/50 p-4 rounded-xl border border-slate-200/80">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-800">
-                          {CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.label} 专属文案
-                        </span>
-                        <span className="text-[11px] text-slate-500">
-                          分发模式：{channelSelections[activePreviewChannel]?.mode === "AUTO" ? "⚡ 自动同步" : "📋 人工辅助"}
-                        </span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <label className="font-semibold text-slate-700">标题</label>
-                          {channelLimitsMap[activePreviewChannel] && (
-                            <span
-                              className={`text-[11px] ${
-                                (editedContent[activePreviewChannel]?.title?.length || 0) >
-                                channelLimitsMap[activePreviewChannel]!.title
-                                  ? "text-rose-600 font-bold"
-                                  : "text-slate-400"
-                              }`}
-                            >
-                              {editedContent[activePreviewChannel]?.title?.length || 0}/
-                              {channelLimitsMap[activePreviewChannel]!.title} 字
-                            </span>
-                          )}
-                        </div>
-                        <input
-                          type="text"
-                          className="ui-input w-full text-xs"
-                          value={editedContent[activePreviewChannel]?.title || ""}
-                          onChange={(e) =>
-                            setEditedContent((prev) => ({
-                              ...prev,
-                              [activePreviewChannel]: {
-                                ...prev[activePreviewChannel],
-                                title: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <label className="font-semibold text-slate-700">正文与话题</label>
-                        </div>
-                        <textarea
-                          rows={8}
-                          className="ui-input w-full text-xs font-mono leading-relaxed"
-                          value={editedContent[activePreviewChannel]?.body || ""}
-                          onChange={(e) =>
-                            setEditedContent((prev) => ({
-                              ...prev,
-                              [activePreviewChannel]: {
-                                ...prev[activePreviewChannel],
-                                body: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => copyText(editedContent[activePreviewChannel]?.title || "", "标题")}
-                          className="ui-button secondary text-xs py-1"
-                        >
-                          📄 复制标题
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => copyText(editedContent[activePreviewChannel]?.body || "", "正文")}
-                          className="ui-button secondary text-xs py-1"
-                        >
-                          📝 复制正文
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3.5 bg-white p-4 rounded-xl border border-slate-200/80">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-800">📋 人工发布包与素材清单</span>
-                        {adaptedResults.find((r) => r.channel === activePreviewChannel)?.manualPackage && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              downloadManualPackage(
-                                adaptedResults.find((r) => r.channel === activePreviewChannel)!.manualPackage,
-                                activePreviewChannel,
-                              )
-                            }
-                            className="text-xs text-teal-700 hover:underline font-semibold"
-                          >
-                            💾 下载发布包 JSON
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
-                          操作指引
-                        </span>
-                        <ul className="space-y-1 text-xs text-slate-700">
-                          {(
-                            adaptedResults.find((r) => r.channel === activePreviewChannel)?.manualPackage?.checklist || [
-                              "登录平台创作者中心。",
-                              "复制左侧标题与正文至输入框。",
-                              "预览无误后提交发布。",
-                            ]
-                          ).map((step, idx) => (
-                            <li key={idx} className="flex items-start gap-2">
-                              <span className="flex-shrink-0 w-4 h-4 rounded-full bg-slate-100 text-slate-700 text-[10px] flex items-center justify-center font-bold">
-                                {idx + 1}
-                              </span>
-                              <span className="leading-relaxed">{step}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                        <span className="text-slate-500">直达平台发布后台：</span>
-                        <a
-                          href={CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.creatorUrl || "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="ui-button secondary text-xs py-1"
-                        >
-                          打开 {CHANNEL_PLATFORM_CONFIG[activePreviewChannel]?.label} 后台 ↗
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 底部一键批量分发按钮 */}
-                <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
-                  <div className="text-xs text-slate-500 space-y-1">
-                    <div>
-                      将向 <strong className="text-slate-900">{selectedChannelsList.length}</strong> 个渠道提交任务。
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={distributing || selectedChannelsList.length === 0 || manualLimitViolations.length > 0}
-                    onClick={handleBatchDistribute}
-                    className="ui-button primary text-xs px-6 py-2.5 font-bold shadow-md"
-                  >
-                    {distributing ? "正在批量分发中..." : `🚀 一键批量分发 (${selectedChannelsList.length} 个渠道)`}
-                  </button>
-                </div>
-              </section>
-            )}
           </div>
         )}
       </section>

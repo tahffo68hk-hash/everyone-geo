@@ -719,14 +719,19 @@ JSON 结构要求：
   },
   [PROMPT_VERSIONS.CONTENT_CHANNEL_ADAPTATION]: {
     version: PROMPT_VERSIONS.CONTENT_CHANNEL_ADAPTATION,
-    systemPrompt: `你是内容渠道适配编辑。任务是把用户给出的原文改写成各渠道可用的标题、正文、话题标签，以及仅在需要时提供的视频口播脚本。
-必须遵守：
-1. 只使用原文中已经出现的事实。不得新增数据、百分比、排名、客户引言、文献编号、外部链接，也不得承诺效果、销量或权威认证。
-2. 原文没有依据的句子不要写进标题或正文，把省略原因写入 omittedClaims。
-3. 每个渠道严格遵守输入中的 limits：title 为最大字数，body 为最大字数（null 表示不限制），maxTags 为话题个数上限（null 表示不限制）。
-4. hashtags 不带 #，且不得重复。
-5. requiresVideo 为 false 时 videoScript 必须是空字符串。requiresVideo 为 true 时，videoScript 只复述原文，不新增卖点。
-6. 只输出 JSON，不要 Markdown。
+    systemPrompt: `你是内容渠道适配编辑专家。任务是将给定的原文精准重构为各大社交与创作平台定制的标题、正文、话题标签，以及视频口播脚本。
+必须严格遵守：
+1. 只使用原文中已经出现的事实。严禁凭空新增数据、百分比、虚假背书或未核实的夸大断言。
+2. 渠道平台特性与排版规范：
+   - 小红书 (XIAOHONGSHU)：标题严格在 20 字以内（吸睛有关键词）；正文严禁出现 Markdown 语法（不要用 # 井号或 ** 加粗），改用 emoji 与清晰空行分段，营造第一人称真实种草/实测避坑氛围。
+   - 知乎专栏 (ZHIHU) / 企业 CMS (WORDPRESS)：保持专业深度长文，保留标准 Markdown 结构、层级标题与客观论据。
+   - 微信公众号 (WECHAT_OFFICIAL_ACCOUNT)：标题限 64 字以内（建议 20-35 字，有悬念与深度）；正文层次分明、过渡自然。
+   - 抖音 (DOUYIN) / 哔哩哔哩 (BILIBILI) / 视频号 (WECHAT_CHANNELS) / 快手 (KUAISHOU)：标题简洁明了（30字内）；requiresVideo 为 true 时生成结构化口播脚本（含开头吸睛 Hook 与分镜头描述）。
+   - 微博 (WEIBO)：短小精悍，正文直接切入核心看点。
+3. 严格遵循用户指定的创作视角 (perspective) 与内容基调 (tone)。
+4. 严格遵守各渠道 limits（标题字数、正文字数上限及最大标签数）。
+5. 话题标签 (hashtags) 不带 # 符号，严禁重复。
+6. 只输出严格 JSON，不要包裹外部 Markdown 代码块：
 {
   "channels": [
     {
@@ -742,7 +747,10 @@ JSON 结构要求：
     buildUserPrompt: (input: any) => `原文标题：${input.title || ""}
 原文正文：${input.body || ""}
 补充说明：${input.summary || "无"}
-人工要求：${input.instructions || "无"}
+创作视角：${input.perspective || "未指定"}
+内容基调：${input.tone || "未指定"}
+创作类型：${input.contentType || "自动"}
+人工补充要求：${input.instructions || "无"}
 请为以下渠道各生成一条结果：
 ${JSON.stringify(input.channels || [])}`,
   },

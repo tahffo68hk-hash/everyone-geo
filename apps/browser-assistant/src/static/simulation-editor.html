@@ -153,7 +153,33 @@
     </div>
   </header>
 
+  <!-- 创作者新手引导浮层 (用于验证 dismiss_popovers 机制) -->
+  <div class="guide-popover d-popover driver-popover-item" id="novice-guide" style="position: fixed; bottom: 24px; right: 24px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px 18px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 9999; max-width: 320px;">
+    <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+      <span>💡</span> 创作者平台新手指南
+    </div>
+    <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">
+      支持图文、视频与专栏发布，自动化流水线已就绪。
+    </p>
+    <button type="button" class="btn-secondary" id="dismiss-guide-btn" onclick="document.getElementById('novice-guide').remove()" style="font-size: 11px; padding: 4px 12px;">
+      我知道了 (不用了)
+    </button>
+  </div>
+
   <div class="container">
+    <!-- 创作类型选择导航栏 (CONTENT_TYPE_SELECTION) -->
+    <div class="creation-tabs-container" style="display: flex; gap: 8px; margin-bottom: 16px;">
+      <button type="button" class="type-tab tab publish-tab" id="tab-image-text" onclick="switchType('IMAGE_TEXT', this)" style="padding: 8px 18px; border-radius: 6px; border: 1px solid #2563eb; background: #2563eb; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;">
+        上传图文
+      </button>
+      <button type="button" class="type-tab tab publish-tab" id="tab-video" onclick="switchType('VIDEO_SCRIPT', this)" style="padding: 8px 18px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; font-weight: 500; font-size: 13px; cursor: pointer;">
+        视频投稿
+      </button>
+      <button type="button" class="type-tab tab publish-tab" id="tab-article" onclick="switchType('ARTICLE', this)" style="padding: 8px 18px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; font-weight: 500; font-size: 13px; cursor: pointer;">
+        写文章
+      </button>
+    </div>
+
     <div class="card">
       <div class="field-group">
         <label for="sim-title">文章标题</label>
@@ -263,6 +289,22 @@
     window.removeTag = function(idx) {
       tags.splice(idx, 1);
       renderTags();
+    };
+
+    window.switchType = function(type, el) {
+      document.querySelectorAll('.type-tab').forEach(b => {
+        b.style.borderColor = '#cbd5e1';
+        b.style.background = '#fff';
+        b.style.color = '#475569';
+        b.classList.remove('active');
+      });
+      if (el) {
+        el.style.borderColor = '#2563eb';
+        el.style.background = '#2563eb';
+        el.style.color = '#fff';
+        el.classList.add('active');
+      }
+      document.body.setAttribute('data-active-type', type);
     };
 
     mediaInput.addEventListener('change', (e) => {

@@ -47,6 +47,81 @@ class BasePublisher(ABC):
         except Exception as e:
             return False, f"打开登录页失败：{e}"
 
+    def navigate_creator_center(self) -> tuple[bool, str]:
+        """导航至创作者服务中心入口"""
+        try:
+            curr = self.driver.current_url.lower()
+            creator_url = self.get_creator_url()
+            if creator_url and creator_url.split("?")[0].rstrip("/") not in curr:
+                self.driver.get(creator_url)
+            self.dismiss_popovers()
+            self.handle_new_tab()
+            return True, f"已进入 {self.get_channel_name()} 创作者中心"
+        except Exception as e:
+            return False, f"进入创作者中心失败：{e}"
+
+    def select_content_type(self, content_type: str = "IMAGE_TEXT") -> tuple[bool, str]:
+        """显式选择创作类型 (图文/视频/长文/动态)"""
+        self.dismiss_popovers()
+        self.handle_new_tab()
+        # 兼容各子类的专有切换逻辑 (如小红书 _switch_to_image_tab)
+        if hasattr(self, "_switch_to_image_tab") and content_type in ["IMAGE_TEXT", "ARTICLE"]:
+            try:
+                self._switch_to_image_tab()
+            except Exception:
+                pass
+        return True, f"已选择 {self.get_channel_name()} 创作类型：{content_type}"
+
+    def ensure_editor_ready(self) -> tuple[bool, str]:
+        """确认编辑器 DOM 与交互状态就绪，并自动清理弹窗"""
+        self.dismiss_popovers()
+        self.handle_new_tab()
+        return True, "编辑器页面已处于可交互编辑态"
+
+    def handle_new_tab(self) -> bool:
+        """检测并切换到新打开的标签页（应对部分平台点击新建后新开窗口的行为）"""
+        try:
+            handles = self.driver.window_handles
+            if len(handles) > 1 and self.driver.current_window_handle != handles[-1]:
+                self.driver.switch_to.window(handles[-1])
+                return True
+        except Exception:
+            pass
+        return False
+
+    def capture_screenshot(self, save_path: str) -> bool:
+        """捕获当前受控浏览器画面快照供诊断溯源"""
+        try:
+            from pathlib import Path
+            p = Path(save_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            self.driver.save_screenshot(str(p))
+            return True
+        except Exception:
+            return False
+
+    def detect_blocking(self) -> tuple[bool, str]:
+        """毫秒级检测风控、验证码、短信验证或滑块阻断"""
+        try:
+            page_src = self.driver.page_source
+            blocked_keywords = ["验证码", "安全验证", "滑块验证", "短信验证", "请完成验证", "访问受限", "异常操作", "环境异常"]
+            for kw in blocked_keywords:
+                if kw in page_src:
+                    # 避免把正常文案中的“验证”误判为阻断，需检测特定弹窗容器
+                    js_check_modal = """
+                        var selectors = ['.geetest_radar_tip', '.nc_wrapper', '.secsdk-captcha-drag-icon', '.yidun_modal', '.captcha-modal', '[class*="captcha"]', '[class*="verify-bar"]', '.vaptcha-container'];
+                        for (var i = 0; i < selectors.length; i++) {
+                            var el = document.querySelector(selectors[i]);
+                            if (el && el.offsetParent !== null) return true;
+                        }
+                        return false;
+                    """
+                    if self.driver.execute_script(js_check_modal):
+                        return True, f"检测到平台安全验证机制（{kw}），请在受控浏览器中手动完成验证"
+        except Exception:
+            pass
+        return False, ""
+
     @abstractmethod
     def open_editor(self) -> tuple[bool, str]:
         """

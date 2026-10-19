@@ -133,7 +133,16 @@ export interface ChannelAdaptationResult {
 export async function adaptContentWithAi(
   projectId: string,
   draftId: string,
-  payload: { channels: string[]; revisionId?: string; instructions?: string; force?: boolean; provider?: "mock" | "auto" },
+  payload: {
+    channels: string[];
+    revisionId?: string;
+    instructions?: string;
+    force?: boolean;
+    provider?: "mock" | "auto" | "deepseek" | "qwen";
+    perspective?: string;
+    tone?: string;
+    contentType?: string;
+  },
 ): Promise<ChannelAdaptationResult> {
   return api<ChannelAdaptationResult>(`/projects/${projectId}/content-drafts/${draftId}/ai/channel-adaptation`, {
     method: "POST",

@@ -7,7 +7,7 @@ export class StartBenchmarkRunDto {
 
   /**
    * demo 只允许 mock provider（绝不产生真实调用）；
-   * real 只允许 deepseek provider 且受 REAL_PROVIDER_MAX_RUNS_PER_TASK 上限约束。
+   * real 允许真实 provider（deepseek / qwen 等）。
    */
   @IsIn(["demo", "real"], { message: "runType 必须为 demo 或 real" })
   runType!: "demo" | "real";

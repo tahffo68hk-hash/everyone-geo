@@ -31,6 +31,48 @@ class LocalSimulationPublisher(BasePublisher):
             return f"file:///{str(local_html).replace(os.sep, '/')}"
         return f"{self.server_url}/static/simulation-editor.html"
 
+    def dismiss_popovers(self):
+        """清理新手引导浮层"""
+        try:
+            self.driver.execute_script("""
+                var guide = document.getElementById('novice-guide');
+                if (guide) guide.remove();
+                var popovers = document.querySelectorAll('.guide-popover, .d-popover, .driver-popover-item');
+                popovers.forEach(function(p){ p.remove(); });
+            """)
+        except Exception:
+            pass
+
+    def select_content_type(self, content_type: str = "IMAGE_TEXT") -> tuple[bool, str]:
+        """选择创作类型 (图文 / 视频 / 专栏文章)"""
+        try:
+            self.dismiss_popovers()
+            tab_id = "tab-image-text"
+            if content_type in ["VIDEO", "VIDEO_SCRIPT"]:
+                tab_id = "tab-video"
+            elif content_type in ["ARTICLE", "COLUMN"]:
+                tab_id = "tab-article"
+
+            tab_elem = self.safe_find(By.ID, tab_id, timeout=3)
+            if tab_elem:
+                self.driver.execute_script("arguments[0].click();", tab_elem)
+                return True, f"仿真平台已成功切换至创作类型：{content_type} ({tab_id})"
+            return True, f"未找到专有 Tab，保持默认创作类型：{content_type}"
+        except Exception as e:
+            return False, f"切换创作类型失败：{e}"
+
+    def ensure_editor_ready(self) -> tuple[bool, str]:
+        """确保编辑器可交互"""
+        try:
+            self.dismiss_popovers()
+            title_elem = self.safe_find(By.ID, "sim-title", timeout=5)
+            body_elem = self.safe_find(By.ID, "sim-body", timeout=5)
+            if title_elem and body_elem:
+                return True, "仿真创作编辑器表单已就绪并可编辑"
+            return False, "未能定位到仿真编辑输入框"
+        except Exception as e:
+            return False, f"编辑器就绪探测失败：{e}"
+
     def check_login(self) -> tuple[bool, str, dict[str, Any]]:
         """检查仿真页面登录态"""
         try:
