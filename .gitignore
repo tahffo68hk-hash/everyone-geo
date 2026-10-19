@@ -1,6 +1,7 @@
 node_modules/
 .next/
 .env*
+!.env.example
 data/*.db*
 uploads/
 test-results/
@@ -11,3 +12,15 @@ test-results/
 data/profiles/
 data/browsers/
 data/operator-cookies.json
+
+# Local runtime state, credentials, browser sessions and diagnostics
+data/
+.auth/
+playwright/.auth/
+playwright-report/
+blob-report/
+coverage/
+*.log
+*.pem
+*.key
+.DS_Store

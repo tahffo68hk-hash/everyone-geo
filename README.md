@@ -2,7 +2,7 @@
 
 中文 GEO MVP：品牌输入 → 监测问题 → 模型回答 → 证据报告 → 优化建议 → 多渠道内容草稿 → 浏览器准备填写 → 人工审核。
 
-五个主页面已可运行，Mock 全流程验收通过。报告由存储的回答实时计算；本次验收回答均为 **模拟数据/未真实验证**。DeepSeek、Qwen/DashScope、通用 OpenAI-compatible 已实现，**真实模型 API 验证为 0 次**。真实平台均未登录验收，未执行公开发布或 Git push。
+五个主页面已可运行，Mock 全流程验收通过。报告由存储的回答实时计算，Mock 回答明确标为 **模拟数据/未真实验证**。DeepSeek、Qwen/DashScope、通用 OpenAI-compatible 已实现。2026-10-19 的已有验证记录包含真实 DeepSeek 调用及 B站 PREPARE_ONLY 上传、填写和回读；这不代表 GEO 优化效果已验证，也不代表已公开发布。GitHub 同步状态应以远端分支和本地 HEAD 的实际比对为准。
 
 ## 安装与启动
 
@@ -66,7 +66,7 @@ WordPress 走 REST API，只创建 `status=draft` 的文章；站点、用户名
 | ------------------ | ---------------- | ---------------------------- | ---------------------------------------- |
 | 小红书             | 图文             | Playwright 准备填写          | 未验证-待用户登录                        |
 | 抖音               | 视频             | Playwright 准备填写          | 未验证-待用户登录                        |
-| B站                | 视频             | Playwright 准备填写          | 未验证-待用户登录                        |
+| B站                | 视频             | Playwright 准备填写          | 已有真实上传、填写和回读记录；未公开发布 |
 | 微信视频号         | 视频             | Playwright 准备填写          | 未验证-待用户登录                        |
 | 快手               | 视频             | Playwright 准备填写          | 未验证-待用户登录                        |
 | 微博               | 图文、文章       | Playwright 准备填写          | 未验证-待用户登录                        |
@@ -77,7 +77,7 @@ WordPress 走 REST API，只创建 `status=draft` 的文章；站点、用户名
 | WordPress          | 文章             | REST 草稿，无浏览器执行器    | 未验证-待用户登录（另需应用密码授权）    |
 | 本地 test-platform | 图文、文章、视频 | Playwright 测试页面          | 本地图片上传、填写、回读通过，非真实平台 |
 
-选择器移植与许可见 `NOTICE`，原版 GeoLens 仓库只读参考，未修改。没有任何真实平台完成已登录媒体上传验收；规格十五 H 仍待授权账号验证。
+选择器移植与许可见 `NOTICE`，原版 GeoLens 仓库只读参考，未修改。B站已有真实 PREPARE_ONLY 记录（见 `screenshots/bili-real-*`）；其他平台及用户人工接管仍待授权验证。B站封面、声明和标签的最终结果仍需用户审核。
 
 ## 验证与截图
 
@@ -105,9 +105,9 @@ npm run test:publish       # 发布 API、ZIP、禁止测试任务登记发布�
 
 核心代码：`src/lib/gateway.ts`、`metrics.ts`、`content.ts`，`src/app/api/`，`src/components/`，`scripts/publisher/`。数据库结构在 `scripts/schema.sql`。开发修改 Next.js 前先读 `node_modules/next/dist/docs/`。
 
-本地 Git 历史在标准 `.git` 中，直接 `git log` / `git commit` 即可（未配置远端，勿 push）。
+本地 Git 历史在标准 `.git` 中，最终提交号见 `git log -1 --oneline`。发布前检查 `git remote -v` 和 `git status`，推送后用 `git ls-remote <远端> refs/heads/<分支>` 与 `git rev-parse HEAD` 比对；仅本地提交不等于 GitHub 已同步。
 
-未 push；最终提交号见 `git log -1 --oneline`。
+`.env.example` 仅提供空值示例。`.env*`（示例除外）、整个 `data/`、上传文件、浏览器登录态、测试产物和日志均不应进入 Git。`.gitignore` 不会移除已经跟踪的文件，也不会清除历史中的内容；新增截图需检查是否包含个人信息或凭据。不要将数据库、Cookie、Profile 或包含密钥的日志推送到 GitHub。
 
 ## 云端账号绑定
 
