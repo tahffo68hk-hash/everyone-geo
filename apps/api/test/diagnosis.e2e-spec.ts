@@ -14,7 +14,7 @@ import { AppModule } from "../src/app.module";
 import { M6B_ANALYSIS_VERSION } from "../src/competitors/competitors.service";
 
 const M4 = "m4-rule-v1";
-const DIAG = "geolens-diagnosis-v1";
+const DIAG = "geolens-diagnosis-v2";
 const SEV_W = { HIGH: 100, MEDIUM: 60, LOW: 30, INFO: 10 } as Record<string, number>;
 
 interface AnalysisSpec {
@@ -29,6 +29,7 @@ interface AnalysisSpec {
 interface RunSpec {
   projectId: string; taskId: string; bRunId: string; engineId: string; provider: string;
   runStatus?: "SUCCEEDED" | "FAILED";
+  sanity?: boolean;
   analyses?: AnalysisSpec[];
 }
 
@@ -55,7 +56,7 @@ describe("Diagnosis M7A e2e", () => {
     await prisma.benchmarkRunQuery.create({ data: {
       benchmarkRunId: spec.bRunId, benchmarkQueryId: randomUUID(), projectQueryId: query.id,
       queryText: query.text, category: ["tool-discovery", "comparison"][seq.n % 2],
-      intent: `intent ${seq.n}`, locale: "zh-CN", sortOrder: seq.n, sanity: false,
+      intent: `intent ${seq.n}`, locale: "zh-CN", sortOrder: seq.n, sanity: spec.sanity ?? false,
     } });
     seq.n += 1;
     const evidence = await prisma.evidence.create({ data: {
@@ -315,6 +316,40 @@ describe("Diagnosis M7A e2e", () => {
     expect(supported.COMPETITOR_DOMINANCE).toBe(false);
     expect(supported.COMPETITOR_RECOMMENDED_TARGET_ABSENT).toBe(false);
     expect(supported.PROVIDER_GAP).toBe(false);
+  });
+
+  it("品牌校验问题不进入自然发现诊断分母", async () => {
+    const fixture = await mkBenchmark({
+      organizationId: ids.orgA, projectId: ids.projectA, engineId: ids.engMock,
+      provider: "mock", count: 5,
+    });
+    for (let i = 0; i < 3; i++) {
+      await addRun({
+        projectId: ids.projectA, taskId: fixture.task.id, bRunId: fixture.bRun.id,
+        engineId: ids.engMock, provider: "mock", analyses: [
+          { version: M4, brandMentioned: false, recommended: false },
+        ],
+      });
+    }
+    for (let i = 0; i < 2; i++) {
+      await addRun({
+        projectId: ids.projectA, taskId: fixture.task.id, bRunId: fixture.bRun.id,
+        engineId: ids.engMock, provider: "mock", sanity: true, analyses: [
+          { version: M4, brandMentioned: true, recommended: true, mentionPosition: 1 },
+        ],
+      });
+    }
+    const report = await makeReport(fixture.bRun.id, M4);
+    expect(report.status).toBe(201);
+    const diagnosis = await makeDiagnosis(report.body.id);
+    expect(diagnosis.status).toBe(201);
+    const result = await owner.get(`/diagnoses/${diagnosis.body.id}/findings`).expect(200);
+    const visibility = result.body.findings.find((x: any) => x.findingType === "LOW_VISIBILITY");
+    const sample = result.body.findings.find((x: any) => x.findingType === "DATA_QUALITY_WARNING" && x.title === "样本量较小");
+    expect(visibility.summary).toContain("3 个已分析测试问题");
+    expect(visibility.queryCount).toBe(3);
+    expect(sample.summary).toContain("仅包含 3 个已分析测试问题");
+    expect(sample.queryCount).toBe(3);
   });
 
   it("m6b report（竞品集）：CRTA + COMPETITOR_DOMINANCE 触发", async () => {

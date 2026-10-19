@@ -51,10 +51,18 @@ function ContentManagementInner() {
   const projectId = queryProjectId || contextProjectId;
 
   // 4 个主要视图 Tab: drafts (待发布内容/草稿), schemes (诊断生成方案), publications (进行中的发布任务), assets (已发布资产)
-  const tabParam = searchParams.get("tab") as "drafts" | "schemes" | "publications" | "assets" | null;
+  const requestedTab = searchParams.get("tab");
+  // Opportunity 与诊断详情页使用面向用户的 `strategy` 跳转值；内容工作台
+  // 内部的对应 Tab 名为 `schemes`，两者需在入口处归一化。
+  const tabParam = requestedTab === "strategy"
+    ? "schemes"
+    : requestedTab as "drafts" | "schemes" | "publications" | "assets" | null;
   const [activeTab, setActiveTab] = useState<"drafts" | "schemes" | "publications" | "assets">(
     tabParam && ["drafts", "schemes", "publications", "assets"].includes(tabParam) ? tabParam : "drafts",
   );
+  useEffect(() => {
+    setActiveTab(tabParam && ["drafts", "schemes", "publications", "assets"].includes(tabParam) ? tabParam : "drafts");
+  }, [tabParam]);
 
   // 数据列表状态
   const [drafts, setDrafts] = useState<Draft[]>([]);

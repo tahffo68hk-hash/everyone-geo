@@ -102,8 +102,8 @@ export class DiagnosisService {
             supportedFindingTypes: supported,
             comparisonVerdict,
             engineDurationMs: Date.now() - started,
-            generatedBy: "m7a-diagnosis-v1",
-            note: "阈值属 GeoLens internal heuristic（geolens-diagnosis-v1），非行业标准、非 LLM 因果推断。",
+            generatedBy: "m7a-diagnosis-v2",
+            note: "阈值属 GeoLens internal heuristic（geolens-diagnosis-v2）；样本口径排除品牌校验问题，非行业标准、非 LLM 因果推断。",
           } as JsonValue,
           generatedAt,
         },
@@ -352,6 +352,16 @@ export class DiagnosisService {
       };
     });
 
+    // 诊断分母必须与报告自然发现指标保持一致：品牌指名校验 Query 仅用于
+    // 验证实体识别，不计入自然曝光率、样本量或覆盖率。
+    const naturalQueries = queries.filter(query => !query.sanity);
+    const completedNaturalQueries = naturalQueries.filter(query =>
+      query.status === "SUCCEEDED" || query.status === "FAILED");
+    const succeededNaturalQueries = naturalQueries.filter(query => query.status === "SUCCEEDED");
+    const failedNaturalQueries = naturalQueries.filter(query => query.status === "FAILED");
+    const analyzedNaturalQueries = succeededNaturalQueries.filter(query =>
+      query.analysisVersion === report.analysisVersion);
+
     const reportFacts: DiagnosisReportFacts = {
       reportId: report.id,
       projectId: report.projectId,
@@ -367,11 +377,11 @@ export class DiagnosisService {
       competitorSetId: report.competitorSetId,
       competitorSetName: report.competitorSetName,
       competitorSetVersion: report.competitorSetVersion,
-      completedRuns: report.completedRuns,
-      succeededRuns: report.succeededRuns,
-      failedRuns: report.failedRuns,
-      analyzedRuns: report.analyzedRuns,
-      partial: report.partial,
+      completedRuns: completedNaturalQueries.length,
+      succeededRuns: succeededNaturalQueries.length,
+      failedRuns: failedNaturalQueries.length,
+      analyzedRuns: analyzedNaturalQueries.length,
+      partial: completedNaturalQueries.length < naturalQueries.length,
       overall,
       byCategory,
       competitor: competitorBreakdown,

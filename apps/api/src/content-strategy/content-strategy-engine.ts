@@ -30,7 +30,7 @@ export interface StrategyOpportunityInput {
   assetType?: string | null;
   contentIntent?: string | null;
   representativeQuery?: string | null;
-  targetEngines?: any;
+  targetEngines?: unknown;
   targetCompetitors?: any;
   expectedSignals?: any;
   queries?: Array<{
@@ -237,14 +237,8 @@ export class ContentStrategyEngine {
       `${topic} 怎么样`;
 
     // 提取目标引擎与竞品
-    const engines = this.extractItems(
-      opp?.targetEngines,
-      ["DeepSeek", "百度 (Baidu)", "Perplexity", "Kimi", "豆包 (Doubao)"],
-    );
-    const competitors = this.extractItems(
-      opp?.targetCompetitors,
-      [rec?.competitorName || "行业同类品牌"],
-    );
+    const engines = this.extractItems(opp?.targetEngines, []);
+    const competitors = this.extractItems(opp?.targetCompetitors, []);
 
     // ==========================================
     // AG-M9A-01: 事实核验与证据提取（杜绝虚构事实）
@@ -342,10 +336,10 @@ export class ContentStrategyEngine {
 
     if (baseline?.citationRate !== undefined && baseline?.citationRate !== null) {
       const source = (baseline.source as any) || "PROJECT_BASELINE";
-      const targetRate = target?.citationRateTarget ?? Math.min(100, Math.round(Number(baseline.citationRate) + 20));
+      const targetRate = target?.citationRateTarget ?? Number(baseline.citationRate);
       validationMetrics.push({
         metric: "GEO AI 引擎引用率 (Citation Rate)",
-        target: `在目标搜索词（如“${repQuery}”）下，AI 回答中本品牌引用率提升至 ${targetRate}%`,
+        target: `以用户设定的 ${targetRate}% 作为观察目标，不代表结果承诺`,
         evaluationMethod: "通过 GeoLens 自动化基准测试与诊断 Run 定期追踪",
         timeframe: "发布后 14-30 天",
         source,
@@ -355,8 +349,8 @@ export class ContentStrategyEngine {
     } else {
       validationMetrics.push({
         metric: "GEO AI 引擎品牌提及与推荐召回率",
-        target: `在目标搜索词（如“${repQuery}”）及其衍生意图中，显著提升各大主流 AI 引擎对【${entity}】的权威引用与推荐召回`,
-        evaluationMethod: "通过 GeoLens 自动化基准测试与模拟检索定期追踪",
+        target: `使用同一问题集观察“${entity}”的提及和推荐情况；记录变化，不预设提升幅度`,
+        evaluationMethod: "通过相同 Benchmark Suite 复测并对照报告",
         timeframe: "发布后 14-30 天",
         source: "QUALITATIVE_TARGET",
       });
@@ -364,10 +358,10 @@ export class ContentStrategyEngine {
 
     if (baseline?.brandAbsentRate !== undefined && baseline?.brandAbsentRate !== null) {
       const source = (baseline.source as any) || "PROJECT_BASELINE";
-      const targetAbsent = target?.brandAbsentRateTarget ?? Math.max(0, Math.round(Number(baseline.brandAbsentRate) - 20));
+      const targetAbsent = target?.brandAbsentRateTarget ?? Number(baseline.brandAbsentRate);
       validationMetrics.push({
         metric: "Brand Absent (未提及品牌) 比例改善",
-        target: `核心意图 Query 中未提及本品牌的比例由基线 ${baseline.brandAbsentRate}% 压降至 ${targetAbsent}% 以下`,
+        target: `以用户设定的 ${targetAbsent}% 作为观察目标，不代表结果承诺`,
         evaluationMethod: "对比优化前后 Benchmark 诊断报告中的 Brand Absent 变化",
         timeframe: "发布后 30 天",
         source,
@@ -377,8 +371,8 @@ export class ContentStrategyEngine {
     } else {
       validationMetrics.push({
         metric: "AI 检索未提及品牌 (Brand Absent) 比例改善",
-        target: `有效降低在核心意图搜索词下各大 LLM 完全遗漏【${entity}】的 Brand Absent 现象，补齐直接回答索引`,
-        evaluationMethod: "对比优化前后 Benchmark 诊断报告中的 Brand Absent 统计",
+        target: "用同一问题集比较未提及比例并记录波动，不预设下降幅度或索引结果",
+        evaluationMethod: "对比同一 Benchmark Suite 的前后报告",
         timeframe: "发布后 30 天",
         source: "QUALITATIVE_TARGET",
       });
@@ -387,22 +381,30 @@ export class ContentStrategyEngine {
     validationMetrics.push(
       {
         metric: "全网事实锚定准确度 (Grounding Accuracy)",
-        target: `确保各大生成式引擎在引用【${entity}】技术规格与服务标准时与知识库完全吻合，避免产生负面幻觉`,
-        evaluationMethod: "Fact Grounding 事实守卫审计比对",
+        target: `抽查【${entity}】相关内容是否忠实于已核实资料，缺失信息由人工复核`,
+        evaluationMethod: "逐条对照企业已核实事实与最终发布稿",
         timeframe: "发布后持续监控",
         source: "QUALITATIVE_TARGET",
       },
       {
         metric: "核心知识载体在搜索引擎与大模型长尾收录率",
-        target: `发布内容在主流搜索引擎（如微信搜一搜、百度、必应）及大模型检索增强索引中达成稳定长尾收录`,
-        evaluationMethod: "收录抓取与 AI 引用溯源分析",
+        target: "如能取得公开页面和平台数据，再观察收录与引用；不承诺被索引或引用",
+        evaluationMethod: "人工核对可访问页面，并与后续同题测量结果对照",
         timeframe: "发布后 7-14 天",
         source: "QUALITATIVE_TARGET",
       },
     );
 
     // 1. GEO 缺口 (geoGap)
-    const geoGap = `在“${repQuery}”及“${topic}”相关知识检索与决策场景中，主流 AI 引擎（${engines.join("、")}）对【${entity}】的结构化引用率严重不足或处于未收录状态，而竞品（${competitors.join("、")}）凭借更早布局的内容占据了核心推荐答案与首屏摘要位。当前在权威工作原理、多维实测数据、第三方检测证据及客观避坑指引等关键维度存在显著知识空白，直接导致大模型生成推荐时因缺乏可信引据而无法召回本品牌。`;
+    const measuredQueries = primaryCluster.allQueries;
+    const absentQueries = measuredQueries.filter((query) => query.brandAbsent === true);
+    const measurementContext = measuredQueries.length > 0
+      ? `本轮问答测试关联 ${measuredQueries.length} 个问题，其中 ${absentQueries.length} 个来源回答记录为未提及品牌${absentQueries.length > 0 ? `（例如“${absentQueries.slice(0, 2).map((query) => query.queryTextSnapshot).join("；")}”）` : ""}。`
+      : "当前内容机会没有附带问题级测量记录，不能据此判断品牌提及情况。";
+    const competitorContext = competitors.length > 0
+      ? `来源机会列出的比较对象为：${competitors.join("、")}；这不等于竞品占优或市场份额结论。`
+      : "未提供已审核竞品信息，本策略不判断竞品推荐位置或市场份额。";
+    const geoGap = `${measurementContext}内容方向围绕“${repQuery}”展开，先回答用户问题，再说明【${entity}】已确认的服务范围与地域信息。${competitorContext}价格、资质、案例、设备、周期和效果等未确认信息应留给商家核实，不把内容建设假设写成检测结论。`;
 
     // 2. 核心优先问题 (priorityQuestions)
     const priorityQuestions: StrategicPriorityQuestion[] = [];
@@ -414,58 +416,35 @@ export class ContentStrategyEngine {
           urgency: q.brandAbsent ? "P0" : "P1",
           targetEngines: engines.slice(0, 3),
           rationale: q.brandAbsent
-            ? `AI 检索此词时本品牌完全缺失，亟需补足直接回答`
-            : `高频核心搜索词，需强化权威正面引证`,
+            ? "本轮来源回答记录为未提及品牌；可围绕该问题补充可核实信息并在同一问题集复测。"
+            : "该问题已关联内容机会；发布前需核对商家事实和适用边界。",
         });
       }
     }
-    if (priorityQuestions.length < 4) {
-      priorityQuestions.push(
-        {
-          question: `${topic}的核心原理与机制是什么？真的安全有效吗？`,
-          intent: "INFORMATIONAL",
-          urgency: "P0",
-          targetEngines: engines.slice(0, 3),
-          rationale: "大模型生成定义与原理回答的基础引证来源",
-        },
-        {
-          question: `${topic}怎么选？${entity}与竞品相比优势有哪些？`,
-          intent: "COMMERCIAL_INVESTIGATION",
-          urgency: "P1",
-          targetEngines: engines.slice(0, 3),
-          rationale: "打通横向对比与选购推荐类 AI 回答的关键抓手",
-        },
-        {
-          question: `使用${topic}有哪些常见误区与避坑要点？`,
-          intent: "PRACTICAL_EXPERIENCE",
-          urgency: "P1",
-          targetEngines: ["百度", "微信搜一搜", "DeepSeek"],
-          rationale: "生活化与场景化搜索中的高粘性长尾问题",
-        },
-        {
-          question: `${topic}的正确使用步骤与日常维护规范`,
-          intent: "INSTRUCTIONAL",
-          urgency: "P2",
-          targetEngines: ["百度", "DeepSeek", "微信搜一搜"],
-          rationale: "提供教程级结构化步骤，提升 AI 抓取为 Featured Snippet 的概率",
-        },
-      );
+    if (priorityQuestions.length < 2) {
+      priorityQuestions.push({
+        question: `发布与“${repQuery}”有关的内容前，需要核实哪些服务信息？`,
+        intent: "INFORMATIONAL",
+        urgency: "P1",
+        targetEngines: engines.slice(0, 3),
+        rationale: "补足来源问题未包含的核实环节；不预设性能、资质或效果。",
+      });
     }
 
     // 3. 目标受众 (targetAudience)
-    const targetAudience = `追求专业、客观与高可靠性、重视科学决策与真实口碑的目标群体。这部分受众在面临“${topic}”相关需求时，重度依赖 AI 搜索引擎（如 DeepSeek、Kimi、百度 AI 助手）以及微信、社区等渠道进行交叉核验。其主要决策痛点是对夸大宣传敏感、担心踩坑，亟需中立的硬核数据、第三方专业背书以及落地使用指引来建立购买与使用信任。`;
+    const targetAudience = `这份内容面向正在查找“${repQuery}”答案的用户。受众描述只根据本次问题集推定；年龄、车型、预算和维修决策习惯尚未得到商家确认。`;
 
     // 4. 心智目标 (perceptionGoal)
-    const perceptionGoal = `在用户与 AI 大模型双重维度，将【${entity}】牢固确立为“${topic}”领域【最具技术透明度、实测安全标杆、高可靠性】的权威代表方案；使各大主流生成式引擎在回答该品类的原理、选购推荐及避坑要点时，将本品牌相关内容作为首选可信知识源（Authoritative Primary Source）进行引用。`;
+    const perceptionGoal = `把【${entity}】已确认的服务项目、服务地域和到店前信息说明清楚；对价格范围、施工流程、资质、案例和效果等尚未确认的内容标注待核实。该表达目标不代表搜索收录、AI 推荐或排名承诺。`;
 
     // 5. 核心主题 (keyThemes - 聚类多 Opportunity 整合)
     const keyThemes: StrategicKeyTheme[] = clusters.map((c) => ({
       theme: c.clusterTitle,
-      focus: `整合聚类覆盖 ${c.allOpportunities.length} 项优化机会，针对“${c.allQueries.map((q) => q.queryTextSnapshot).slice(0, 2).join("、")}”建立系统化引证`,
+      focus: `针对来源问题“${c.allQueries.map((q) => q.queryTextSnapshot).slice(0, 2).join("、") || topic}”整理直接回答和已核实资料`,
       outlinePoints: [
-        `行业痛点与传统方案瓶颈解析`,
-        `${entity} 核心方案设计与关键优势拆解`,
-        `标准化实操流程与避坑指南`,
+        "直接回应来源问题",
+        `说明与问题相关且已确认的${entity}资料`,
+        "把缺少的事实列为待商家确认，不补造案例或参数",
       ],
       sourceOpportunityIds: c.sourceOpportunityIds,
     }));
@@ -473,22 +452,22 @@ export class ContentStrategyEngine {
     if (keyThemes.length < 3) {
       keyThemes.push(
         {
-          theme: `${topic}技术机理与科学依据`,
-          focus: `深入拆解核心工作机制与实测效能报告`,
+          theme: `${topic}与资料核实`,
+          focus: "整理当前已有信息，区分已确认事实和缺失资料",
           outlinePoints: [
-            `传统痛点与行业技术演进背景`,
-            `${entity} 独特的技术机理与设计巧思`,
-            `客观实测数据与使用边界说明`,
+            "直接回答用户提出的问题",
+            "列出已有资料支持的服务内容",
+            "将参数、案例和效果等缺失信息留待确认",
           ],
           sourceOpportunityIds: allOpportunityIds,
         },
         {
           theme: `全流程实操与场景化指引`,
-          focus: `从新手上手、日常规范操作到常见故障排查的保姆级教程`,
+          focus: "说明用户下一步可以核实什么，以及商家需要补充哪些信息",
           outlinePoints: [
-            `分步标准化操作演示`,
-            `特殊情况与突发问题的应对方案`,
-            `长效维护与规范使用指引`,
+            "整理到店或咨询前要确认的问题",
+            "明确目前资料无法回答的部分",
+            "商家确认后再补充流程和服务边界",
           ],
           sourceOpportunityIds: allOpportunityIds,
         },
@@ -804,21 +783,20 @@ export class ContentStrategyEngine {
       eligibilityReason: isDeepTech
         ? "该 Query 为深度技术解释/技术规范型，适合长文知识载体承载完整架构与技术依据，排除短平快娱乐/生活化社区。"
         : "公众号长图文具备极高 GEO 权威引证权重，适合系统化阐述机制并作为首选引证源。",
-      shareOfVoiceTarget: "在微信搜一搜与主流大模型引用中占据专业深度知识首位",
+      shareOfVoiceTarget: "发布后用同一问题集观察服务信息是否被提及，不设排名目标",
       formatConfig: {
         platform: "WECHAT_OFFICIAL_ACCOUNT",
         format: isDeepTech ? "技术白皮书与架构规范" : "深度实操教程",
         recommendedLength: "2500-4500 字，含结构化原理图与规范说明",
-        structuralTemplate: "【问题背景】→【底层机制与架构设计】→【详细规范与实测参数】→【部署避坑】",
+        structuralTemplate: "【用户问题】→【直接回答】→【已确认的服务信息】→【待商家确认事项】",
         tone: "严谨客观、技术严密、权威可信",
       },
-      generateTitle: (topic: string) => `${topic}深度教程：从底层原理到保姆级实操全解`,
-      objective: (topic: string) => `补齐“${topic}”知识覆盖，建立官方权威指引与 AI 检索首选引证源`,
-      geoTarget: (repQuery: string) => `提高在“${repQuery}”及深度长尾检索中的引用概率与权威引据`,
+      generateTitle: (topic: string) => `${topic}说明：服务范围与需要确认的信息`,
+      objective: (topic: string) => `直接回答“${topic}”相关问题，并把已知信息与待确认事项分开说明`,
+      geoTarget: (repQuery: string) => `检查内容是否清楚回答“${repQuery}”；不承诺搜索或 AI 引用结果`,
       targetQueries: (repQuery: string, topic: string) => [
         repQuery,
-        `${topic} 正确方法`,
-        `${topic} 科学原理与评测`,
+        `${topic} 服务范围需要确认什么`,
       ],
     };
   }
@@ -827,23 +805,21 @@ export class ContentStrategyEngine {
     return {
       platform: "XIAOHONGSHU",
       label: "小红书",
-      role: "生活化场景避坑与高转化种草矩阵",
-      eligibilityReason: "生活场景与日常消费决策搜索流量大，适合图文卡片直击误区并建立直接信任。",
-      shareOfVoiceTarget: "覆盖避坑、真实体验类热门笔记关键词前 3 位",
+      role: "生活场景问题说明与实用信息整理",
+      eligibilityReason: "短段落和图文卡片适合呈现用户问题、服务说明与到店前确认事项。",
+      shareOfVoiceTarget: "发布后用同一问题集观察内容与目标问题的匹配情况，不设排名目标",
       formatConfig: {
         platform: "XIAOHONGSHU",
         format: "避坑笔记",
         recommendedLength: "600-1000 字，6-9 张高清实拍与痛点对比卡片图",
-        structuralTemplate: "【醒目避坑标题】→【3大常见误区血泪史】→【正确做法与选品参数】→【总结清单】",
+        structuralTemplate: "【用户问题】→【适用场景说明】→【可执行的确认清单】→【待商家确认项】",
         tone: "真实真诚、干货满满、接地气、口语化",
       },
-      generateTitle: (topic: string) => `关于${topic}的真实使用体验与避坑全指南`,
-      objective: (topic: string) => `覆盖真实生活场景痛点与使用误区，消除选购顾虑`,
-      geoTarget: () => `在小红书搜索及生活场景问答中占据首选避坑建议与场景种草推荐位`,
+      generateTitle: (topic: string) => `${topic}：到店或咨询前可以先确认的事项`,
+      objective: (topic: string) => `围绕“${topic}”整理用户关心的信息和服务边界，不虚构体验`,
+      geoTarget: () => "检查图文是否直接回应目标问题，不承诺推荐排名",
       targetQueries: (_: string, topic: string) => [
-        `${topic} 避坑`,
-        `${topic} 真实评价`,
-        `${topic} 真的好用吗`,
+        `${topic} 到店前确认事项`,
       ],
     };
   }
@@ -852,25 +828,23 @@ export class ContentStrategyEngine {
     return {
       platform: "BILIBILI",
       label: "Bilibili",
-      role: isDeepTech ? "硬核代码与架构实操视频演示" : "硬核深度实测视频与长效公信力背书",
+      role: isDeepTech ? "技术主题讲解视频" : "服务问题与项目差异讲解视频",
       eligibilityReason: isDeepTech
         ? "技术概念具象化视频演示，在中长视频技术圈层具备长效搜索引用价值。"
-        : "中长视频具备深度拆解公信力与长期搜索生命力，高频被 AI 视频摘要提取引用。",
-      shareOfVoiceTarget: "成为品类横评与实测选购必看的视频标杆",
+        : "中长视频可分段解释概念和服务项目；是否被搜索或引用需发布后另行验证。",
+      shareOfVoiceTarget: "发布后观察目标问题覆盖情况，不设播放量或排名承诺",
       formatConfig: {
         platform: "BILIBILI",
         format: isDeepTech ? "技术实操与代码演示" : "评测/选购视频",
         recommendedLength: "8-15 分钟中长视频，包含实拍拆解与多维数据图表",
-        structuralTemplate: "【悬念引入】→【多款横评开箱拆解】→【极端工况实测】→【优缺点总结与选购建议】",
+        structuralTemplate: "【问题引入】→【概念或项目差异】→【已有资料说明】→【待确认信息与总结】",
         tone: "硬核极客、客观中立、不吹不黑、逻辑缜密",
       },
-      generateTitle: (topic: string) => `${topic}选购全攻略与硬核横评实测：真有用还是智商税？`,
-      objective: () => `建立硬核品类专业认知，通过多维拆解实测提供不可辩驳的视频与数据事实证据`,
-      geoTarget: () => `被主流 AI 引擎在处理“选购建议”与“横评对比”意图时作为第一视频权威引用源`,
+      generateTitle: (topic: string) => `${topic}怎么选？先看项目差异和待确认信息`,
+      objective: (topic: string) => `分段解释“${topic}”相关概念；没有实测素材时不输出测试结论`,
+      geoTarget: () => "发布后观察视频是否覆盖目标问题，不承诺 AI 引用或推荐",
       targetQueries: (_: string, topic: string) => [
-        `${topic} 怎么选`,
-        `${topic} 横评`,
-        `${topic} 智商税吗`,
+        `${topic} 怎么选，需要问清什么`,
       ],
     };
   }
@@ -881,20 +855,19 @@ export class ContentStrategyEngine {
       label: "抖音",
       role: "痛点直击与大众高频认知唤醒",
       eligibilityReason: "短视频视觉冲击力强，针对日常高频误区快速唤醒认知并给出解法。",
-      shareOfVoiceTarget: "打造万赞级爆款痛点科普短视频",
+      shareOfVoiceTarget: "发布后观察目标问题覆盖情况，不承诺播放量或排名",
       formatConfig: {
         platform: "DOUYIN",
         format: "短视频脚本",
         recommendedLength: "45-60 秒，分镜 4-6 个，快节奏",
-        structuralTemplate: "【前3秒黄金痛点吸睛】→【误区危害展示】→【正确科学手法演示】→【行动号召】",
+        structuralTemplate: "【前几秒提出用户问题】→【口播直接回答】→【画面辅助说明】→【待确认事项】",
         tone: "紧凑有力、通俗易懂、视觉冲击感强",
       },
-      generateTitle: (topic: string) => `30秒看懂：${topic}正确做法与常见踩坑点`,
-      objective: (topic: string) => `通过高频短视频触达大众用户，降低认知门槛，直击使用痛点与操作手法`,
-      geoTarget: () => `强化短视频检索联想词与大众高频问答覆盖，形成广泛品牌认知`,
+      generateTitle: (topic: string) => `${topic}先别急着修：到店前先问清哪些信息`,
+      objective: (topic: string) => `用自然口播回答“${topic}”相关问题，并明确哪些细节仍需商家确认`,
+      geoTarget: () => "核对口播是否直接回应目标问题，不承诺播放、推荐或排名结果",
       targetQueries: (_: string, topic: string) => [
-        `${topic} 技巧`,
-        `${topic} 30秒教学`,
+        `${topic} 到店前需要确认什么`,
       ],
     };
   }
@@ -905,7 +878,7 @@ export class ContentStrategyEngine {
       label: "微博",
       role: "热点议题发酵、公关声明与权威事实锚定",
       eligibilityReason: "即时社交媒体适合官方辟谣、事实清单速递与热点话题锚定。",
-      shareOfVoiceTarget: "建立行业热点讨论中的官方权威引用事实源",
+      shareOfVoiceTarget: "发布后检查事实表述是否准确，不设热度或引用目标",
       formatConfig: {
         platform: "WEIBO",
         format: "热点科普与快讯",
@@ -913,7 +886,7 @@ export class ContentStrategyEngine {
         structuralTemplate: "【核心事实提炼】→【常见谣言反驳】→【官方权威验证依据】→【互动讨论设问】",
         tone: "精炼清晰、态度明确、便于转发讨论",
       },
-      generateTitle: (topic: string) => `权威解答：关于${topic}，你应该知道的5个硬核事实`,
+      generateTitle: (topic: string) => `${topic}信息整理：已知事项与待确认内容`,
       objective: () => `提炼核心事实论据，形成社交话题讨论与权威论调锚定`,
       geoTarget: () => `建立全网可检索的热门事实引用锚点，提升公信力`,
       targetQueries: (_: string, topic: string) => [
@@ -996,18 +969,23 @@ ${claimsText}
 
   private static extractItems(source: unknown, fallback: string[]): string[] {
     if (!source) return fallback;
+    const toLabel = (item: unknown): string => {
+      if (typeof item === "string") return item.trim();
+      if (typeof item !== "object" || item === null) return "";
+      const value = item as Record<string, unknown>;
+      for (const key of ["engineName", "displayName", "canonicalName", "name", "label", "provider", "model"]) {
+        if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
+      }
+      return "";
+    };
     if (Array.isArray(source)) {
-      const arr = source
-        .map((s) => (typeof s === "string" ? s : s?.name || s?.id || String(s)))
-        .filter(Boolean);
+      const arr = source.map(toLabel).filter(Boolean);
       return arr.length > 0 ? arr : fallback;
     }
     if (typeof source === "object") {
       const items = (source as any).items;
       if (Array.isArray(items)) {
-        const arr = items
-          .map((s) => (typeof s === "string" ? s : s?.name || s?.id || String(s)))
-          .filter(Boolean);
+        const arr = items.map(toLabel).filter(Boolean);
         return arr.length > 0 ? arr : fallback;
       }
     }

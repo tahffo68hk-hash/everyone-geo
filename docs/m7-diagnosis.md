@@ -55,7 +55,7 @@ DiagnosisRun ── DiagnosisFinding ── DiagnosisFindingEvidence（只归档
 
 ## Version
 
-- 集中常量：`DIAGNOSIS_VERSION = 'geolens-diagnosis-v1'`（geo-core）。
+- 集中常量：`DIAGNOSIS_VERSION = 'geolens-diagnosis-v2'`（geo-core）。自然发现诊断样本排除品牌校验 Query，历史 v1 诊断快照保留原语义。
 - 未来改规则/阈值 → 新增 `geolens-diagnosis-v2`，**不改 v1 历史含义**（旧 DiagnosisRun 保持原 Finding）。
 
 ## Finding types（v1）

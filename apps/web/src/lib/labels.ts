@@ -349,7 +349,7 @@ export const NAV_LABELS = {
 /* ---------------------------------------------------------------
  * M7A — GEO 问题诊断（Diagnosis / Finding / Severity 中文映射）
  * ---------------------------------------------------------------- */
-export const DIAGNOSIS_VERSION_LABEL = "geolens-diagnosis-v1";
+export const DIAGNOSIS_VERSION_LABEL = "geolens-diagnosis-v2";
 
 export const FINDING_TYPE: Dict = {
   LOW_VISIBILITY: "品牌整体可见度偏低",

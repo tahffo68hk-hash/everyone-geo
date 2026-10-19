@@ -8,9 +8,9 @@
  *     不是 LLM 因果推断；样本量影响结论可靠性 —— DATA_QUALITY_WARNING 总是先产出。
  *   - Finding 的 evidenceLinks 指向已有 Evidence（runId/evidenceId/queryText 快照），
  *     绝不复制 rawResponse —— Evidence 仍唯一事实源且不可变。
- *   - diagnosisVersion 集中常量：未来规则变化 → geolens-diagnosis-v2，不改 v1 语义。
+ *   - diagnosisVersion 集中常量：自然发现口径排除品牌校验 Query，升级到 v2，历史 v1 快照不改写。
  */
-export const DIAGNOSIS_VERSION = 'geolens-diagnosis-v1';
+export const DIAGNOSIS_VERSION = 'geolens-diagnosis-v2';
 
 export type DiagnosisSeverity = 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
 
@@ -236,7 +236,7 @@ export function evaluateDataQuality(input: DiagnosisInput): DiagnosisCandidate[]
       category: null,
       title: '样本量较小',
       summary: `当前报告仅包含 ${eligible} 个已分析测试问题（成功 ${r.succeededRuns} / 失败 ${r.failedRuns}）。以下诊断仅作为初步信号，不代表稳定 GEO 表现。`,
-      explanation: `阈值属 GeoLens internal heuristic（geolens-diagnosis-v1：sampleSize<${DIAGNOSIS_V1_RULES.sampleSize.high} 高 / <${DIAGNOSIS_V1_RULES.sampleSize.medium} 中 / <${DIAGNOSIS_V1_RULES.sampleSize.low} 低）。样本量影响结论可靠性，请勿将小样本解读为稳定行业结论。`,
+      explanation: `阈值属 GeoLens internal heuristic（geolens-diagnosis-v2：sampleSize<${DIAGNOSIS_V1_RULES.sampleSize.high} 高 / <${DIAGNOSIS_V1_RULES.sampleSize.medium} 中 / <${DIAGNOSIS_V1_RULES.sampleSize.low} 低）。样本量影响结论可靠性，请勿将小样本解读为稳定行业结论。`,
       metricName: 'analyzedRuns', currentValue: eligible, referenceValue: DIAGNOSIS_V1_RULES.sampleSize.low,
       queryCount: eligible, evidenceCount: 0, provider: null, requestedModel: null, responseModel: null,
       competitorName: null, priorityScore: computePriorityScore(severity, eligible, eligible, 0),
@@ -247,7 +247,7 @@ export function evaluateDataQuality(input: DiagnosisInput): DiagnosisCandidate[]
       findingType: 'DATA_QUALITY_WARNING', severity: 'HIGH', category: null,
       title: '没有可诊断的成功样本',
       summary: `该报告没有可用于诊断的已分析成功样本（成功 ${r.succeededRuns} / 失败 ${r.failedRuns}）。请先完成 Benchmark Run 或检查分析版本。`,
-      explanation: 'geolens-diagnosis-v1：成功样本为 0 时诊断无事实基础，仅输出数据质量提示。',
+      explanation: 'geolens-diagnosis-v2：成功样本为 0 时诊断无事实基础，仅输出数据质量提示。',
       metricName: 'analyzedRuns', currentValue: 0, referenceValue: 1,
       queryCount: 0, evidenceCount: 0, provider: null, requestedModel: null, responseModel: null,
       competitorName: null, priorityScore: computePriorityScore('HIGH', 0, 1, 0), evidenceLinks: [],
@@ -262,7 +262,7 @@ export function evaluateDataQuality(input: DiagnosisInput): DiagnosisCandidate[]
       findingType: 'DATA_QUALITY_WARNING', severity, category: null,
       title: '成功样本率偏低',
       summary: `成功样本 ${r.succeededRuns}/${finished}（${(ratio * 100).toFixed(1)}%）。失败样本不进入分母，覆盖率不完整，对比与诊断需谨慎。`,
-      explanation: 'geolens-diagnosis-v1：successRateMin=0.8；低于 0.5 为高、0.5–0.8 为中。失败 Provider run 不计入 successful denominator。',
+      explanation: 'geolens-diagnosis-v2：successRateMin=0.8；低于 0.5 为高、0.5–0.8 为中。失败 Provider run 不计入 successful denominator。',
       metricName: 'succeededRuns', currentValue: r.succeededRuns, referenceValue: Math.ceil(DIAGNOSIS_V1_RULES.successRateMin * finished),
       queryCount: finished, evidenceCount: 0, provider: null, requestedModel: null, responseModel: null,
       competitorName: null, priorityScore: computePriorityScore(severity, finished, Math.max(finished, 1), 0), evidenceLinks: [],
@@ -275,7 +275,7 @@ export function evaluateDataQuality(input: DiagnosisInput): DiagnosisCandidate[]
       findingType: 'DATA_QUALITY_WARNING', severity: 'MEDIUM', category: null,
       title: '报告为部分完成',
       summary: `该报告基于部分完成状态生成（成功 ${r.succeededRuns} / 失败 ${r.failedRuns}），不代表完整测试集结论。`,
-      explanation: 'geolens-diagnosis-v1：PARTIAL 报告保留成功/失败分母，诊断只对已成功样本负责。',
+      explanation: 'geolens-diagnosis-v2：PARTIAL 报告保留成功/失败分母，诊断只对已成功样本负责。',
       metricName: 'succeededRuns', currentValue: r.succeededRuns, referenceValue: r.completedRuns,
       queryCount: 0, evidenceCount: 0, provider: null, requestedModel: null, responseModel: null,
       competitorName: null, priorityScore: computePriorityScore('MEDIUM', 0, 1, 0), evidenceLinks: [],
@@ -291,7 +291,7 @@ export function evaluateDataQuality(input: DiagnosisInput): DiagnosisCandidate[]
       summary: isDemo
         ? '该报告基于演示（Mock 模拟）数据。以下诊断为演示诊断，不代表真实 Provider 的 GEO 表现。'
         : '该报告含演示数据，指标仅基于真实子集；诊断口径与演示部分不同，请谨慎解读。',
-      explanation: 'geolens-diagnosis-v1：Demo/Real 强隔离。演示报告不得伪装真实结论，UI 标注「演示诊断」。',
+      explanation: 'geolens-diagnosis-v2：Demo/Real 强隔离。演示报告不得伪装真实结论，UI 标注「演示诊断」。',
       metricName: 'metricSource', currentValue: null, referenceValue: null,
       queryCount: 0, evidenceCount: 0, provider: null, requestedModel: null, responseModel: null,
       competitorName: null, priorityScore: computePriorityScore(isDemo ? 'INFO' : 'MEDIUM', 0, 1, 0), evidenceLinks: [],
@@ -323,7 +323,7 @@ export function evaluateLowVisibility(input: DiagnosisInput): DiagnosisCandidate
     findingType: 'LOW_VISIBILITY', severity, category: null,
     title: '品牌整体可见度偏低',
     summary: `${r.analyzedRuns} 个已分析测试问题中，品牌仅在 ${mentionedCount} 个回答中被提及（可见率 ${(rate * 100).toFixed(1)}%）。`,
-    explanation: `geolens-diagnosis-v1：visibilityRate 阈值 <${(DIAGNOSIS_V1_RULES.visibility.high * 100).toFixed(0)}% 高 / <${(DIAGNOSIS_V1_RULES.visibility.medium * 100).toFixed(0)}% 中 / <${(DIAGNOSIS_V1_RULES.visibility.low * 100).toFixed(0)}% 低（internal heuristic）。品牌可见率偏低=品牌经常不出现在 AI 回答中。`,
+    explanation: `geolens-diagnosis-v2：visibilityRate 阈值 <${(DIAGNOSIS_V1_RULES.visibility.high * 100).toFixed(0)}% 高 / <${(DIAGNOSIS_V1_RULES.visibility.medium * 100).toFixed(0)}% 中 / <${(DIAGNOSIS_V1_RULES.visibility.low * 100).toFixed(0)}% 低（internal heuristic）。品牌可见率偏低=品牌经常不出现在 AI 回答中。`,
     metricName: 'visibilityRate', currentValue: rate, referenceValue: DIAGNOSIS_V1_RULES.visibility.low,
     queryCount: absent, evidenceCount: links.length, provider: r.provider,
     requestedModel: r.requestedModel, responseModel: r.responseModel, competitorName: null,
@@ -353,7 +353,7 @@ export function evaluateLowRecommendation(input: DiagnosisInput): DiagnosisCandi
     findingType: 'LOW_RECOMMENDATION', severity, category: null,
     title: '品牌推荐表现偏弱',
     summary: `品牌在 ${mentioned.length} 个问题中被提及，其中仅 ${recommended} 个获得推荐（推荐率 ${(ratio * 100).toFixed(1)}%）。`,
-    explanation: `geolens-diagnosis-v1：推荐率（被提及样本中 recommended 占比）阈值 <${(DIAGNOSIS_V1_RULES.recommendationAmongMentioned.high * 100).toFixed(0)}% 高 / <${(DIAGNOSIS_V1_RULES.recommendationAmongMentioned.medium * 100).toFixed(0)}% 中 / <${(DIAGNOSIS_V1_RULES.recommendationAmongMentioned.low * 100).toFixed(0)}% 低。仅当品牌被提及样本 ≥${DIAGNOSIS_V1_RULES.recommendationMinMentioned} 才触发（否则样本不足交由 DATA_QUALITY_WARNING）。区别于可见性问题：品牌能出现，但 AI 未优先推荐。`,
+    explanation: `geolens-diagnosis-v2：推荐率（被提及样本中 recommended 占比）阈值 <${(DIAGNOSIS_V1_RULES.recommendationAmongMentioned.high * 100).toFixed(0)}% 高 / <${(DIAGNOSIS_V1_RULES.recommendationAmongMentioned.medium * 100).toFixed(0)}% 中 / <${(DIAGNOSIS_V1_RULES.recommendationAmongMentioned.low * 100).toFixed(0)}% 低。仅当品牌被提及样本 ≥${DIAGNOSIS_V1_RULES.recommendationMinMentioned} 才触发（否则样本不足交由 DATA_QUALITY_WARNING）。区别于可见性问题：品牌能出现，但 AI 未优先推荐。`,
     metricName: 'recommendationRate', currentValue: ratio, referenceValue: DIAGNOSIS_V1_RULES.recommendationAmongMentioned.low,
     queryCount: notRec, evidenceCount: links.length, provider: r.provider,
     requestedModel: r.requestedModel, responseModel: r.responseModel, competitorName: null,
@@ -394,7 +394,7 @@ export function evaluateCategoryGap(input: DiagnosisInput): DiagnosisCandidate[]
       findingType: 'CATEGORY_GAP', severity, category: row.category,
       title: `${row.category} 场景存在明显品牌缺口`,
       summary: `「${row.category}」场景：可见率 ${(catVis * 100).toFixed(1)}%（${row.queryMentionedCount}/${row.queryEligibleCount} 提及），总体可见率 ${(overallVis * 100).toFixed(1)}%。`,
-      explanation: 'geolens-diagnosis-v1：category 可见率为 0（样本≥2 且 overall>0）→ HIGH；低于 overall 超过 15pp → MEDIUM/LOW。场景分类使用 Benchmark canonical category。',
+      explanation: 'geolens-diagnosis-v2：category 可见率为 0（样本≥2 且 overall>0）→ HIGH；低于 overall 超过 15pp → MEDIUM/LOW。场景分类使用 Benchmark canonical category。',
       metricName: 'visibilityRate', currentValue: catVis, referenceValue: overallVis,
       queryCount: absent.length, evidenceCount: links.length, provider: r.provider,
       requestedModel: r.requestedModel, responseModel: r.responseModel, competitorName: null,
@@ -443,7 +443,7 @@ export function evaluateQueryGap(input: DiagnosisInput): DiagnosisCandidate[] {
       findingType: 'QUERY_GAP', severity, category,
       title: `${label}存在品牌缺席的问题`,
       summary: `${anchored.length} 个已分析问题中品牌未出现：${anchored.slice(0, 3).map(q => `“${q.queryText}”`).join('、')}${anchored.length > 3 ? ' 等' : ''}。`,
-      explanation: 'geolens-diagnosis-v1：仅当缺席 query 带锚点才报——(A) 已审核竞品被提及/被推荐，或 (C) 跨 Provider 对比中两侧均缺席。无锚点的纯缺席归入 CATEGORY_GAP / LOW_VISIBILITY，避免噪声。',
+      explanation: 'geolens-diagnosis-v2：仅当缺席 query 带锚点才报——(A) 已审核竞品被提及/被推荐，或 (C) 跨 Provider 对比中两侧均缺席。无锚点的纯缺席归入 CATEGORY_GAP / LOW_VISIBILITY，避免噪声。',
       metricName: 'visibilityRate', currentValue: 0, referenceValue: 1,
       queryCount: anchored.length, evidenceCount: links.length, provider: r.provider,
       requestedModel: r.requestedModel, responseModel: r.responseModel, competitorName: null,
@@ -510,7 +510,7 @@ export function evaluateCompetitorDominance(input: DiagnosisInput): DiagnosisCan
       findingType: 'COMPETITOR_DOMINANCE', severity, category: null,
       title: `竞品「${c.canonicalName}」在当前测试场景具有明显曝光优势`,
       summary: `${c.canonicalName}：${c.evidenceCount} 条证据提及（coverage ${(coverage * 100).toFixed(0)}%）、SoV ${(share * 100).toFixed(0)}%；目标品牌可见率 ${(targetVis * 100).toFixed(1)}%。`,
-      explanation: 'SoV 为 AI 声量份额（mention 占比），不是市场占有率。geolens-diagnosis-v1：竞品 SoV≥15% 且显著高于目标品牌（> max(targetSoV×0.5, 5%)）且目标可见率≤50% → 触发；≥50% HIGH / ≥25% MEDIUM。',
+      explanation: 'SoV 为 AI 声量份额（mention 占比），不是市场占有率。geolens-diagnosis-v2：竞品 SoV≥15% 且显著高于目标品牌（> max(targetSoV×0.5, 5%)）且目标可见率≤50% → 触发；≥50% HIGH / ≥25% MEDIUM。',
       metricName: 'shareOfVoice', currentValue: share, referenceValue: targetSoV,
       queryCount: c.evidenceCount, evidenceCount: links.length, provider: r.provider,
       requestedModel: r.requestedModel, responseModel: r.responseModel, competitorName: c.canonicalName,
@@ -546,7 +546,7 @@ export function evaluatePoorMentionPosition(input: DiagnosisInput): DiagnosisCan
     findingType: 'POOR_MENTION_POSITION', severity, category: null,
     title: '品牌在回答中的提及位置偏后',
     summary: `品牌被提及的 ${positions.length} 个问题平均提及位置 ${avg.toFixed(1)}（${positions.map(p => p.position).join('、')}）。`,
-    explanation: 'geolens-diagnosis-v1：平均提及位置 ≥5 HIGH / ≥3.5 MEDIUM / ≥2.6 LOW；仅品牌被提及的问题参与计算，需 ≥2 个位置样本（否则交 DATA_QUALITY_WARNING）。位置靠后=品牌出现但可能在推荐列表中不占优。',
+    explanation: 'geolens-diagnosis-v2：平均提及位置 ≥5 HIGH / ≥3.5 MEDIUM / ≥2.6 LOW；仅品牌被提及的问题参与计算，需 ≥2 个位置样本（否则交 DATA_QUALITY_WARNING）。位置靠后=品牌出现但可能在推荐列表中不占优。',
     metricName: 'averageMentionPosition', currentValue: avg, referenceValue: cfg.low,
     queryCount: positions.length, evidenceCount: links.length, provider: r.provider,
     requestedModel: r.requestedModel, responseModel: r.responseModel, competitorName: null,
@@ -570,7 +570,7 @@ export function evaluateCitationGap(input: DiagnosisInput): DiagnosisCandidate[]
     findingType: 'CITATION_GAP', severity: 'INFO', category: null,
     title: '当前样本中未观察到明显引用信号',
     summary: `${r.analyzedRuns} 个已分析问题中引用数 0、引用域名数 0。当前检索模式为普通模型 API（api_plain），该结果仅表示未观察到引用，不代表官网权威性不足。`,
-    explanation: 'geolens-diagnosis-v1 诚实语义：在非联网检索（api_plain）下不做“权威性不足”的因果推断；只有当样本 ≥5 且全无引用时才提示。',
+    explanation: 'geolens-diagnosis-v2 诚实语义：在非联网检索（api_plain）下不做“权威性不足”的因果推断；只有当样本 ≥5 且全无引用时才提示。',
     metricName: 'citationCount', currentValue: 0, referenceValue: 1,
     queryCount: r.analyzedRuns, evidenceCount: links.length, provider: r.provider,
     requestedModel: r.requestedModel, responseModel: r.responseModel, competitorName: null,
@@ -598,7 +598,7 @@ export function evaluateSentimentRisk(input: DiagnosisInput): DiagnosisCandidate
     findingType: 'SENTIMENT_RISK', severity, category: null,
     title: '存在负面情感风险',
     summary: `${negative.length}/${r.analyzedRuns} 个已分析问题被当前规则版情感分析判为负面（${(ratio * 100).toFixed(1)}%）。`,
-    explanation: 'geolens-diagnosis-v1：仅当负面 Analysis 存在才触发；情感来自确定性词法规则（非 LLM 舆情分析），比例 ≥30% HIGH / ≥12% MEDIUM。',
+    explanation: 'geolens-diagnosis-v2：仅当负面 Analysis 存在才触发；情感来自确定性词法规则（非 LLM 舆情分析），比例 ≥30% HIGH / ≥12% MEDIUM。',
     metricName: 'sentimentDistribution.negative', currentValue: negative.length, referenceValue: 0,
     queryCount: negative.length, evidenceCount: links.length, provider: r.provider,
     requestedModel: r.requestedModel, responseModel: r.responseModel, competitorName: null,

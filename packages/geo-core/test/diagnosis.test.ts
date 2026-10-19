@@ -76,7 +76,7 @@ const findType = (cands: ReturnType<typeof runDiagnosis>['candidates'], type: st
 
 /* =============================== 基础 =============================== */
 test('version + threshold config exported & 集中常量', () => {
-  assert.equal(DIAGNOSIS_VERSION, 'geolens-diagnosis-v1');
+  assert.equal(DIAGNOSIS_VERSION, 'geolens-diagnosis-v2');
   assert.ok(DIAGNOSIS_V1_RULES.visibility.high === 0.2);
 });
 

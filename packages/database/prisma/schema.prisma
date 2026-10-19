@@ -775,7 +775,7 @@ model CompetitorSetEntry {
 //      suiteName/Version、provider、requested/responseModel、metricSource、
 //      analysisVersion、Competitor Set 版本与 metricsSnapshot；Diagnosis 基于该
 //      快照生成，历史语义永不因后续编辑（Query/Set/Analysis v2）漂移。
-//   2) 诊断规则为确定性启发式（geolens-diagnosis-v1），阈值属 GeoLens internal
+//   2) 诊断规则为确定性启发式并通过 diagnosisVersion 记录规则版本，阈值属 GeoLens internal
 //      heuristic（docs/m7-diagnosis.md 有 disclaimer），绝非行业标准或 LLM 推断。
 //   3) DiagnosisFinding 只引用/归档证据链接（evidenceId/runId/queryText 快照），
 //      绝不复制 rawPrompt/rawResponse —— Evidence 仍是唯一事实源且不可变。
@@ -795,7 +795,7 @@ model DiagnosisRun {
   id                String   @id @default(uuid()) @db.Uuid
   projectId         String   @db.Uuid
   reportId          String   @db.Uuid // 归档引用：Report 已冻结自身 provenance（不级联删除）
-  diagnosisVersion  String   // 规则版本：geolens-diagnosis-v1
+  diagnosisVersion  String   // 规则版本，例如 geolens-diagnosis-v2
   secondaryReportId String?  @db.Uuid // Provider Gap 对比的第二份报告（归档引用，可空）
   status            String   @default("READY") // READY = 生成完成（原子）；异常不落半成品
   // 摘要快照：severity 计数 + 代表性问题/竞品/模型差异/数据质量（随 DiagnosisRun 冻结）
