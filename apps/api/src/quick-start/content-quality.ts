@@ -206,26 +206,29 @@ export function parseGeneratedContent(
 ): GeneratedContent {
   const parsed = parseJsonPayload(answer);
   if (!isRecord(parsed)) throw new BadRequestException("内容生成结果格式无效");
-  if (
-    typeof parsed.title !== "string" ||
-    typeof parsed.body !== "string" ||
-    typeof parsed.summary !== "string" ||
-    !Array.isArray(parsed.hashtags) ||
-    parsed.hashtags.some((item) => typeof item !== "string") ||
-    !Array.isArray(parsed.riskNotes) ||
-    parsed.riskNotes.some((item) => typeof item !== "string") ||
-    !Object.prototype.hasOwnProperty.call(parsed, "videoScript") ||
-    !isRecord(parsed.metadata)
-  ) {
-    throw new BadRequestException("内容生成结果字段不完整或类型无效");
+  if (typeof parsed.title !== "string" || typeof parsed.body !== "string") {
+    throw new BadRequestException("内容生成结果缺少有效标题或正文");
   }
 
   const title = cleanPublishText(parsed.title);
   const body = cleanPublishText(parsed.body);
-  const summary = cleanPublishText(parsed.summary);
-  const hashtags = Array.from(new Set(parsed.hashtags.map(normalizeHashtag).filter(Boolean))).slice(0, 30);
-  const riskNotes = Array.from(new Set(parsed.riskNotes.map((note) => cleanPublishText(note)).filter(Boolean))).slice(0, 20);
-  const rawVideoScript = parsed.videoScript ?? (isRecord(parsed.metadata) ? parsed.metadata.videoScript : null);
+  const summarySource = typeof parsed.summary === "string"
+    ? parsed.summary
+    : body.slice(0, 160);
+  const summary = cleanPublishText(summarySource);
+  const rawHashtags = Array.isArray(parsed.hashtags)
+    ? parsed.hashtags.filter((item): item is string => typeof item === "string")
+    : [];
+  const hashtags = Array.from(new Set(rawHashtags.map(normalizeHashtag).filter(Boolean))).slice(0, 30);
+  const rawRiskNotes = Array.isArray(parsed.riskNotes)
+    ? parsed.riskNotes.filter((note): note is string => typeof note === "string")
+    : [];
+  const riskNotes = Array.from(new Set(rawRiskNotes.map((note) => cleanPublishText(note)).filter(Boolean))).slice(0, 20);
+  if (!riskNotes.length) {
+    riskNotes.push("模型未提供风险说明，发布前请人工核验产品事实、来源与适用边界。");
+  }
+  const metadata = isRecord(parsed.metadata) ? parsed.metadata : {};
+  const rawVideoScript = parsed.videoScript ?? metadata.videoScript ?? null;
   const cleanVideoScript = cleanStructured(rawVideoScript);
   const videoScript = isRecord(cleanVideoScript) ? cleanVideoScript : null;
 
@@ -235,13 +238,13 @@ export function parseGeneratedContent(
   if (rawVideoScript !== null && rawVideoScript !== undefined && !videoScript) {
     throw new BadRequestException("视频脚本字段格式无效");
   }
-  if ([title, body, summary, ...parsed.hashtags, ...hashtags, ...collectStrings(videoScript)].some(isRawJsonOrProviderError)) {
+  if ([title, body, summary, ...rawHashtags, ...hashtags, ...collectStrings(videoScript)].some(isRawJsonOrProviderError)) {
     throw new BadRequestException("内容字段包含原始 JSON 或模型错误信息，无法作为可发布草稿保存");
   }
   validatePlatformContent(platform, videoScript, hashtags, body);
 
   const qualityWarnings = assessQuality(title, body, summary, videoScript, context);
-  const rawMetadata = isRecord(parsed.metadata) ? cleanStructured(parsed.metadata) as Record<string, unknown> : {};
+  const rawMetadata = cleanStructured(metadata) as Record<string, unknown>;
   return {
     title,
     body,

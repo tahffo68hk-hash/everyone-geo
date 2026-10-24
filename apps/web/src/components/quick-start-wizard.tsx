@@ -136,11 +136,13 @@ function renderVideoScript(metadata: Record<string, unknown> | null) {
 function PaidCallConfirm({
   provider,
   count,
+  retrievalRequests = 0,
   checked,
   onChange,
 }: {
   provider: AiProvider;
   count: number;
+  retrievalRequests?: number;
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
@@ -160,7 +162,7 @@ function PaidCallConfirm({
         className="mt-0.5 size-4 accent-amber-600"
       />
       <span>
-        我确认本次会发送 <strong>{count} 次真实模型请求</strong>，可能产生费用（金额未知）。
+        我确认本次会发送 <strong>{count} 次真实模型请求{retrievalRequests > 0 ? `，另含最多 ${retrievalRequests} 次实时检索请求` : ""}</strong>，可能产生费用（金额未知）。
         只有勾选后才会发送。
       </span>
     </label>
@@ -172,7 +174,7 @@ function Provenance({ isMock, evidenceMock }: { isMock: boolean; evidenceMock?: 
     <div className={`rounded-xl border px-3.5 py-3 text-xs leading-5 ${isMock ? "border-amber-200 bg-amber-50 text-amber-900" : "border-blue-100 bg-blue-50 text-blue-900"}`}>
       <strong>{isMock ? "模拟数据/未真实验证" : "真实 Provider 生成"}</strong>
       {evidenceMock && <span> · 输入证据包含模拟回答/未真实验证</span>}
-      {!isMock && <span> · API 回答不代表实时联网搜索或公开发布</span>}
+      {!isMock && <span> · 回答只依据本次保存的来源样本分析，不代表长期排名或公开发布</span>}
     </div>
   );
 }
@@ -308,6 +310,11 @@ export function QuickStartWizard() {
         if (cancelled) return;
         setOrganizations(me.organizations);
         setProviders(providerData);
+        const availableDeepSeek = providerData.find((item) => item.provider === "DEEPSEEK" && item.configured);
+        if (availableDeepSeek) {
+          setProvider("DEEPSEEK");
+          setModel(availableDeepSeek.model);
+        }
         const requestedSession = new URLSearchParams(window.location.search).get("sessionId");
         if (requestedSession) {
           const loaded = await loadSession(requestedSession);
@@ -1010,7 +1017,7 @@ export function QuickStartWizard() {
           )}
           <div className="mt-5 max-w-2xl space-y-3">
             <Provenance isMock={session.provider === "MOCK"} />
-            {session.provider !== "MOCK" && <PaidCallConfirm provider={session.provider} count={questions.length} checked={runConfirmed} onChange={setRunConfirmed} />}
+            {session.provider !== "MOCK" && <PaidCallConfirm provider={session.provider} count={questions.length} retrievalRequests={session.provider === "DEEPSEEK" ? questions.length : 0} checked={runConfirmed} onChange={setRunConfirmed} />}
             {session.provider !== "MOCK" && !sessionProviderStatus?.configured && <p className="text-xs text-amber-700">服务端没有配置 {providerLabel(session.provider)} 的 API Key；当前不会发送外部请求。</p>}
           </div>
           <div className="mt-6 flex flex-wrap gap-3 border-t border-slate-100 pt-5">
@@ -1043,10 +1050,11 @@ export function QuickStartWizard() {
                   {activeRun && <StatusPill status={activeRun.status} />}
                 </div>
                 <div className="mt-5"><Provenance isMock={report.containsMockData} /></div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <MetricTile label="品牌提及率" value={percent(metrics?.rate)} detail={`${metrics?.mentioned ?? 0} / ${metrics?.total ?? 0} 条回答提及`} accent />
                   <MetricTile label="通用发现问题" value={percent(metrics?.discovery.rate)} detail={`${metrics?.discovery.mentioned ?? 0} / ${metrics?.discovery.total ?? 0} 条提及`} />
                   <MetricTile label="品牌相关问题" value={percent(metrics?.branded.rate)} detail={`${metrics?.branded.mentioned ?? 0} / ${metrics?.branded.total ?? 0} 条提及`} />
+                  <MetricTile label="实时检索覆盖" value={percent(metrics?.retrieval?.rate)} detail={`${metrics?.retrieval?.withSources ?? 0} / ${metrics?.retrieval?.total ?? 0} 条问题有来源`} />
                   <MetricTile label="待关注机会" value={`${responses.filter((response) => !response.brandMentioned).length} 条`} detail="回答中未出现品牌" />
                 </div>
                 {metrics?.sampleNote && <p className="mt-3 text-xs text-slate-400">{metrics.sampleNote}</p>}

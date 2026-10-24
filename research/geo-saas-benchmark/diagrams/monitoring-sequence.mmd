@@ -1,0 +1,34 @@
+sequenceDiagram
+    autonumber
+    actor User as User
+    participant Web as GeoLens Web
+    participant API as Nest API
+    participant DB as PostgreSQL
+    participant Outbox as Outbox Publisher
+    participant Queue as Job Queue
+    participant Worker as Provider Worker
+    participant Adapter as Provider Adapter
+    participant Provider as Allowed AI Provider
+
+    User->>Web: Add prompt and schedule
+    Web->>API: POST monitoring plan
+    API->>DB: Save plan + executions + outbox rows
+    API-->>Web: 202 Accepted + runBatchId
+    Outbox->>Queue: Publish execution jobs
+    Queue->>Worker: Deliver execution
+    Worker->>DB: Claim idempotently, create attempt
+    Worker->>Adapter: Execute prompt with model/region
+    Adapter->>Provider: Authorized request
+    Provider-->>Adapter: Answer + provider metadata
+    Adapter-->>Worker: Normalized result + raw payload
+    Worker->>DB: Append raw response + attempt status
+    Worker->>DB: Store extracted mentions/citations and parser version
+    User->>Web: Open run details
+    Web->>API: GET run batch / executions
+    API->>DB: Read status, aggregates and evidence
+    DB-->>API: Results + sample counts
+    API-->>Web: Dashboard data / answer evidence
+    Web-->>User: Update trend and evidence drawer
+
+    Note over Worker,Queue: Retry transient errors with idempotency and bounded backoff
+    Note over DB: Provider failure, not-triggered result, and no mention are separate states

@@ -27,10 +27,19 @@ export type AiCompletionResult = {
   costEstimate: number | null;
 };
 
+export type AiSearchSource = {
+  title: string;
+  url: string;
+  summary: string;
+  siteName: string | null;
+  date: string | null;
+  authority: number | null;
+};
+
 const PROVIDER_CONFIG: Record<AiProvider, { model: string; baseUrl?: string; keyName?: string }> = {
   MOCK: { model: "geolens-mock-v1" },
   DEEPSEEK: {
-    model: "deepseek-chat",
+    model: "deepseek-flash",
     baseUrl: "https://api.deepseek.com",
     keyName: "DEEPSEEK_API_KEY",
   },
@@ -206,6 +215,79 @@ export class AiGatewayService {
     }));
   }
 
+  async search(query: string): Promise<AiSearchSource[]> {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+      throw new ServiceUnavailableException(
+        "DEEPSEEK_API_KEY 未配置；本次检索没有发送到外部服务",
+      );
+    }
+
+    const normalizedQuery = query.trim().replace(/\s+/g, " ").slice(0, 128);
+    if (!normalizedQuery) return [];
+
+    let response: Response;
+    try {
+      response = await fetch("https://api.deepseek.com/v1/tools/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          query: normalizedQuery,
+          ori_question: normalizedQuery,
+          count: 3,
+          need_content: false,
+        }),
+        signal: AbortSignal.timeout(25_000),
+        redirect: "error",
+      });
+    } catch {
+      throw new ServiceUnavailableException("DeepSeek 实时检索连接失败或超时");
+    }
+    if (!response.ok) {
+      throw new ServiceUnavailableException(
+        `DeepSeek 实时检索失败（HTTP ${response.status}）；未自动重试`,
+      );
+    }
+
+    let payload: { results?: unknown };
+    try {
+      payload = (await response.json()) as typeof payload;
+    } catch {
+      throw new BadRequestException("DeepSeek 检索返回了无效 JSON");
+    }
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+      throw new BadRequestException("DeepSeek 检索结果结构无效");
+    }
+
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    return results.flatMap((item): AiSearchSource[] => {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) return [];
+      const row = item as Record<string, unknown>;
+      const title = typeof row.title === "string" ? row.title.trim().slice(0, 240) : "";
+      const rawUrl = typeof row.url === "string" ? row.url : "";
+      let url: URL;
+      try {
+        url = new URL(rawUrl);
+      } catch {
+        return [];
+      }
+      if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password || !title) {
+        return [];
+      }
+      return [{
+        title,
+        url: url.toString(),
+        summary: typeof row.summary === "string" ? row.summary.trim().slice(0, 1600) : "",
+        siteName: typeof row.site_name === "string" ? row.site_name.trim().slice(0, 120) : null,
+        date: typeof row.date === "string" ? row.date.slice(0, 64) : null,
+        authority: typeof row.authority === "number" ? row.authority : null,
+      }];
+    }).slice(0, 3);
+  }
+
   async complete(request: AiCompletionRequest): Promise<AiCompletionResult> {
     const startedAt = Date.now();
     assertPaidCallConfirmed(request.provider, request.confirmed, request.requestCount);
@@ -243,7 +325,14 @@ export class AiGatewayService {
         body: JSON.stringify({
           model,
           temperature: request.task === "content" ? 0.45 : 0.2,
-          max_tokens: request.task === "content" ? 3600 : 1800,
+          max_tokens:
+            request.task === "content"
+              ? 3600
+              : request.task === "answer"
+                ? 3000
+                : request.task === "suggestions"
+                  ? 3000
+                : 1800,
           stream: false,
           ...(request.provider === "DEEPSEEK" && supportsJsonOutput(request.task)
             ? { response_format: { type: "json_object" } }

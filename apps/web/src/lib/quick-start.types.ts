@@ -61,6 +61,12 @@ export type QuickStartReport = {
     discovery: { total: number; mentioned: number; rate: number | null };
     branded: { total: number; mentioned: number; rate: number | null };
     competitors: Record<string, number>;
+    retrieval?: {
+      total: number;
+      withSources: number;
+      sourceCount: number;
+      rate: number | null;
+    };
     sampleNote?: string;
   };
   run?: { provider: AiProvider; model: string; responses: QuickStartRun["responses"] };

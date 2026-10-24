@@ -16,9 +16,9 @@ const TASK_PROMPTS: Record<AiTask, string> = {
   questions:
     "任务：生成 8 至 12 条自然的中文 GEO 监测问题。至少 5 条 DISCOVERY（问题本身不出现品牌名），至少 2 条 BRANDED。覆盖需求识别、方案比较、使用场景、购买决策和信息核实，避免同义重复。只返回 JSON 对象 {\"questions\":[{\"text\":\"问题\",\"kind\":\"DISCOVERY 或 BRANDED\",\"intent\":\"意图\"}]}。",
   answer:
-    "任务：直接回答用户给出的具体问题。清楚区分已知信息与不确定信息，不声称实时搜索，不捏造来源、品牌事实或客户经验。返回自然文本，不返回 JSON。",
+    "任务：直接回答用户给出的具体问题。若输入提供了实时检索证据，只依据证据支持的内容回答，并仅引用证据列表中的来源；证据不足时明确说明。清楚区分已知信息与不确定信息，不捏造来源、品牌事实或客户经验。用自然、精炼的中文回答，控制在 300 至 500 个汉字，最多 5 个自然段；优先给出结论、关键判断条件和必要边界，不写成长篇教程。返回自然文本，不返回 JSON。",
   suggestions:
-    "任务：从 GEO 检测样本中提出 1 至 4 条具体、可执行的内容优化建议。优先补足样本中没有回答的客户问题；每条建议必须包含 title、action、responseId、queryId，ID 必须逐字来自输入。把检测答案视为线索，指出要补充或核实的企业资料，不保证排名或效果。只返回 JSON 对象 {\"suggestions\":[{\"title\":\"标题\",\"action\":\"行动\",\"responseId\":\"证据 ID\",\"queryId\":\"问题 ID\"}]}。",
+    "任务：从 GEO 检测样本中提出最多 3 条具体、可执行的内容优化建议。优先补足样本中没有回答的客户问题；每条建议必须包含 title、action、responseId、queryId，ID 必须逐字来自输入。把检测答案视为线索，指出要补充或核实的企业资料，不保证排名或效果。每条 action 控制在 120 至 240 个汉字。只返回精简 JSON 对象 {\"suggestions\":[{\"title\":\"标题\",\"action\":\"行动\",\"responseId\":\"证据 ID\",\"queryId\":\"问题 ID\"}]}，不要输出 JSON 以外的文字。",
   content:
     "任务：围绕输入中的 GEO 目标问题生成一份可编辑的企业内容草稿。只返回一个合法 JSON 对象，字段必须为 title（字符串）、body（字符串）、summary（字符串）、hashtags（字符串数组）、videoScript（对象或 null）、riskNotes（字符串数组）、metadata（对象）。body 要直接回答目标问题，品牌只在有助于理解时自然出现。未知信息不要猜测，写入 riskNotes。",
 };
@@ -47,7 +47,11 @@ const PLATFORM_PROMPTS: Record<ContentPlatform, string> = {
 };
 
 export function getPromptVersion(task: AiTask, platform?: ContentPlatform) {
-  const base = `geolens-${task}-v2`;
+  const base = task === "answer"
+    ? "geolens-answer-v4"
+    : task === "suggestions"
+      ? "geolens-suggestions-v3"
+      : `geolens-${task}-v2`;
   return task === "content" && platform ? `${base}-${platform}` : base;
 }
 

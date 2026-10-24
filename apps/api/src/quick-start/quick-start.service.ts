@@ -651,6 +651,7 @@ export class QuickStartService {
       brandMentioned: boolean;
       competitorMentions: string[];
       isMock: boolean;
+      citations: unknown;
     }>;
   }) {
     const responseCount = run.responses.length;
@@ -674,7 +675,10 @@ export class QuickStartService {
             projectId: run.projectId,
             brandId: run.brandId,
             metrics: jsonInput({
-              ...calculateVisibilityMetrics(run.responses),
+              ...calculateVisibilityMetrics(run.responses.map((response) => ({
+                ...response,
+                sourceCount: Array.isArray(response.citations) ? response.citations.length : 0,
+              }))),
               sampleNote: "检测进程中断；仅统计已保存的回答样本。",
             }),
             containsMockData: run.isMock || run.responses.some((response) => response.isMock),
@@ -720,12 +724,16 @@ export class QuickStartService {
       kind: QuestionKind;
       brandMentioned: boolean;
       competitorMentions: string[];
+      sourceCount: number;
     }> = [];
     let failure: unknown;
 
     try {
       for (let index = 0; index < questions.length; index += 1) {
         const question = questions[index];
+        const sources = session.provider === "DEEPSEEK"
+          ? await this.gateway.search(question.text)
+          : [];
         const rawPrompt = buildUserPrompt({
           question: question.text,
           brandProfile: {
@@ -741,6 +749,7 @@ export class QuickStartService {
             description: session.project.description ?? "",
             competitors: session.project.competitors.map((item) => item.name),
           },
+          searchEvidence: sources,
         });
         const result = await this.gateway.complete({
           task: "answer",
@@ -777,7 +786,9 @@ export class QuickStartService {
             brandMentioned: mention.mentioned,
             mentionPosition: mention.position,
             competitorMentions: competitors,
-            citations: citationsIn(result.answer),
+            citations: session.provider === "DEEPSEEK"
+              ? sources.map((source) => source.url)
+              : citationsIn(result.answer),
             tokens: result.tokens === null ? undefined : jsonInput(result.tokens),
             latencyMs: result.latencyMs,
             costEstimate: result.costEstimate,
@@ -788,6 +799,7 @@ export class QuickStartService {
           kind: question.kind,
           brandMentioned: mention.mentioned,
           competitorMentions: competitors,
+          sourceCount: sources.length,
         });
         responseCount += 1;
         await this.prisma.client.monitoringRun.update({

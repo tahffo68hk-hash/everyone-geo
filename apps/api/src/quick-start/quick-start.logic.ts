@@ -16,6 +16,7 @@ export type VisibilitySample = {
   kind: QuestionKind;
   brandMentioned: boolean;
   competitorMentions: string[];
+  sourceCount?: number;
 };
 
 type MetricCount = {
@@ -65,11 +66,19 @@ export function calculateVisibilityMetrics(rows: VisibilitySample[]) {
     }
   }
 
+  const withSources = rows.filter((row) => (row.sourceCount ?? 0) > 0).length;
+
   return {
     ...countMetrics(rows),
     discovery: countMetrics(rows.filter((row) => row.kind === "DISCOVERY")),
     branded: countMetrics(rows.filter((row) => row.kind === "BRANDED")),
     competitors,
+    retrieval: {
+      total: rows.length,
+      withSources,
+      sourceCount: rows.reduce((total, row) => total + (row.sourceCount ?? 0), 0),
+      rate: rows.length === 0 ? null : withSources / rows.length,
+    },
   };
 }
 

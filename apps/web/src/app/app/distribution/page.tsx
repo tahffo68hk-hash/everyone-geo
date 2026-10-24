@@ -102,7 +102,7 @@ export default function DistributionWorkbenchPage() {
 
         <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm leading-6 text-amber-900">
           <strong>人工复核边界</strong>
-          <span className="ml-1">当前项目没有配置官方平台连接器。下面的任务仍是内容草稿；复制或填写内容都不会被记录为公开发布。</span>
+          <span className="ml-1">当前项目没有配置官方平台连接器。可用本地模拟发布页验证草稿流转；内容只保存在本机浏览器，不会提交到外部平台或公开发布。</span>
         </div>
 
         {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"><span>{error}</span><button className="font-semibold underline underline-offset-2" onClick={() => void loadTasks()}>重新加载</button></div>}
@@ -152,7 +152,8 @@ export default function DistributionWorkbenchPage() {
                         <p>平台连接器：<span className="font-medium text-slate-700">尚未接入</span></p>
                         <p className="mt-1">公开发布状态：<span className="font-medium text-slate-700">未发生</span></p>
                       </div>
-                      <button className={`${button} mt-3 w-full`} onClick={() => void copyContent(task)}>{copiedId === task.id ? "已复制，可人工复核" : "复制后由人工发布"}</button>
+                      <Link href={`/app/mock-publisher?taskId=${encodeURIComponent(task.id)}`} className={`${button} mt-3 w-full`}>打开本地模拟发布</Link>
+                      <button className={`${button} mt-2 w-full`} onClick={() => void copyContent(task)}>{copiedId === task.id ? "已复制，可人工复核" : "复制整份草稿"}</button>
                     </aside>
                   </div>
                 </li>

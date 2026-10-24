@@ -1,0 +1,21 @@
+flowchart LR
+    A[Prompt definition + revision] --> B[Scheduled execution]
+    B --> C[Provider adapter]
+    C --> D[Immutable raw answer]
+    D --> E[Versioned extraction]
+    E --> F[Brand and competitor mentions]
+    E --> G[Retrieved sources]
+    E --> H[Inline citations]
+    F --> I[Versioned metric aggregates]
+    G --> I
+    H --> I
+    I --> J[Dashboard and report snapshot]
+    F --> K[Evidence drill-down]
+    G --> K
+    H --> K
+    K --> L[Action item with cited evidence]
+    L --> M[Same-cohort retest]
+    M --> B
+
+    N[Provider failures / no response / not triggered] --> O[Eligibility and coverage metadata]
+    O --> I

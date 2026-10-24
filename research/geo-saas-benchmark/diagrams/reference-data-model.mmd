@@ -1,0 +1,90 @@
+erDiagram
+    ORGANIZATION ||--o{ MEMBERSHIP : includes
+    USER ||--o{ MEMBERSHIP : joins
+    ORGANIZATION ||--o{ PROJECT : owns
+    PROJECT ||--o{ BRAND : tracks
+    PROJECT ||--o{ COMPETITOR : compares
+    PROJECT ||--o{ PROMPT_DEFINITION : configures
+    PROMPT_DEFINITION ||--o{ PROMPT_VARIANT : has
+    PROMPT_VARIANT ||--o{ MONITORING_PLAN : scheduled_by
+    MONITORING_PLAN ||--o{ EXECUTION : creates
+    EXECUTION ||--o{ EXECUTION_ATTEMPT : retries
+    EXECUTION ||--o| RAW_RESPONSE : produces
+    RAW_RESPONSE ||--o{ EXTRACTION_RUN : parsed_by
+    EXTRACTION_RUN ||--o{ BRAND_MENTION : extracts
+    EXTRACTION_RUN ||--o{ CITATION : extracts
+    BRAND ||--o{ BRAND_MENTION : matched_as
+    COMPETITOR ||--o{ BRAND_MENTION : matched_as
+    PROJECT ||--o{ METRIC_SNAPSHOT : aggregates
+    PROJECT ||--o{ ACTION_ITEM : plans
+    ACTION_ITEM ||--o{ RETEST_BATCH : verifies
+    PROJECT ||--o{ REPORT_SNAPSHOT : shares
+    EXECUTION ||--o{ USAGE_LEDGER : costs
+
+    ORGANIZATION {
+        uuid id PK
+        string name
+    }
+    MEMBERSHIP {
+        uuid user_id FK
+        uuid organization_id FK
+        string role
+    }
+    PROJECT {
+        uuid id PK
+        uuid organization_id FK
+        string name
+    }
+    PROMPT_DEFINITION {
+        uuid id PK
+        uuid project_id FK
+        string text
+        int revision
+    }
+    PROMPT_VARIANT {
+        uuid id PK
+        uuid prompt_id FK
+        string locale
+        string region
+        string model_channel
+    }
+    EXECUTION {
+        uuid id PK
+        uuid project_id FK
+        uuid prompt_variant_id FK
+        string status
+        datetime scheduled_at
+    }
+    RAW_RESPONSE {
+        uuid id PK
+        uuid execution_id FK
+        string content_hash
+        string object_uri
+        datetime captured_at
+    }
+    EXTRACTION_RUN {
+        uuid id PK
+        uuid raw_response_id FK
+        string parser_version
+        datetime created_at
+    }
+    CITATION {
+        uuid id PK
+        uuid extraction_run_id FK
+        string canonical_url
+        int response_position
+    }
+    METRIC_SNAPSHOT {
+        uuid id PK
+        uuid project_id FK
+        string metric_name
+        string definition_version
+        int numerator
+        int denominator
+    }
+    USAGE_LEDGER {
+        uuid id PK
+        uuid execution_id FK
+        string event_key
+        decimal amount
+    }
