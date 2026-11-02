@@ -83,7 +83,7 @@ pnpm typecheck
 pnpm lint
 ```
 
-CI runs `pnpm typecheck` and `pnpm lint` with no `|| true`. Typecheck is `tsc --noEmit` in each package and is expected to pass. Lint fails closed: `apps/web` has no ESLint config, and `next lint` would otherwise open a setup prompt. The failure is the current state, not a skipped check.
+CI runs `pnpm typecheck` and `pnpm lint` with no `|| true`. Typecheck is `tsc --noEmit` in each package. Root `pnpm lint` runs `next lint` in `apps/web` (`next/core-web-vitals`).
 
 ## Docs
 
