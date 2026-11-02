@@ -63,6 +63,8 @@ test('WordPress Real Pilot: Draft creation, read-back, and rollback lifecycle', 
 
   await new Promise<void>(resolve => server.listen(18080, '127.0.0.1', () => resolve()));
 
+  const prevMode = process.env.PUBLICATION_MODE;
+  const prevExternal = process.env.EXTERNAL_PUBLISHING_ENABLED;
   try {
     const connector = new WordPressConnector();
     const cred: StoredCredential = {
@@ -87,7 +89,8 @@ test('WordPress Real Pilot: Draft creation, read-back, and rollback lifecycle', 
     assert.strictEqual(dryRes.ok, true);
     assert.strictEqual(dryRes.publisher, 'mock');
 
-    // 4. Real Draft Creation (with EXTERNAL_PUBLISHING_ENABLED = true)
+    // 4. Real draft creation. PUBLICATION_MODE=real is the switch; the legacy flag agrees.
+    process.env.PUBLICATION_MODE = 'real';
     process.env.EXTERNAL_PUBLISHING_ENABLED = 'true';
     const realRes = await connector.publish(
       { title: 'PawClean 评测', body: '<p>评测正文</p>' },
@@ -109,7 +112,10 @@ test('WordPress Real Pilot: Draft creation, read-back, and rollback lifecycle', 
     assert.strictEqual(delRes.ok, true);
     assert.strictEqual(deleteCalled, true);
   } finally {
-    process.env.EXTERNAL_PUBLISHING_ENABLED = 'false';
+    if (prevMode === undefined) delete process.env.PUBLICATION_MODE;
+    else process.env.PUBLICATION_MODE = prevMode;
+    if (prevExternal === undefined) delete process.env.EXTERNAL_PUBLISHING_ENABLED;
+    else process.env.EXTERNAL_PUBLISHING_ENABLED = prevExternal;
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });

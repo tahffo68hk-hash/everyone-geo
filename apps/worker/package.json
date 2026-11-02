@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js",
     "test": "node --require ../../packages/database/scripts/test-env.cjs --import tsx --test test/*.test.ts",
     "acceptance": "node --require ../../packages/database/scripts/test-env.cjs --import tsx e2e/acceptance.mts",

@@ -2187,7 +2187,7 @@ export default function ContentDraftDetailPage() {
                     创建模拟发布
                   </button>
                   <p className="text-xs text-slate-400">
-                    真实平台外部写当前处于关闭状态 (EXTERNAL_PUBLISHING_ENABLED = false)，本轮执行 Mock 沙箱。
+                    此操作只写入本地模拟发布（mock_ id，https://mock.geo.local/...）。默认 PUBLICATION_MODE=mock，不会自动发到 WordPress、微信或其他渠道。浏览器辅助停在 PREPARE_ONLY，由人确认后才提交。
                   </p>
                   {publication && (
                     <Link

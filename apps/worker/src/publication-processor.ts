@@ -5,8 +5,9 @@ import { executePublication, publicationJobSchema, type PublicationJob } from '@
 /**
  * 内容发布处理器（PHASE 15）。
  *
- * 消费 content-publications 队列；调用共享的 Mock 发布执行（@geo/queue.executePublication）。
- * - 本回合仅 Mock Publisher：不触达任何真实平台，Real Provider Calls / External Writes = 0。
+ * 消费 content-publications 队列；调用共享的 executePublication。
+ * - 默认 PUBLICATION_MODE=mock：MockPublicationPublisher，mock_ URL，不出站。
+ * - PUBLICATION_MODE=real：本路径失败关闭（REAL_PUBLICATION_NOT_WIRED），不伪造已发布链接。
  * - 幂等：executePublication 依据 idempotencyKey 去重；同键重放安全。
  * - 失败：抛出可重试错误交由 BullMQ 退避重试；无效 payload 视为不可重试。
  */

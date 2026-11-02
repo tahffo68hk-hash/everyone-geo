@@ -17,6 +17,7 @@ import {
 import {
   createPublicationQueue, defaultConnectorRegistry, defaultCredentialVault, defaultOAuthStateSecurity,
   enqueuePublication, executePublication, generateManualPublishingPackage, transformContentForChannel, PublicationRouter,
+  resolvePublicationMode,
   finalizeChannelContent, validateChannelContentLimits, CHANNEL_CONTENT_LIMITS,
   generatePlatformVariant as generatePlatformVariantHelper,
   rewriteContent as rewriteContentHelper,
@@ -51,8 +52,10 @@ function isHttpUrlWithHost(raw: string): boolean {
  *   - 草稿不会自动 APPROVED，也不会自动发布；只有「对最新版本的 APPROVED 批准」才解锁发布。
  *   - 发布要求：draft.status === APPROVED 且最新版本存在 APPROVED 审批；所选渠道连接 status
  *     必须为 CONNECTED（EXPIRED/REVOKED/ERROR 一律拦截）。
- *   - 出站写闸门：EXTERNAL_PUBLISHING_ENABLED 本回合恒为 false；只有 Mock Publisher 实现，
- *     所有 externalId/externalUrl 为假值，Real Provider Calls / External Writes = 0。
+ *   - 出站写闸门：默认 PUBLICATION_MODE=mock。createPublication / worker 走 executePublication，
+ *     只写入 mock_ / https://mock.geo.local。PUBLICATION_MODE=real 时该路径失败关闭
+ *     （REAL_PUBLICATION_NOT_WIRED），不把假链接记成已发布。连接器 doPublish 仅在
+ *     PublicationRouter 且 mode=real 时出站。
  *   - 幂等：Publication.idempotencyKey 唯一；每次执行尝试使用独立 idempotencyKey，重放安全。
  *   - 租户隔离：所有读写先过 TenantService 校验 membership，否则 404（不泄露存在性）。
  *   - 度量边界：Publication / PublicationAttempt 与 GEO Evidence 解耦，不构成优化证据。
@@ -689,7 +692,7 @@ export class ContentExecutionService implements OnModuleDestroy {
     // 渠道中立内容校验。
     this.validateChannelContent(conn.channel, dto.title, dto.payload);
 
-    // 出站写闸门：本回合仅 Mock；真实适配器需 EXTERNAL_PUBLISHING_ENABLED=true（当前恒 false）。
+    // 默认 mock。real 模式也不让这条同步路径伪造直播链接。
     this.assertExternalGuard();
 
     // M10A 发布血缘推断与校验 (Campaign -> PlanItem -> ScheduleItem -> Draft -> Revision -> Publication)
@@ -1046,12 +1049,11 @@ export class ContentExecutionService implements OnModuleDestroy {
   // ---------------------------------------------------------------
 
   private assertExternalGuard() {
-    const enabled = process.env.EXTERNAL_PUBLISHING_ENABLED === "true";
-    if (enabled) {
-      // 安全网：即便被误开启，本回合也只存在 Mock，真实出站写不会发生。
-      this.logger.warn("EXTERNAL_PUBLISHING_ENABLED=true 但本回合仅有 Mock 适配器；强制 mock，未触达真实平台。");
+    if (resolvePublicationMode() === "real") {
+      this.logger.warn(
+        "PUBLICATION_MODE=real：PublicationRouter 可调用连接器 doPublish。createPublication 的 executePublication 不伪造已发布 URL，未接线时记 FAILED（REAL_PUBLICATION_NOT_WIRED）。",
+      );
     }
-    // 出站写闸门：本回合恒为假安全态；Real Provider Calls / External Writes = 0。
   }
 
   private validateChannelContent(channel: string, title: string | null | undefined, payload: string) {
@@ -3035,7 +3037,7 @@ export class ContentExecutionService implements OnModuleDestroy {
       const connWhere = { organizationId: draft.organizationId, channel: item.channel as any };
       let conn = await this.db.client.channelAccountConnection.findFirst({ where: connWhere });
       if (!conn) {
-        const isMockSandbox = process.env.EXTERNAL_PUBLISHING_ENABLED !== "true";
+        const isMockSandbox = resolvePublicationMode() !== "real";
         try {
           conn = await this.db.client.channelAccountConnection.create({
             data: {
