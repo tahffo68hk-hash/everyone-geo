@@ -2,13 +2,18 @@ import { Queue } from 'bullmq';
 import { z } from 'zod';
 import type { PrismaClient } from '@geo/database';
 import { queueOptions } from './config';
+import { REAL_PUBLICATION_NOT_WIRED, resolvePublicationMode } from './publication-mode';
+
+export { REAL_PUBLICATION_NOT_WIRED, outboundPublishEnabled, resolvePublicationMode } from './publication-mode';
+export type { PublicationMode } from './publication-mode';
 
 /**
- * 内容发布队列 + Mock 发布适配器 + 发布执行（PHASE 15）—— 供 API 与 Worker 共用。
+ * 内容发布队列 + 发布执行（API 同步路径与 BullMQ worker 共用）。
  *
  * 安全铁律：
- *   - 本模块只实现 Mock 发布（明显假值，不出站）；真实平台适配器需 EXTERNAL_PUBLISHING_ENABLED=true
- *     才可接入，本回合恒为 false → Real Provider Calls / External Writes = 0。
+ *   - 默认 PUBLICATION_MODE=mock：MockPublicationPublisher，externalId/externalUrl 为 mock_ / mock.geo.local，不出站。
+ *   - PUBLICATION_MODE=real 时，本路径仍不调用渠道连接器，也不伪造已发布 URL（REAL_PUBLICATION_NOT_WIRED）。
+ *     连接器 doPublish 只在 PublicationRouter 且 mode=real 时发生。
  *   - 幂等：PublicationAttempt.idempotencyKey 唯一；相同键重放直接跳过，不重复执行。
  *   - 失败可记录：FAILED 时写入 errorMessage，供重试/审计。
  *   - Publication 与 GEO Evidence 解耦，不构成优化证据。
@@ -82,6 +87,28 @@ export class MockPublicationPublisher implements PublisherAdapter {
   }
 }
 
+/**
+ * real 模式下的共享执行路径。不发网络请求，也不返回看起来像已发布的 URL。
+ * 渠道连接器的 doPublish 不经过这里。
+ */
+export class RealPublicationUnavailablePublisher implements PublisherAdapter {
+  async publish(_req: PublishRequest): Promise<PublishResult> {
+    return {
+      ok: false,
+      publisher: 'real',
+      errorCode: REAL_PUBLICATION_NOT_WIRED,
+      errorMessage: REAL_PUBLICATION_NOT_WIRED,
+      durationMs: 0,
+    };
+  }
+}
+
+export function createPublicationPublisher(env: NodeJS.ProcessEnv = process.env): PublisherAdapter {
+  return resolvePublicationMode(env) === 'mock'
+    ? new MockPublicationPublisher()
+    : new RealPublicationUnavailablePublisher();
+}
+
 // ---------------------------------------------------------------------------
 // 发布执行（API 同步路径 & Worker 异步路径共用）
 // ---------------------------------------------------------------------------
@@ -108,8 +135,7 @@ export async function executePublication(
   const existing = await db.publicationAttempt.findUnique({ where: { idempotencyKey: idemKey } });
   if (existing) return { executed: false, status: pub.status };
 
-  // 出站写闸门：本回合仅 Mock。
-  const publisher = new MockPublicationPublisher();
+  const publisher = createPublicationPublisher();
   const result = await publisher.publish({
     publicationId: pub.id,
     channel: pub.channel,

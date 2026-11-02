@@ -1,9 +1,11 @@
 # GeoLens 全渠道 Connector 能力矩阵与官方准入清单
 
+> **运行边界：** 本地 demo 默认 `PUBLICATION_MODE=mock`。API 与 BullMQ 共用的 `executePublication` 使用 `MockPublicationPublisher`（`mock_` id，`https://mock.geo.local/...`），不会自动发到 WordPress、微信或其他渠道。`PUBLICATION_MODE=real`（未设置该变量时，旧开关 `EXTERNAL_PUBLISHING_ENABLED=true` 等价）才允许连接器 `doPublish`。微信连接器即使走 real，也只写草稿箱，不群发。小红书、视频号、知乎等是手工包或浏览器 `PREPARE_ONLY`（填表后由人确认，不代点最终发布）。下表描述连接器代码与准入条件，不是“默认已打通多渠道自动发帖”的声明。
+
 > **版本**：v2.0  
 > **更新日期**：2026-09-15  
-> **状态**：全平台接入就绪（37 渠道全覆盖）  
-> **安全基线**：零逆向爬虫，零私有 Cookie，100% 官方可信依据  
+> **状态**：连接器代码覆盖多个渠道；默认运行时仍是 mock 沙箱  
+> **安全基线**：零逆向爬虫，零私有 Cookie，100% 官方可信依据
 
 ---
 
@@ -82,9 +84,9 @@
 [内容合规与字数校验] ──不符合限制──► [记录 FAILED Attempt]
        │
        ▼
-[EXTERNAL_PUBLISHING_ENABLED]
-       ├── false ──► [BaseConnector 生成确定性 Mock Attempt (mock.geo.local)]
-       └── true  ──► [向官方平台发出经过凭据脱敏的安全网络调用]
+[PUBLICATION_MODE]  (unset + EXTERNAL_PUBLISHING_ENABLED=true → real)
+       ├── mock（默认）──► [BaseConnector / executePublication 生成 mock.geo.local]
+       └── real ──► [PublicationRouter 调用 doPublish；executePublication 失败关闭，不伪造 URL]
 ```
 
 1. **绝对保密**：密钥引用 `vault://...` 不在任何外部网络或响应中回显。

@@ -25,7 +25,7 @@ export async function startWorker() {
     component: 'worker', jobId: job?.id, status: 'JOB_FAILED', error: 'EXECUTION_FAILED',
   }));
 
-  // 内容发布队列（PHASE 15）：仅 Mock Publisher；幂等由 executePublication 的 idempotencyKey 保证。
+  // 内容发布队列：默认 MockPublicationPublisher；幂等由 executePublication 的 idempotencyKey 保证。
   const publicationQueue = createPublicationQueue();
   publicationQueue.on('error', () => jsonLogger({ component: 'worker', status: 'ERROR', error: 'PUBLICATION_QUEUE_UNAVAILABLE' }));
   const publicationWorker = new Worker<PublicationJob, void>(PUBLICATION_QUEUE, createPublicationProcessor(prisma), {

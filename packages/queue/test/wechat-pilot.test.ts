@@ -80,8 +80,10 @@ test('WeChat Official Account Real Pilot: Draft Box Isolation & Lifecycle', asyn
     });
     assert.strictEqual(valRes.valid, true);
 
-    // 4. 出站写保护：EXTERNAL_PUBLISHING_ENABLED=false 时降级为 Mock
+    // 4. 出站写保护：未设置 PUBLICATION_MODE 且 EXTERNAL_PUBLISHING_ENABLED=false 时降级为 Mock
     const prevGuard = process.env.EXTERNAL_PUBLISHING_ENABLED;
+    const prevMode = process.env.PUBLICATION_MODE;
+    delete process.env.PUBLICATION_MODE;
     process.env.EXTERNAL_PUBLISHING_ENABLED = 'false';
     const mockRes = await connector.publish(
       { title: '测试', body: '内容' },
@@ -118,7 +120,10 @@ test('WeChat Official Account Real Pilot: Draft Box Isolation & Lifecycle', asyn
     assert.strictEqual(deleteCalled, true);
 
     // 恢复环境变量
-    process.env.EXTERNAL_PUBLISHING_ENABLED = prevGuard;
+    if (prevMode === undefined) delete process.env.PUBLICATION_MODE;
+    else process.env.PUBLICATION_MODE = prevMode;
+    if (prevGuard === undefined) delete process.env.EXTERNAL_PUBLISHING_ENABLED;
+    else process.env.EXTERNAL_PUBLISHING_ENABLED = prevGuard;
   } finally {
     globalThis.fetch = origFetch;
     await new Promise<void>(resolve => server.close(() => resolve()));

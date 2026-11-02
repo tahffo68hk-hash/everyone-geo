@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "next lint",
     "check:zh": "node scripts/check-ui-zh.mjs",
     "test:r2": "node --no-warnings --test scripts/r2-api.test.mjs",
@@ -21,6 +22,8 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "8.57.1",
+    "eslint-config-next": "15.5.25",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0"
   }

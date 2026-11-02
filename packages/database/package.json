@@ -21,6 +21,7 @@
     "db:seed": "prisma db seed",
     "db:seed:test": "node --require ./scripts/test-env.cjs --import tsx prisma/seed.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "node --require ./scripts/test-env.cjs --import tsx scripts/verify.ts",
     "test:guard": "node --test scripts/test-env.test.cjs"
   },

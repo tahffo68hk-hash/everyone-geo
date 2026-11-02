@@ -1,4 +1,5 @@
 import type { Channel } from '@geo/database';
+import { outboundPublishEnabled } from '../publication-mode';
 import type {
   AssetUploadInput,
   AssetUploadResult,
@@ -97,8 +98,9 @@ export abstract class BaseConnector implements ChannelConnector {
       };
     }
 
-    // 3. 出站安全闸门：EXTERNAL_PUBLISHING_ENABLED 为 false 时严格降级为安全 Mock
-    if (process.env.EXTERNAL_PUBLISHING_ENABLED !== 'true') {
+    // 3. 出站安全闸门：PUBLICATION_MODE=mock（默认）时严格降级为安全 Mock。
+    //    未设置 PUBLICATION_MODE 时，EXTERNAL_PUBLISHING_ENABLED=true 仍视为 real。
+    if (!outboundPublishEnabled()) {
       const externalId = `mock_${this.channel.toLowerCase()}_${Date.now().toString(36)}`;
       const externalUrl = `https://mock.geo.local/${this.channel.toLowerCase()}/${externalId}`;
       return {
